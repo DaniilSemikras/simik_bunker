@@ -194,9 +194,10 @@ function updateGame() {
         const playerState = player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
         const playerStatus = player.left ? "вышел" : player.eliminated ? "выбыл" : isFinished ? "в бункере" : "в игре";
         return `<article class="game-player ${playerState}">
-            <div class="player-name">${avatarMarkup(player)}<div><strong>${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></div>${player.id === room.hostId ? '<span class="host-badge">ведущий</span>' : ""}</div>
+            <div class="player-name">${avatarMarkup(player)}<div><strong>${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></div></div>
             <div class="public-cards">${playerCards || '<span class="muted">карты ещё не раскрыты</span>'}</div>
             ${canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : ""}
+            ${player.id === room.hostId ? '<span class="host-star" aria-label="Ведущий" title="Ведущий">★</span>' : ""}
         </article>`;
     }).join("");
     updateActionTimer();
