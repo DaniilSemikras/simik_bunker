@@ -59,6 +59,15 @@ function updateDistributionTotals() {
     });
 }
 
+function renderDisasters() {
+    $("#disasterOptions").innerHTML = config.disasters.map((disaster, index) => `
+        <div class="disaster-row">
+            <textarea class="disaster-value" rows="3" aria-label="Сценарий катастрофы">${escapeHtml(disaster)}</textarea>
+            <button class="remove-option remove-disaster" type="button" data-disaster-index="${index}" aria-label="Удалить катастрофу">×</button>
+        </div>
+    `).join("");
+}
+
 function makeCategory() {
     config.categories.push({
         id: `custom_${Date.now()}`,
@@ -78,13 +87,14 @@ function collectConfig() {
             chance: Number(option.querySelector(".option-chance-input").value)
         }))
     }));
-    return { categories, disasters: $("#disasterList").value.split("\n") };
+    const disasters = [...document.querySelectorAll(".disaster-value")].map((input) => input.value);
+    return { categories, disasters };
 }
 
 async function loadEditor() {
     config = await request("/api/admin/config");
-    $("#disasterList").value = config.disasters.join("\n");
     renderCategories();
+    renderDisasters();
     $("#loginView").classList.add("hidden");
     $("#editorView").classList.remove("hidden");
     $("#logout").classList.remove("hidden");
@@ -108,6 +118,10 @@ $("#login").addEventListener("click", async () => {
 
 $("#password").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#login").click(); });
 $("#addCategory").addEventListener("click", makeCategory);
+$("#addDisaster").addEventListener("click", () => {
+    config.disasters.push("Новый сценарий катастрофы.");
+    renderDisasters();
+});
 $("#categories").addEventListener("click", (event) => {
     const card = event.target.closest(".category-card");
     if (!card) return;
@@ -131,6 +145,12 @@ $("#categories").addEventListener("click", (event) => {
 $("#categories").addEventListener("input", (event) => {
     if (event.target.matches(".option-chance-input")) updateDistributionTotals();
 });
+$("#disasterOptions").addEventListener("click", (event) => {
+    const button = event.target.closest(".remove-disaster");
+    if (!button) return;
+    config.disasters.splice(Number(button.dataset.disasterIndex), 1);
+    renderDisasters();
+});
 $("#save").addEventListener("click", async () => {
     try {
         config = await request("/api/admin/config", {
@@ -138,8 +158,8 @@ $("#save").addEventListener("click", async () => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(collectConfig())
         });
-        $("#disasterList").value = config.disasters.join("\n");
         renderCategories();
+        renderDisasters();
         showMessage("#saveMessage", "Настройки сохранены.", "success");
     } catch (error) {
         showMessage("#saveMessage", error.message, "error");

@@ -19,6 +19,7 @@ let countdownTimer;
 let audioContext;
 let soundsEnabled = localStorage.getItem("bunker-sounds") !== "off";
 let lastTurnSoundKey = "";
+let selectedAvatarData = null;
 
 function show(screen) {
     ["#menu", "#lobby", "#game"].forEach((id) => $(id).classList.toggle("hidden", id !== screen));
@@ -109,13 +110,36 @@ function nickname() {
     return $("#nickname").value.trim();
 }
 
+function fallbackInitial(value = nickname()) {
+    return String(value).trim().charAt(0).toUpperCase() || "?";
+}
+
+function avatarMarkup(player) {
+    if (player.avatarUrl) return `<img class="avatar avatar-image" src="${escaped(player.avatarUrl)}" alt="">`;
+    return `<span class="avatar">${escaped(fallbackInitial(player.nickname))}</span>`;
+}
+
+function updateAvatarPreview() {
+    const initial = $("#avatarInitial");
+    const image = $("#avatarPreviewImage");
+    initial.textContent = fallbackInitial();
+    initial.classList.toggle("hidden", Boolean(selectedAvatarData));
+    image.classList.toggle("hidden", !selectedAvatarData);
+    image.src = selectedAvatarData || "";
+    $("#avatarHint").textContent = selectedAvatarData ? "Аватар выбран. Его увидят остальные игроки." : "Если не загружать фото, будет первая буква ника.";
+}
+
+function playerPayload() {
+    return { nickname: nickname(), avatarData: selectedAvatarData };
+}
+
 function updateLobby() {
     if (!room) return;
     $("#roomTitle").textContent = room.code;
     $("#playerCount").textContent = `${activePlayers().length}/12`;
     $("#hostNote").textContent = isHost() ? "Вы ведущий. Когда все подключатся, запускайте игру." : "Ожидайте, пока ведущий начнёт игру.";
     $("#players").innerHTML = room.players.map((player) => `
-        <div class="player-row ${player.left ? "left-player" : ""}"><span class="avatar">${escaped(player.nickname.charAt(0).toUpperCase())}</span><span>${escaped(player.nickname)}</span>${player.left ? '<span class="host-badge">вышел</span>' : player.id === room.hostId ? '<span class="host-badge">ведущий</span>' : ""}</div>
+        <div class="player-row ${player.left ? "left-player" : ""}">${avatarMarkup(player)}<span>${escaped(player.nickname)}</span>${player.left ? '<span class="host-badge">вышел</span>' : player.id === room.hostId ? '<span class="host-badge">ведущий</span>' : ""}</div>
     `).join("");
     $("#startGame").classList.toggle("hidden", !isHost());
     $("#startHint").textContent = activePlayers().length < 2 ? "Для начала нужен ещё хотя бы один игрок." : isHost() ? "После старта половина игроков сможет остаться в бункере." : "";
@@ -146,12 +170,15 @@ function updateGame() {
 
     $("#gameCode").textContent = room.code;
     $("#phaseTitle").textContent = isFinished ? "Игра завершена" : isVoting ? "Голосование" : "Раскрытие карт";
-    const bunkerChance = typeof room.bunkerSurvivalChance === "number" ? `${room.bunkerSurvivalChance}%` : "—";
+    const bunkerChance = isFinished && typeof room.bunkerSurvivalChance === "number"
+        ? `<span class="bunker-chance">Прогноз выживания бункера: <strong>${room.bunkerSurvivalChance}%</strong></span>`
+        : "";
     const professionInsight = room.professionInsight ? `<span class="profession-insight">${escaped(room.professionInsight)}</span>` : "";
-    $("#disasterCard").innerHTML = `<span class="eyebrow">КАТАСТРОФА</span><p>${escaped(room.disaster || "")}</p><div class="disaster-meta"><span class="capacity">Мест в бункере: ${room.capacity}</span><span class="bunker-chance">Прогноз выживания бункера: <strong>${bunkerChance}</strong></span>${professionInsight}</div>`;
+    $("#disasterCard").innerHTML = `<span class="eyebrow">КАТАСТРОФА</span><p>${escaped(room.disaster || "")}</p><div class="disaster-meta"><span class="capacity">Мест в бункере: ${room.capacity}</span>${bunkerChance}${professionInsight}</div>`;
     $("#survivorCount").textContent = `${active.length} в игре`;
     const categoryCount = room.categoryOrder?.length || Object.keys(myCards).length;
-    $("#roundLabel").textContent = isFinished ? "ИГРА ЗАВЕРШЕНА" : isVoting ? "ГОЛОСОВАНИЕ" : `РАУНД ${room.round} ИЗ ${categoryCount}`;
+    const revealRoundCount = room.revealRounds || categoryCount;
+    $("#roundLabel").textContent = isFinished ? "ИГРА ЗАВЕРШЕНА" : isVoting ? "ГОЛОСОВАНИЕ" : `РАУНД ${room.round} ИЗ ${revealRoundCount}`;
     $("#roundTitle").textContent = isFinished ? "Бункер определил выживших" : isVoting ? "Кого не берём в бункер?" : trait ? `Первый ход: ${traitName(trait)}` : "Выберите карту для раскрытия";
     $("#roundDescription").textContent = isFinished ? "Поздравьте тех, кому удалось попасть внутрь." : isVoting ? "Выберите одного игрока. Голос нельзя изменить." : trait ? "В первом раунде все обязаны раскрыть эту категорию." : "Теперь каждый сам выбирает одну ещё скрытую карту.";
 
@@ -169,7 +196,7 @@ function updateGame() {
         const playerState = player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
         const playerStatus = player.left ? "вышел" : player.eliminated ? "выбыл" : isFinished ? "в бункере" : "в игре";
         return `<article class="game-player ${playerState}">
-            <div class="player-name"><span class="avatar">${escaped(player.nickname.charAt(0).toUpperCase())}</span><div><strong>${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></div>${player.id === room.hostId ? '<span class="host-badge">ведущий</span>' : ""}</div>
+            <div class="player-name">${avatarMarkup(player)}<div><strong>${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></div>${player.id === room.hostId ? '<span class="host-badge">ведущий</span>' : ""}</div>
             <div class="public-cards">${playerCards || '<span class="muted">карты ещё не раскрыты</span>'}</div>
             ${canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : ""}
         </article>`;
@@ -193,9 +220,27 @@ function enterRoom(code) {
     $("#roomTitle").textContent = code;
 }
 
-$("#createRoom").addEventListener("click", () => socket.emit("createRoom", nickname()));
-$("#joinRoom").addEventListener("click", () => socket.emit("joinRoom", { roomCode: $("#roomCode").value, nickname: nickname() }));
+$("#createRoom").addEventListener("click", () => socket.emit("createRoom", playerPayload()));
+$("#joinRoom").addEventListener("click", () => socket.emit("joinRoom", { roomCode: $("#roomCode").value, ...playerPayload() }));
 $("#nickname").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#createRoom").click(); });
+$("#nickname").addEventListener("input", updateAvatarPreview);
+$("#avatarFile").addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 350 * 1024) {
+        event.target.value = "";
+        toast("Выберите PNG, JPG или WebP размером до 350 КБ.");
+        return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => { selectedAvatarData = String(reader.result || ""); updateAvatarPreview(); };
+    reader.readAsDataURL(file);
+});
+$("#clearAvatar").addEventListener("click", () => {
+    selectedAvatarData = null;
+    $("#avatarFile").value = "";
+    updateAvatarPreview();
+});
 $("#roomCode").addEventListener("input", (event) => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
 $("#startGame").addEventListener("click", () => socket.emit("startGame"));
 $("#revealButton").addEventListener("click", () => {
@@ -254,7 +299,7 @@ socket.on("voteAccepted", () => { toast("Ваш голос принят."); play
 socket.on("playerEliminated", ({ nickname: name }) => { toast(`${name} не попадает в бункер.`); playSound("out"); });
 socket.on("turnSkipped", ({ nickname: name }) => { toast(`${name} не успел раскрыть карту — ход пропущен.`); playSound("skip"); });
 socket.on("voteTied", () => { toast("Ничья: никто не исключен. Начинается следующий раунд."); playSound("tie"); });
-socket.on("allCardsRevealed", () => { toast("Все карты раскрыты. Проводим повторное голосование."); playSound("vote"); });
+socket.on("revealLimitReached", () => { toast("Лимит раскрытий достигнут: оставшиеся карты останутся тайной."); playSound("vote"); });
 socket.on("gameFinished", ({ survivors }) => { toast(`Выжили: ${survivors.join(", ")}.`); playSound("finish"); });
 socket.on("errorMessage", toast);
 socket.on("disconnect", () => toast("Соединение с сервером потеряно."));
@@ -263,5 +308,6 @@ socket.on("connect", () => { if (currentCode) toast("Соединение вос
 clearInterval(countdownTimer);
 countdownTimer = setInterval(updateActionTimer, 250);
 updateSoundToggle();
+updateAvatarPreview();
 document.addEventListener("pointerdown", unlockSound, { once: true });
 document.addEventListener("keydown", unlockSound, { once: true });

@@ -14,6 +14,13 @@
             <h1>Кто попадет на выплаты, а кто на парашу?<br></h1>
             <label class="field-label" for="nickname">Ваш никнейм</label>
             <input id="nickname" maxlength="18" autocomplete="nickname" placeholder="Например, Мираи">
+            <div class="avatar-setup">
+                <span class="field-label">Аватар — по желанию</span>
+                <div class="avatar-choice">
+                    <div class="avatar-preview"><span id="avatarInitial" class="avatar">?</span><img id="avatarPreviewImage" class="avatar avatar-image hidden" alt="Предпросмотр аватара"></div>
+                    <div><input id="avatarFile" type="file" accept="image/png,image/jpeg,image/webp" class="hidden"><label for="avatarFile" class="avatar-upload">Загрузить фото</label><button id="clearAvatar" class="text-button" type="button">Без аватара</button><p id="avatarHint" class="hint">Если не загружать фото, будет первая буква ника.</p></div>
+                </div>
+            </div>
             <button id="createRoom" class="button primary">Создать комнату</button>
             <div class="or"><span>или</span></div>
             <div class="join-row">
@@ -47,7 +54,7 @@
                     <p id="actionHint" class="hint centered"></p>
                 </section>
                 <div class="game-main">
-                    <div id="disasterCard" class="disaster-card"><span class="eyebrow">КАТАСТРОФА</span><p></p><div class="disaster-meta"><span class="capacity"></span><span class="bunker-chance">Прогноз выживания бункера: <strong id="bunkerChance">—</strong></span></div></div>
+                    <div id="disasterCard" class="disaster-card"><span class="eyebrow">КАТАСТРОФА</span><p></p><div class="disaster-meta"><span class="capacity"></span></div></div>
                     <section class="panel cards-panel">
                         <div class="lobby-heading"><h3>Мои карты</h3><span class="count">секретно</span></div>
                         <div id="myCards" class="my-cards"></div>

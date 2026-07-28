@@ -7,7 +7,7 @@ const { Server } = require("socket.io");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, { maxHttpBufferSize: 600_000 });
 
 app.use(express.json({ limit: "200kb" }));
 app.use(express.static("public"));
@@ -76,6 +76,8 @@ const DISASTERS = [
     "Токсичный туман накрыл континент, а еды в бункере хватит на 14 месяцев."
 ];
 const CONFIG_PATH = path.join(__dirname, "data", "game-config.json");
+const AVATAR_DIRECTORY = path.join(__dirname, "public", "uploads", "avatars");
+const MAX_AVATAR_BYTES = 350 * 1024;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "simik";
 const adminSessions = new Map();
 const DEFAULT_GAME_CONFIG = {
@@ -186,6 +188,21 @@ function saveGameConfig(config) {
     fs.writeFileSync(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
+function saveAvatar(dataUrl) {
+    if (!dataUrl) return null;
+    const match = String(dataUrl).match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
+    if (!match) throw new Error("Аватар должен быть изображением PNG, JPG или WebP.");
+    const image = Buffer.from(match[2], "base64");
+    if (!image.length || image.length > MAX_AVATAR_BYTES) {
+        throw new Error("Аватар должен быть не больше 350 КБ.");
+    }
+    const extension = match[1] === "jpeg" ? "jpg" : match[1];
+    const filename = `${crypto.randomBytes(16).toString("hex")}.${extension}`;
+    fs.mkdirSync(AVATAR_DIRECTORY, { recursive: true });
+    fs.writeFileSync(path.join(AVATAR_DIRECTORY, filename), image);
+    return `/uploads/avatars/${filename}`;
+}
+
 let gameConfig = loadGameConfig();
 
 function getAdminToken(request) {
@@ -266,6 +283,12 @@ function activePlayers(room) {
     return room.players.filter((player) => !player.left && !room.eliminated.includes(player.id));
 }
 
+function revealRoundsFor(playerCount, categoryCount) {
+    const hiddenCards = Math.min(3, Math.max(1, categoryCount - 1));
+    const maximumRounds = Math.max(1, categoryCount - hiddenCards);
+    return Math.min(maximumRounds, Math.max(1, 1 + Math.ceil(playerCount / 3)));
+}
+
 const ACTION_DURATION_MS = 60_000;
 
 function currentTurnPlayerId(room) {
@@ -314,6 +337,7 @@ function publicState(room) {
         phase: room.phase,
         disaster: room.disaster,
         round: room.round + 1,
+        revealRounds: room.revealRounds || Math.max(1, room.traitOrder?.length || 1),
         currentTrait,
         categoryOrder: room.traitOrder || gameConfig.categories.map((category) => category.id),
         categoryNames: room.categoryNames || Object.fromEntries(gameConfig.categories.map((category) => [category.id, category.name])),
@@ -325,10 +349,11 @@ function publicState(room) {
         turnDeadline: room.turnDeadline || null,
         voteDeadline: room.voteDeadline || null,
         votedPlayerIds: Object.keys(room.votes || {}),
-        bunkerSurvivalChance: calculateBunkerSurvivalChance(room),
+        bunkerSurvivalChance: room.phase === "finished" ? calculateBunkerSurvivalChance(room) : null,
         players: room.players.map((player) => ({
             id: player.id,
             nickname: player.nickname,
+            avatarUrl: player.avatarUrl || null,
             left: Boolean(player.left),
             eliminated: room.eliminated.includes(player.id),
             revealed: room.revealed[player.id] || {}
@@ -425,8 +450,8 @@ function advanceRevealTurn(room, timedOut = false) {
 
 function startNextRound(room) {
     if (activePlayers(room).length <= room.capacity) return endGame(room);
-    if (room.round >= room.traitOrder.length - 1) {
-        io.to(room.code).emit("allCardsRevealed");
+    if (room.round >= room.revealRounds - 1) {
+        io.to(room.code).emit("revealLimitReached");
         openVoting(room);
         return;
     }
@@ -496,16 +521,23 @@ function markPlayerLeft(room, playerId) {
 }
 
 io.on("connection", (socket) => {
-    socket.on("createRoom", (rawNickname) => {
-        const nickname = cleanNickname(rawNickname);
+    socket.on("createRoom", (rawPayload = {}) => {
+        const payload = typeof rawPayload === "string" ? { nickname: rawPayload } : rawPayload || {};
+        const nickname = cleanNickname(payload.nickname);
         if (!nickname) return emitError(socket, "Введите никнейм.");
         if (roomFor(socket)) return emitError(socket, "Вы уже состоите в комнате.");
+        let avatarUrl;
+        try {
+            avatarUrl = saveAvatar(payload.avatarData);
+        } catch (error) {
+            return emitError(socket, error.message);
+        }
 
         const code = generateCode();
         rooms[code] = {
             code,
             host: socket.id,
-            players: [{ id: socket.id, nickname, left: false }],
+            players: [{ id: socket.id, nickname, avatarUrl, left: false }],
             phase: "lobby",
             capacity: 0,
             round: 0,
@@ -529,7 +561,7 @@ io.on("connection", (socket) => {
         emitRoom(rooms[code]);
     });
 
-    socket.on("joinRoom", ({ roomCode, nickname: rawNickname } = {}) => {
+    socket.on("joinRoom", ({ roomCode, nickname: rawNickname, avatarData } = {}) => {
         const code = String(roomCode || "").trim().toUpperCase();
         const nickname = cleanNickname(rawNickname);
         const room = rooms[code];
@@ -541,7 +573,13 @@ io.on("connection", (socket) => {
         if (room.players.some((player) => !player.left && player.nickname.toLocaleLowerCase("ru") === nickname.toLocaleLowerCase("ru"))) {
             return emitError(socket, "Такой никнейм уже занят.");
         }
-        room.players.push({ id: socket.id, nickname, left: false });
+        let avatarUrl;
+        try {
+            avatarUrl = saveAvatar(avatarData);
+        } catch (error) {
+            return emitError(socket, error.message);
+        }
+        room.players.push({ id: socket.id, nickname, avatarUrl, left: false });
         socket.join(code);
         socket.emit("roomEntered", { code });
         emitRoom(room);
@@ -555,6 +593,7 @@ io.on("connection", (socket) => {
         room.phase = "reveal";
         room.capacity = Math.ceil(activePlayers(room).length / 2);
         room.traitOrder = gameConfig.categories.map((category) => category.id);
+        room.revealRounds = revealRoundsFor(activePlayers(room).length, room.traitOrder.length);
         room.categoryNames = Object.fromEntries(gameConfig.categories.map((category) => [category.id, category.name]));
         room.cardScores = Object.fromEntries(gameConfig.categories.map((category) => [
             category.id,
