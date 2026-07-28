@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101716">
+    <title>Бункер — игра для друзей</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <main class="app-shell">
+        <section id="menu" class="panel menu-panel">
+            <p class="eyebrow">ИГРА ДЛЯ СИМИКОВ И МИМИКОВ</p>
+            <h1>Кто попадет на выплаты, а кто на парашу?<br></h1>
+            <label class="field-label" for="nickname">Ваш никнейм</label>
+            <input id="nickname" maxlength="18" autocomplete="nickname" placeholder="Например, Мираи">
+            <button id="createRoom" class="button primary">Создать комнату</button>
+            <div class="or"><span>или</span></div>
+            <div class="join-row">
+                <input id="roomCode" maxlength="4" autocomplete="off" placeholder="КОД">
+                <button id="joinRoom" class="button secondary">Войти</button>
+            </div>
+        </section>
+
+        <section id="lobby" class="panel hidden">
+            <div class="panel-topline"><p class="eyebrow">КОМНАТА</p><button id="leaveLobby" class="text-button">Выйти</button></div>
+            <div class="room-code"><span id="roomTitle"></span><button id="copyCode" class="copy-button" title="Скопировать код">⧉</button></div>
+            <p id="hostNote" class="hint"></p>
+            <div class="lobby-heading"><h2>Игроки</h2><span id="playerCount" class="count"></span></div>
+            <div id="players" class="players-list"></div>
+            <button id="startGame" class="button primary">Начать игру</button>
+            <p id="startHint" class="hint centered"></p>
+        </section>
+
+        <section id="game" class="game-view hidden">
+            <div class="game-header">
+                <div><p class="eyebrow">Бункер · <span id="gameCode"></span></p><h2 id="phaseTitle">Подготовка</h2></div>
+                <div class="game-actions"><button id="soundToggle" class="sound-button" type="button" aria-pressed="true">🔊 Звук</button><button id="leaveGame" class="text-button">Покинуть</button></div>
+            </div>
+            <div class="game-layout">
+                <section class="panel round-panel">
+                    <p id="roundLabel" class="eyebrow"></p>
+                    <div id="actionTimer" class="action-timer hidden" aria-live="polite"></div>
+                    <h3 id="roundTitle"></h3>
+                    <p id="roundDescription" class="hint"></p>
+                    <button id="revealButton" class="button primary">Раскрыть карту</button>
+                    <p id="actionHint" class="hint centered"></p>
+                </section>
+                <div class="game-main">
+                    <div id="disasterCard" class="disaster-card"><span class="eyebrow">КАТАСТРОФА</span><p></p><div class="disaster-meta"><span class="capacity"></span><span class="bunker-chance">Прогноз выживания бункера: <strong id="bunkerChance">—</strong></span></div></div>
+                    <section class="panel cards-panel">
+                        <div class="lobby-heading"><h3>Мои карты</h3><span class="count">секретно</span></div>
+                        <div id="myCards" class="my-cards"></div>
+                    </section>
+                </div>
+                <section class="panel players-panel">
+                    <div class="lobby-heading"><h3>Участники</h3><span id="survivorCount" class="count"></span></div>
+                    <div id="gamePlayers" class="game-players"></div>
+                </section>
+            </div>
+        </section>
+    </main>
+
+    <div id="toast" class="toast" role="status"></div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
