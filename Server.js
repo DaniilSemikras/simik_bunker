@@ -80,6 +80,8 @@ const BUILT_IN_AVATAR_DIRECTORY = path.join(__dirname, "public", "assets", "avat
 const AVATAR_DIRECTORY = path.join(__dirname, "public", "uploads", "avatars");
 const MAX_AVATAR_BYTES = 350 * 1024;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "simik";
+const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "");
+const SUPABASE_SECRET_KEY = String(process.env.SUPABASE_SECRET_KEY || "").trim();
 const adminSessions = new Map();
 const DEFAULT_GAME_CONFIG = {
     categories: [{
@@ -183,9 +185,63 @@ function loadGameConfig() {
     return clone(DEFAULT_GAME_CONFIG);
 }
 
-function saveGameConfig(config) {
+function saveGameConfigFile(config) {
     fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
     fs.writeFileSync(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+}
+
+function usesSupabaseConfig() {
+    return Boolean(SUPABASE_URL && SUPABASE_SECRET_KEY);
+}
+
+function supabaseHeaders(extra = {}) {
+    return {
+        apikey: SUPABASE_SECRET_KEY,
+        authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
+        ...extra
+    };
+}
+
+async function readSupabaseConfig() {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/bunker_config?select=config&id=eq.1`, {
+        headers: supabaseHeaders()
+    });
+    if (!response.ok) throw new Error(`Supabase вернул ${response.status}.`);
+    const records = await response.json();
+    return records[0]?.config || null;
+}
+
+async function writeSupabaseConfig(config) {
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/bunker_config?on_conflict=id`, {
+        method: "POST",
+        headers: supabaseHeaders({
+            "Content-Type": "application/json",
+            Prefer: "resolution=merge-duplicates,return=minimal"
+        }),
+        body: JSON.stringify({ id: 1, config, updated_at: new Date().toISOString() })
+    });
+    if (!response.ok) throw new Error(`Supabase вернул ${response.status}.`);
+}
+
+async function saveGameConfig(config) {
+    if (usesSupabaseConfig()) await writeSupabaseConfig(config);
+    saveGameConfigFile(config);
+}
+
+async function initializeGameConfig() {
+    if (!usesSupabaseConfig()) return;
+    try {
+        const storedConfig = await readSupabaseConfig();
+        if (storedConfig) {
+            gameConfig = normalizeGameConfig(storedConfig);
+            console.log("Настройки игры загружены из Supabase.");
+        } else {
+            await writeSupabaseConfig(gameConfig);
+            console.log("Базовые настройки игры сохранены в Supabase.");
+        }
+    } catch (error) {
+        console.warn("Не удалось подключить настройки Supabase, используется запасной конфиг.", error.message);
+    }
 }
 
 function saveAvatarToPool(dataUrl) {
@@ -263,10 +319,10 @@ app.post("/api/admin/login", (request, response) => {
 
 app.get("/api/admin/config", requireAdmin, (_request, response) => response.json(gameConfig));
 
-app.put("/api/admin/config", requireAdmin, (request, response) => {
+app.put("/api/admin/config", requireAdmin, async (request, response) => {
     try {
         const nextConfig = normalizeGameConfig(request.body);
-        saveGameConfig(nextConfig);
+        await saveGameConfig(nextConfig);
         gameConfig = nextConfig;
         response.json(gameConfig);
     } catch (error) {
@@ -751,9 +807,11 @@ io.on("connection", (socket) => {
     });
 });
 
-server.listen(process.env.PORT || 3000, () => {
-    console.log(`Bunker started on http://localhost:${process.env.PORT || 3000}`);
-    if (!process.env.ADMIN_PASSWORD) {
-        console.warn("Админка использует временный пароль simik. Перед публикацией задайте ADMIN_PASSWORD.");
-    }
+initializeGameConfig().finally(() => {
+    server.listen(process.env.PORT || 3000, () => {
+        console.log(`Bunker started on http://localhost:${process.env.PORT || 3000}`);
+        if (!process.env.ADMIN_PASSWORD) {
+            console.warn("Админка использует временный пароль simik. Перед публикацией задайте ADMIN_PASSWORD.");
+        }
+    });
 });
