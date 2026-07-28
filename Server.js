@@ -83,6 +83,7 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "simik";
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "");
 const SUPABASE_SECRET_KEY = String(process.env.SUPABASE_SECRET_KEY || "").trim();
 const adminSessions = new Map();
+const ADMIN_ROOM = "admin-editors";
 const DEFAULT_GAME_CONFIG = {
     categories: [{
         id: "profession",
@@ -96,7 +97,8 @@ const DEFAULT_GAME_CONFIG = {
         ]
     }],
     disasters: DISASTERS,
-    hiddenAvatars: []
+    hiddenAvatars: [],
+    revision: 0
 };
 
 function clone(value) {
@@ -178,7 +180,9 @@ function normalizeGameConfig(rawConfig) {
             .filter((url) => /^\/assets\/avatars\/[a-zA-Z0-9_-]+\.(png|jpg|jpeg|webp)$/i.test(url))
     )];
 
-    return { categories: otherCategories, disasters, hiddenAvatars };
+    const rawRevision = Number(rawConfig?.revision);
+    const revision = Number.isSafeInteger(rawRevision) && rawRevision >= 0 ? rawRevision : 0;
+    return { categories: otherCategories, disasters, hiddenAvatars, revision };
 }
 
 function loadGameConfig() {
@@ -311,15 +315,30 @@ function chooseAvatar(room) {
 
 let gameConfig = loadGameConfig();
 
+function hasActiveAdminSession(token) {
+    const expiry = adminSessions.get(token);
+    if (!expiry || expiry < Date.now()) {
+        adminSessions.delete(token);
+        return false;
+    }
+    return true;
+}
+
+function broadcastAdminConfig() {
+    io.to(ADMIN_ROOM).emit("admin:config-updated", { config: gameConfig });
+}
+
+function broadcastAdminAvatars() {
+    io.to(ADMIN_ROOM).emit("admin:avatars-updated", avatarLibraryResponse());
+}
+
 function getAdminToken(request) {
     const authorization = request.get("authorization") || "";
     return authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
 }
 
 function requireAdmin(request, response, next) {
-    const expiry = adminSessions.get(getAdminToken(request));
-    if (!expiry || expiry < Date.now()) {
-        adminSessions.delete(getAdminToken(request));
+    if (!hasActiveAdminSession(getAdminToken(request))) {
         return response.status(401).json({ message: "Нужна авторизация администратора." });
     }
     next();
@@ -340,9 +359,18 @@ app.get("/api/admin/config", requireAdmin, (_request, response) => response.json
 
 app.put("/api/admin/config", requireAdmin, async (request, response) => {
     try {
+        const expectedRevision = Number(request.body?.revision);
+        if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== gameConfig.revision) {
+            return response.status(409).json({
+                message: "Настройки уже изменил другой администратор. Обновите данные перед сохранением.",
+                config: gameConfig
+            });
+        }
         const nextConfig = normalizeGameConfig(request.body);
+        nextConfig.revision = gameConfig.revision + 1;
         await saveGameConfig(nextConfig);
         gameConfig = nextConfig;
+        broadcastAdminConfig();
         response.json(gameConfig);
     } catch (error) {
         response.status(400).json({ message: error.message || "Не удалось сохранить настройки." });
@@ -357,7 +385,9 @@ app.post("/api/admin/avatars", requireAdmin, (request, response) => {
     try {
         const url = saveAvatarToPool(request.body?.imageData);
         if (!url) throw new Error("Выберите изображение для аватара.");
-        response.status(201).json({ url, ...avatarLibraryResponse() });
+        const library = { url, ...avatarLibraryResponse() };
+        broadcastAdminAvatars();
+        response.status(201).json(library);
     } catch (error) {
         response.status(400).json({ message: error.message || "Не удалось загрузить аватар." });
     }
@@ -377,9 +407,11 @@ app.put("/api/admin/avatars/visibility", requireAdmin, async (request, response)
         else hidden.delete(url);
         nextConfig.hiddenAvatars = [...hidden];
         const normalizedConfig = normalizeGameConfig(nextConfig);
+        normalizedConfig.revision = gameConfig.revision + 1;
         await saveGameConfig(normalizedConfig);
         gameConfig = normalizedConfig;
-        response.json(avatarLibraryResponse());
+        broadcastAdminConfig();
+        response.json({ ...avatarLibraryResponse(), revision: gameConfig.revision });
     } catch (error) {
         response.status(400).json({ message: error.message || "Не удалось обновить набор аватаров." });
     }
@@ -391,7 +423,9 @@ app.delete("/api/admin/avatars/:filename", requireAdmin, (request, response) => 
     const target = path.join(AVATAR_DIRECTORY, filename);
     if (!fs.existsSync(target)) return response.status(404).json({ message: "Аватар не найден." });
     fs.unlinkSync(target);
-    response.json(avatarLibraryResponse());
+    const library = avatarLibraryResponse();
+    broadcastAdminAvatars();
+    response.json(library);
 });
 
 function randomItem(items) {
@@ -716,6 +750,13 @@ function markPlayerLeft(room, playerId) {
 }
 
 io.on("connection", (socket) => {
+    socket.on("admin:subscribe", (payload = {}) => {
+        const token = String(payload?.token || "");
+        if (!hasActiveAdminSession(token)) return socket.emit("admin:unauthorized");
+        socket.join(ADMIN_ROOM);
+        socket.emit("admin:ready", { revision: gameConfig.revision });
+    });
+
     socket.on("createRoom", (rawPayload = {}) => {
         const payload = typeof rawPayload === "string" ? { nickname: rawPayload } : rawPayload || {};
         const nickname = cleanNickname(payload.nickname);

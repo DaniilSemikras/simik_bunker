@@ -3,6 +3,9 @@ const TOKEN_KEY = "bunker-admin-token";
 let config = null;
 let avatars = [];
 let hiddenAvatars = [];
+let adminSocket = null;
+let isDirty = false;
+let pendingRemoteConfig = null;
 
 function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]);
@@ -10,6 +13,41 @@ function escapeHtml(value) {
 
 function token() {
     return localStorage.getItem(TOKEN_KEY) || "";
+}
+
+function markDirty() {
+    isDirty = true;
+}
+
+function applyRemoteConfig(nextConfig) {
+    if (!nextConfig || !config || Number(nextConfig.revision) <= Number(config.revision)) return;
+    if (isDirty) {
+        pendingRemoteConfig = nextConfig;
+        $("#reloadLatest").classList.remove("hidden");
+        showMessage("#saveMessage", "Другой администратор сохранил изменения. Ваш черновик оставлен на экране и не будет перезаписан.", "error");
+        return;
+    }
+    config = nextConfig;
+    hiddenAvatars = config.hiddenAvatars || hiddenAvatars;
+    renderCategories();
+    renderDisasters();
+    renderAvatarLibrary();
+    showMessage("#saveMessage", "Настройки обновлены другим администратором.", "success");
+}
+
+function connectAdminSocket() {
+    if (typeof window.io !== "function" || !token()) return;
+    adminSocket?.disconnect();
+    adminSocket = window.io();
+    adminSocket.on("connect", () => adminSocket.emit("admin:subscribe", { token: token() }));
+    adminSocket.on("admin:config-updated", ({ config: nextConfig } = {}) => applyRemoteConfig(nextConfig));
+    adminSocket.on("admin:avatars-updated", (library = {}) => {
+        if (!Array.isArray(library.avatars)) return;
+        avatars = library.avatars;
+        hiddenAvatars = library.hiddenAvatars || hiddenAvatars;
+        renderAvatarLibrary();
+    });
+    adminSocket.on("admin:unauthorized", () => showMessage("#saveMessage", "Сессия администратора истекла. Войдите заново.", "error"));
 }
 
 function showMessage(selector, message, type = "") {
@@ -23,7 +61,12 @@ async function request(url, options = {}) {
     if (token()) headers.Authorization = `Bearer ${token()}`;
     const response = await fetch(url, { ...options, headers });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.message || "Не удалось выполнить запрос.");
+    if (!response.ok) {
+        const error = new Error(body.message || "Не удалось выполнить запрос.");
+        error.status = response.status;
+        error.payload = body;
+        throw error;
+    }
     return body;
 }
 
@@ -99,6 +142,7 @@ function makeCategory() {
         name: "Новая категория",
         options: [{ value: "Первый вариант", score: 50, chance: 50 }, { value: "Второй вариант", score: 50, chance: 50 }]
     });
+    markDirty();
     renderCategories();
 }
 
@@ -113,7 +157,7 @@ function collectConfig() {
         }))
     }));
     const disasters = [...document.querySelectorAll(".disaster-value")].map((input) => input.value);
-    return { categories, disasters, hiddenAvatars };
+    return { categories, disasters, hiddenAvatars, revision: config.revision };
 }
 
 async function loadEditor() {
@@ -124,9 +168,13 @@ async function loadEditor() {
     renderCategories();
     renderDisasters();
     renderAvatarLibrary();
+    isDirty = false;
+    pendingRemoteConfig = null;
+    $("#reloadLatest").classList.add("hidden");
     $("#loginView").classList.add("hidden");
     $("#editorView").classList.remove("hidden");
     $("#logout").classList.remove("hidden");
+    connectAdminSocket();
 }
 
 $("#login").addEventListener("click", async () => {
@@ -149,6 +197,7 @@ $("#password").addEventListener("keydown", (event) => { if (event.key === "Enter
 $("#addCategory").addEventListener("click", makeCategory);
 $("#addDisaster").addEventListener("click", () => {
     config.disasters.push("Новый сценарий катастрофы.");
+    markDirty();
     renderDisasters();
 });
 $("#adminAvatarFile").addEventListener("change", async (event) => {
@@ -194,27 +243,33 @@ $("#categories").addEventListener("click", (event) => {
     const category = config.categories.find((item) => item.id === card.dataset.id);
     if (event.target.closest(".remove")) {
         config.categories = config.categories.filter((item) => item.id !== card.dataset.id);
+        markDirty();
         renderCategories();
         return;
     }
     if (event.target.closest(".add-option")) {
         category.options.push({ value: "Новый вариант", score: 50, chance: 0 });
+        markDirty();
         renderCategories();
         return;
     }
     const removeOption = event.target.closest(".remove-option");
     if (removeOption) {
         category.options.splice(Number(removeOption.dataset.optionIndex), 1);
+        markDirty();
         renderCategories();
     }
 });
 $("#categories").addEventListener("input", (event) => {
+    markDirty();
     if (event.target.matches(".option-chance-input")) updateDistributionTotals();
 });
+$("#disasterOptions").addEventListener("input", markDirty);
 $("#disasterOptions").addEventListener("click", (event) => {
     const button = event.target.closest(".remove-disaster");
     if (!button) return;
     config.disasters.splice(Number(button.dataset.disasterIndex), 1);
+    markDirty();
     renderDisasters();
 });
 $("#avatarLibrary").addEventListener("click", async (event) => {
@@ -231,6 +286,14 @@ $("#avatarLibrary").addEventListener("click", async (event) => {
             });
             avatars = response.avatars;
             hiddenAvatars = response.hiddenAvatars || [];
+            if (config && Number.isSafeInteger(response.revision)) {
+                config.hiddenAvatars = hiddenAvatars;
+                config.revision = response.revision;
+                if (pendingRemoteConfig?.revision === response.revision) {
+                    pendingRemoteConfig = null;
+                    $("#reloadLatest").classList.add("hidden");
+                }
+            }
             renderAvatarLibrary();
             showMessage("#saveMessage", toggleButton.dataset.nextHidden === "true" ? "Аватар убран из случайного набора." : "Аватар снова в наборе.", "success");
         } catch (error) {
@@ -252,21 +315,48 @@ $("#avatarLibrary").addEventListener("click", async (event) => {
 });
 $("#save").addEventListener("click", async () => {
     try {
+        const nextConfig = collectConfig();
         config = await request("/api/admin/config", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(collectConfig())
+            body: JSON.stringify(nextConfig)
         });
+        hiddenAvatars = config.hiddenAvatars || hiddenAvatars;
+        isDirty = false;
+        pendingRemoteConfig = null;
+        $("#reloadLatest").classList.add("hidden");
         renderCategories();
         renderDisasters();
         showMessage("#saveMessage", "Настройки сохранены.", "success");
     } catch (error) {
+        if (error.status === 409 && error.payload?.config) {
+            pendingRemoteConfig = error.payload.config;
+            $("#reloadLatest").classList.remove("hidden");
+            showMessage("#saveMessage", "Другой администратор уже сохранил новую версию. Ваши изменения остались на экране — загрузите свежую версию и внесите их повторно.", "error");
+            return;
+        }
         showMessage("#saveMessage", error.message, "error");
     }
 });
+$("#reloadLatest").addEventListener("click", () => {
+    if (!pendingRemoteConfig) return;
+    config = pendingRemoteConfig;
+    hiddenAvatars = config.hiddenAvatars || hiddenAvatars;
+    pendingRemoteConfig = null;
+    isDirty = false;
+    $("#reloadLatest").classList.add("hidden");
+    renderCategories();
+    renderDisasters();
+    renderAvatarLibrary();
+    showMessage("#saveMessage", "Загружена последняя сохранённая версия.", "success");
+});
 $("#logout").addEventListener("click", () => {
+    adminSocket?.disconnect();
+    adminSocket = null;
     localStorage.removeItem(TOKEN_KEY);
     config = null;
+    isDirty = false;
+    pendingRemoteConfig = null;
     $("#editorView").classList.add("hidden");
     $("#loginView").classList.remove("hidden");
     $("#logout").classList.add("hidden");

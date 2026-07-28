@@ -47,9 +47,10 @@
                 <div id="avatarLibrary" class="avatar-library-grid"></div>
             </section>
 
-            <div class="save-bar"><p id="saveMessage" class="message" role="status"></p><button id="save" class="primary">Сохранить настройки</button></div>
+            <div class="save-bar"><p id="saveMessage" class="message" role="status"></p><button id="reloadLatest" class="secondary hidden" type="button">Загрузить свежую версию</button><button id="save" class="primary">Сохранить настройки</button></div>
         </section>
     </main>
+    <script src="/socket.io/socket.io.js"></script>
     <script src="admin.js"></script>
 </body>
 </html>
