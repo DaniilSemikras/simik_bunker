@@ -17,8 +17,8 @@
             <div class="avatar-setup">
                 <span class="field-label">Аватар — по желанию</span>
                 <div class="avatar-choice">
-                    <div class="avatar-preview"><span id="avatarInitial" class="avatar">?</span><img id="avatarPreviewImage" class="avatar avatar-image hidden" alt="Предпросмотр аватара"></div>
-                    <div><input id="avatarFile" type="file" accept="image/png,image/jpeg,image/webp" class="hidden"><label for="avatarFile" class="avatar-upload">Загрузить фото</label><button id="clearAvatar" class="text-button" type="button">Без аватара</button><p id="avatarHint" class="hint">Если не загружать фото, будет первая буква ника.</p></div>
+                    <div class="avatar-preview"><span id="avatarInitial" class="avatar">?</span><span id="avatarRandom" class="avatar hidden">✦</span></div>
+                    <div><button id="toggleAvatar" class="avatar-toggle" type="button" aria-pressed="false">Использовать аватар из набора</button><p id="avatarHint" class="hint">Если не выбирать аватар, будет первая буква ника.</p></div>
                 </div>
             </div>
             <button id="createRoom" class="button primary">Создать комнату</button>

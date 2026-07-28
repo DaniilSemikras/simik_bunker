@@ -9,7 +9,7 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 600_000 });
 
-app.use(express.json({ limit: "200kb" }));
+app.use(express.json({ limit: "600kb" }));
 app.use(express.static("public"));
 
 const rooms = Object.create(null);
@@ -188,7 +188,7 @@ function saveGameConfig(config) {
     fs.writeFileSync(CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
-function saveAvatar(dataUrl) {
+function saveAvatarToPool(dataUrl) {
     if (!dataUrl) return null;
     const match = String(dataUrl).match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
     if (!match) throw new Error("Аватар должен быть изображением PNG, JPG или WebP.");
@@ -201,6 +201,26 @@ function saveAvatar(dataUrl) {
     fs.mkdirSync(AVATAR_DIRECTORY, { recursive: true });
     fs.writeFileSync(path.join(AVATAR_DIRECTORY, filename), image);
     return `/uploads/avatars/${filename}`;
+}
+
+function isAvatarFilename(filename) {
+    return /^[a-f0-9]{32}\.(png|jpg|webp)$/i.test(filename);
+}
+
+function listAvatarUrls() {
+    if (!fs.existsSync(AVATAR_DIRECTORY)) return [];
+    return fs.readdirSync(AVATAR_DIRECTORY)
+        .filter(isAvatarFilename)
+        .sort()
+        .map((filename) => `/uploads/avatars/${filename}`);
+}
+
+function chooseAvatar(room) {
+    const avatars = listAvatarUrls();
+    if (!avatars.length) return null;
+    const used = new Set(room?.players.map((player) => player.avatarUrl).filter(Boolean) || []);
+    const available = avatars.filter((avatar) => !used.has(avatar));
+    return randomItem(available.length ? available : avatars);
 }
 
 let gameConfig = loadGameConfig();
@@ -241,6 +261,29 @@ app.put("/api/admin/config", requireAdmin, (request, response) => {
     } catch (error) {
         response.status(400).json({ message: error.message || "Не удалось сохранить настройки." });
     }
+});
+
+app.get("/api/admin/avatars", requireAdmin, (_request, response) => {
+    response.json({ avatars: listAvatarUrls() });
+});
+
+app.post("/api/admin/avatars", requireAdmin, (request, response) => {
+    try {
+        const url = saveAvatarToPool(request.body?.imageData);
+        if (!url) throw new Error("Выберите изображение для аватара.");
+        response.status(201).json({ url, avatars: listAvatarUrls() });
+    } catch (error) {
+        response.status(400).json({ message: error.message || "Не удалось загрузить аватар." });
+    }
+});
+
+app.delete("/api/admin/avatars/:filename", requireAdmin, (request, response) => {
+    const filename = String(request.params.filename || "");
+    if (!isAvatarFilename(filename)) return response.status(404).json({ message: "Аватар не найден." });
+    const target = path.join(AVATAR_DIRECTORY, filename);
+    if (!fs.existsSync(target)) return response.status(404).json({ message: "Аватар не найден." });
+    fs.unlinkSync(target);
+    response.json({ avatars: listAvatarUrls() });
 });
 
 function randomItem(items) {
@@ -526,18 +569,12 @@ io.on("connection", (socket) => {
         const nickname = cleanNickname(payload.nickname);
         if (!nickname) return emitError(socket, "Введите никнейм.");
         if (roomFor(socket)) return emitError(socket, "Вы уже состоите в комнате.");
-        let avatarUrl;
-        try {
-            avatarUrl = saveAvatar(payload.avatarData);
-        } catch (error) {
-            return emitError(socket, error.message);
-        }
 
         const code = generateCode();
         rooms[code] = {
             code,
             host: socket.id,
-            players: [{ id: socket.id, nickname, avatarUrl, left: false }],
+            players: [{ id: socket.id, nickname, avatarUrl: payload.wantsAvatar ? chooseAvatar() : null, left: false }],
             phase: "lobby",
             capacity: 0,
             round: 0,
@@ -561,7 +598,7 @@ io.on("connection", (socket) => {
         emitRoom(rooms[code]);
     });
 
-    socket.on("joinRoom", ({ roomCode, nickname: rawNickname, avatarData } = {}) => {
+    socket.on("joinRoom", ({ roomCode, nickname: rawNickname, wantsAvatar } = {}) => {
         const code = String(roomCode || "").trim().toUpperCase();
         const nickname = cleanNickname(rawNickname);
         const room = rooms[code];
@@ -573,13 +610,7 @@ io.on("connection", (socket) => {
         if (room.players.some((player) => !player.left && player.nickname.toLocaleLowerCase("ru") === nickname.toLocaleLowerCase("ru"))) {
             return emitError(socket, "Такой никнейм уже занят.");
         }
-        let avatarUrl;
-        try {
-            avatarUrl = saveAvatar(avatarData);
-        } catch (error) {
-            return emitError(socket, error.message);
-        }
-        room.players.push({ id: socket.id, nickname, avatarUrl, left: false });
+        room.players.push({ id: socket.id, nickname, avatarUrl: wantsAvatar ? chooseAvatar(room) : null, left: false });
         socket.join(code);
         socket.emit("roomEntered", { code });
         emitRoom(room);

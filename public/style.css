@@ -21,7 +21,8 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .avatar-choice { display:flex; align-items:center; gap:12px; min-height:54px; }
 .avatar-preview { flex:0 0 52px; width:52px; height:52px; }
 .avatar-preview .avatar { width:52px; height:52px; flex-basis:52px; font-size:19px; }
-.avatar-upload { display:inline-block; margin-right:10px; border:1px solid var(--line); border-radius:8px; padding:8px 10px; color:#f5d6a5; background:var(--panel-2); font-size:12px; font-weight:750; cursor:pointer; }
+.avatar-toggle { border:1px solid var(--line); border-radius:8px; padding:8px 10px; color:#f5d6a5; background:var(--panel-2); font-size:12px; font-weight:750; }
+.avatar-toggle[aria-pressed="true"] { border-color:rgba(241,168,78,.65); color:#25170b; background:var(--accent); }
 .avatar-choice .hint { margin:6px 0 0; font-size:11px; }
 .button { border:0; border-radius:10px; padding:13px 18px; font-weight:750; transition:transform .15s, filter .15s; }
 .button:hover { transform:translateY(-1px); filter:brightness(1.06); }

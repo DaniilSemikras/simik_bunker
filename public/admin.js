@@ -1,6 +1,7 @@
 const $ = (selector) => document.querySelector(selector);
 const TOKEN_KEY = "bunker-admin-token";
 let config = null;
+let avatars = [];
 
 function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]);
@@ -68,6 +69,24 @@ function renderDisasters() {
     `).join("");
 }
 
+function renderAvatarLibrary() {
+    $("#avatarLibrary").innerHTML = avatars.length
+        ? avatars.map((url) => {
+            const filename = url.split("/").pop();
+            return `<article class="library-avatar"><img src="${escapeHtml(url)}" alt="Аватар из набора"><button class="remove-library-avatar" type="button" data-avatar-file="${escapeHtml(filename)}" aria-label="Удалить аватар">×</button></article>`;
+        }).join("")
+        : '<p class="avatar-library-empty">Пока нет аватаров. Игроки без выбора будут отображаться с первой буквой ника.</p>';
+}
+
+function readImage(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Не удалось прочитать изображение."));
+        reader.readAsDataURL(file);
+    });
+}
+
 function makeCategory() {
     config.categories.push({
         id: `custom_${Date.now()}`,
@@ -92,9 +111,12 @@ function collectConfig() {
 }
 
 async function loadEditor() {
-    config = await request("/api/admin/config");
+    const [nextConfig, avatarResponse] = await Promise.all([request("/api/admin/config"), request("/api/admin/avatars")]);
+    config = nextConfig;
+    avatars = avatarResponse.avatars;
     renderCategories();
     renderDisasters();
+    renderAvatarLibrary();
     $("#loginView").classList.add("hidden");
     $("#editorView").classList.remove("hidden");
     $("#logout").classList.remove("hidden");
@@ -121,6 +143,28 @@ $("#addCategory").addEventListener("click", makeCategory);
 $("#addDisaster").addEventListener("click", () => {
     config.disasters.push("Новый сценарий катастрофы.");
     renderDisasters();
+});
+$("#adminAvatarFile").addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 350 * 1024) {
+        showMessage("#saveMessage", "Выберите PNG, JPG или WebP размером до 350 КБ.", "error");
+        return;
+    }
+    try {
+        const imageData = await readImage(file);
+        const response = await request("/api/admin/avatars", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ imageData })
+        });
+        avatars = response.avatars;
+        renderAvatarLibrary();
+        showMessage("#saveMessage", "Аватар загружен в набор.", "success");
+    } catch (error) {
+        showMessage("#saveMessage", error.message, "error");
+    }
 });
 $("#categories").addEventListener("click", (event) => {
     const card = event.target.closest(".category-card");
@@ -150,6 +194,18 @@ $("#disasterOptions").addEventListener("click", (event) => {
     if (!button) return;
     config.disasters.splice(Number(button.dataset.disasterIndex), 1);
     renderDisasters();
+});
+$("#avatarLibrary").addEventListener("click", async (event) => {
+    const button = event.target.closest(".remove-library-avatar");
+    if (!button) return;
+    try {
+        const response = await request(`/api/admin/avatars/${encodeURIComponent(button.dataset.avatarFile)}`, { method: "DELETE" });
+        avatars = response.avatars;
+        renderAvatarLibrary();
+        showMessage("#saveMessage", "Аватар удалён из набора.", "success");
+    } catch (error) {
+        showMessage("#saveMessage", error.message, "error");
+    }
 });
 $("#save").addEventListener("click", async () => {
     try {

@@ -19,7 +19,7 @@ let countdownTimer;
 let audioContext;
 let soundsEnabled = localStorage.getItem("bunker-sounds") !== "off";
 let lastTurnSoundKey = "";
-let selectedAvatarData = null;
+let wantsAvatar = false;
 
 function show(screen) {
     ["#menu", "#lobby", "#game"].forEach((id) => $(id).classList.toggle("hidden", id !== screen));
@@ -121,16 +121,18 @@ function avatarMarkup(player) {
 
 function updateAvatarPreview() {
     const initial = $("#avatarInitial");
-    const image = $("#avatarPreviewImage");
+    const random = $("#avatarRandom");
+    const toggle = $("#toggleAvatar");
     initial.textContent = fallbackInitial();
-    initial.classList.toggle("hidden", Boolean(selectedAvatarData));
-    image.classList.toggle("hidden", !selectedAvatarData);
-    image.src = selectedAvatarData || "";
-    $("#avatarHint").textContent = selectedAvatarData ? "Аватар выбран. Его увидят остальные игроки." : "Если не загружать фото, будет первая буква ника.";
+    initial.classList.toggle("hidden", wantsAvatar);
+    random.classList.toggle("hidden", !wantsAvatar);
+    toggle.setAttribute("aria-pressed", String(wantsAvatar));
+    toggle.textContent = wantsAvatar ? "Аватар из набора: да" : "Использовать аватар из набора";
+    $("#avatarHint").textContent = wantsAvatar ? "Сервер случайно выдаст аватар из набора ведущего." : "Если не выбирать аватар, будет первая буква ника.";
 }
 
 function playerPayload() {
-    return { nickname: nickname(), avatarData: selectedAvatarData };
+    return { nickname: nickname(), wantsAvatar };
 }
 
 function updateLobby() {
@@ -224,21 +226,8 @@ $("#createRoom").addEventListener("click", () => socket.emit("createRoom", playe
 $("#joinRoom").addEventListener("click", () => socket.emit("joinRoom", { roomCode: $("#roomCode").value, ...playerPayload() }));
 $("#nickname").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#createRoom").click(); });
 $("#nickname").addEventListener("input", updateAvatarPreview);
-$("#avatarFile").addEventListener("change", (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 350 * 1024) {
-        event.target.value = "";
-        toast("Выберите PNG, JPG или WebP размером до 350 КБ.");
-        return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => { selectedAvatarData = String(reader.result || ""); updateAvatarPreview(); };
-    reader.readAsDataURL(file);
-});
-$("#clearAvatar").addEventListener("click", () => {
-    selectedAvatarData = null;
-    $("#avatarFile").value = "";
+$("#toggleAvatar").addEventListener("click", () => {
+    wantsAvatar = !wantsAvatar;
     updateAvatarPreview();
 });
 $("#roomCode").addEventListener("input", (event) => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
