@@ -175,16 +175,16 @@ function updateLobby() {
     $("#startGame").classList.toggle("hidden", !isHost());
     $("#startSoloTest").classList.toggle("hidden", !isHost() || playerTotal !== 1);
     $("#startHint").textContent = playerTotal === 1 && isHost()
-        ? "Можно протестировать игру: две карточки без голосования."
+        ? "В тесте можно раскрыть все карточки — без голосования."
         : playerTotal < 3
         ? "Для обычного старта нужно минимум 3 игрока."
         : isHost() ? "После старта половина игроков сможет остаться в бункере." : "";
 }
 
-function cardMarkup(trait, value, revealed, canChoose) {
+function cardMarkup(trait, value, revealed, canChoose, isRevealing = false) {
     const status = canChoose ? "раскрыть" : revealed ? "раскрыта" : "не раскрыта";
     const content = `<span>${escaped(traitName(trait))}</span><strong>${escaped(value)}</strong><em>${status}</em>`;
-    const classes = `my-card ${revealed ? "is-revealed" : ""} ${canChoose ? "is-choice" : ""}`;
+    const classes = `my-card ${revealed ? "is-revealed" : ""} ${canChoose ? "is-choice" : ""} ${isRevealing ? "is-revealing" : ""}`;
     return canChoose
         ? `<button type="button" class="${classes}" data-reveal-trait="${trait}">${content}</button>`
         : `<article class="${classes}">${content}</article>`;
@@ -224,9 +224,15 @@ function updateGame() {
     $("#actionHint").textContent = me?.eliminated ? "Вы исключены, но можете наблюдать за игрой." : isVoting && hasVoted ? "Ваш голос принят. Ждём остальных." : isVoting ? "Голосуйте до окончания таймера." : hasRevealedThisRound ? "Карта раскрыта. Ждём остальных." : isMyTurn && canChooseTrait ? "Ваш ход: нажмите на любую ещё нераскрытую карточку." : isMyTurn ? "Ваш ход: раскройте профессию." : turnPlayer ? `Сейчас ходит ${turnPlayer.nickname}.` : "";
 
     const cardOrder = room.categoryOrder?.length ? room.categoryOrder : Object.keys(myCards);
-    $("#myCards").innerHTML = cardOrder.filter((name) => name in myCards).map((name) => cardMarkup(name, myCards[name], Boolean(myRevealed[name]), canChooseTrait && !myRevealed[name])).join("");
+    $("#myCards").innerHTML = cardOrder.filter((name) => name in myCards).map((name) => cardMarkup(
+        name,
+        myCards[name],
+        Boolean(myRevealed[name]),
+        canChooseTrait && !myRevealed[name],
+        room.revealedThisRound?.[socket.id] === name
+    )).join("");
     $("#gamePlayers").innerHTML = room.players.map((player) => {
-        const playerCards = Object.entries(player.revealed || {}).map(([name, value]) => `<span class="public-card"><b>${escaped(traitName(name))}:</b> ${escaped(value)}</span>`).join("");
+        const playerCards = Object.entries(player.revealed || {}).map(([name, value]) => `<span class="public-card ${room.revealedThisRound?.[player.id] === name ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> ${escaped(value)}</span>`).join("");
         const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== socket.id;
         const playerState = player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
         const playerStatus = player.left ? "вышел" : player.eliminated ? "выбыл" : isFinished ? "в бункере" : "в игре";
@@ -335,6 +341,7 @@ socket.on("resumeFailed", () => {
 socket.on("yourCards", (cards) => { myCards = cards; if (room?.phase !== "lobby") updateGame(); });
 socket.on("gameStarted", () => { toast("Игра началась. Ваша карта — только для ваших глаз."); playSound("start"); });
 socket.on("roundStarted", () => { toast("Новый раунд: выберите карту, которую хотите раскрыть."); playSound("start"); });
+socket.on("cardRevealed", ({ playerId }) => { if (playerId !== socket.id) playSound("reveal"); });
 socket.on("votingStarted", () => { toast("Все раскрылись. Пора голосовать."); playSound("vote"); });
 socket.on("voteAccepted", () => { toast("Ваш голос принят."); playSound("accepted"); });
 socket.on("playerEliminated", ({ nickname: name }) => { toast(`${name} не попадает в бункер.`); playSound("out"); });

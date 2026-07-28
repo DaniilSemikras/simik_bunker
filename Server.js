@@ -650,6 +650,7 @@ function activateNextTurn(room) {
         room.turnIndex += 1;
     }
     if (!currentTurnPlayerId(room)) {
+        if (room.isSoloTest) return startNextRound(room);
         openVoting(room);
         return;
     }
@@ -840,7 +841,9 @@ io.on("connection", (socket) => {
         room.phase = "reveal";
         room.capacity = isSoloTest ? 1 : Math.ceil(activePlayers(room).length / 2);
         room.traitOrder = gameConfig.categories.map((category) => category.id);
-        room.revealRounds = revealRoundsFor(activePlayers(room).length, room.traitOrder.length);
+        room.revealRounds = isSoloTest
+            ? room.traitOrder.length
+            : revealRoundsFor(activePlayers(room).length, room.traitOrder.length);
         room.categoryNames = Object.fromEntries(gameConfig.categories.map((category) => [category.id, category.name]));
         room.cardScores = Object.fromEntries(gameConfig.categories.map((category) => [
             category.id,
@@ -883,7 +886,12 @@ io.on("connection", (socket) => {
         if (room.revealed[socket.id][trait]) return emitError(socket, "Эта карта уже раскрыта.");
         room.revealed[socket.id][trait] = room.cards[socket.id][trait];
         room.revealedThisRound[socket.id] = trait;
-        advanceRevealTurn(room);
+        emitRoom(room);
+        io.to(room.code).emit("cardRevealed", { playerId: socket.id, nickname: room.players.find((player) => player.id === socket.id)?.nickname, trait });
+        setTimeout(() => {
+            if (room.phase !== "reveal" || currentTurnPlayerId(room) !== socket.id || room.revealedThisRound[socket.id] !== trait) return;
+            advanceRevealTurn(room);
+        }, 620);
     });
 
     socket.on("castVote", (targetId) => {
