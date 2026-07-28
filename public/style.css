@@ -56,7 +56,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .sound-button[aria-pressed="false"] { color:var(--muted); }
 .disaster-card { position:relative; overflow:hidden; padding:22px 24px; border:1px solid rgba(241,168,78,.34); border-radius:16px; background:linear-gradient(105deg, #42261d, #2e201e); }
 .disaster-card::after { content:""; position:absolute; inset:auto -15px -25px auto; width:150px; height:150px; border:1px solid rgba(255,210,157,.14); border-radius:50%; }
-.disaster-card p { max-width:700px; margin:8px 0 16px; font-size:17px; line-height:1.35; }
+.disaster-card p { width:100%; margin:8px 0 16px; font-size:17px; line-height:1.35; }
 .disaster-meta { display:flex; flex-wrap:wrap; align-items:center; gap:10px 20px; }
 .capacity { color:#ffd099; font-size:13px; font-weight:700; }
 .bunker-chance { color:#d9c6bb; font-size:13px; font-weight:650; }
