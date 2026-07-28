@@ -38,20 +38,32 @@ function renderCategories() {
                     <div class="option-row">
                         <input class="option-value" value="${escapeHtml(option.value)}" aria-label="Вариант карточки">
                         <label class="option-score"><span>Польза, %</span><input type="number" class="option-score-input" min="0" max="100" step="1" value="${Number(option.score) || 0}" aria-label="Польза варианта для бункера в процентах"></label>
+                        <label class="option-chance"><span>Выпадение, %</span><input type="number" class="option-chance-input" min="0" max="100" step="0.01" value="${Number(option.chance) || 0}" aria-label="Вероятность выпадения варианта в процентах"></label>
                         <button class="remove-option" type="button" data-option-index="${index}" aria-label="Удалить вариант">×</button>
                     </div>
                 `).join("")}
             </div>
+            <p class="distribution-total">Сумма вероятностей: 100% из 100%</p>
             <button class="add-option" type="button">+ Добавить вариант</button>
         </article>
     `).join("");
+    updateDistributionTotals();
+}
+
+function updateDistributionTotals() {
+    document.querySelectorAll(".category-card").forEach((card) => {
+        const total = [...card.querySelectorAll(".option-chance-input")].reduce((sum, input) => sum + (Number(input.value) || 0), 0);
+        const target = card.querySelector(".distribution-total");
+        target.textContent = `Сумма вероятностей: ${Math.round(total * 100) / 100}% из 100%`;
+        target.classList.toggle("invalid", Math.abs(total - 100) > 0.01);
+    });
 }
 
 function makeCategory() {
     config.categories.push({
         id: `custom_${Date.now()}`,
         name: "Новая категория",
-        options: [{ value: "Первый вариант", score: 50 }, { value: "Второй вариант", score: 50 }]
+        options: [{ value: "Первый вариант", score: 50, chance: 50 }, { value: "Второй вариант", score: 50, chance: 50 }]
     });
     renderCategories();
 }
@@ -62,7 +74,8 @@ function collectConfig() {
         name: card.querySelector(".category-name").value,
         options: [...card.querySelectorAll(".option-row")].map((option) => ({
             value: option.querySelector(".option-value").value,
-            score: Number(option.querySelector(".option-score-input").value)
+            score: Number(option.querySelector(".option-score-input").value),
+            chance: Number(option.querySelector(".option-chance-input").value)
         }))
     }));
     return { categories, disasters: $("#disasterList").value.split("\n") };
@@ -105,7 +118,7 @@ $("#categories").addEventListener("click", (event) => {
         return;
     }
     if (event.target.closest(".add-option")) {
-        category.options.push({ value: "Новый вариант", score: 50 });
+        category.options.push({ value: "Новый вариант", score: 50, chance: 0 });
         renderCategories();
         return;
     }
@@ -114,6 +127,9 @@ $("#categories").addEventListener("click", (event) => {
         category.options.splice(Number(removeOption.dataset.optionIndex), 1);
         renderCategories();
     }
+});
+$("#categories").addEventListener("input", (event) => {
+    if (event.target.matches(".option-chance-input")) updateDistributionTotals();
 });
 $("#save").addEventListener("click", async () => {
     try {

@@ -79,11 +79,14 @@ const CONFIG_PATH = path.join(__dirname, "data", "game-config.json");
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "simik";
 const adminSessions = new Map();
 const DEFAULT_GAME_CONFIG = {
-    categories: TRAIT_ORDER.map((id) => ({
-        id,
-        name: CATEGORY_NAMES[id],
-        options: TRAITS[id].map((value) => ({ value, score: defaultOptionScore(id, value) }))
-    })),
+    categories: TRAIT_ORDER.map((id) => {
+        const values = [...new Set(TRAITS[id])];
+        return {
+            id,
+            name: CATEGORY_NAMES[id],
+            options: values.map((value, index) => ({ value, score: defaultOptionScore(id, value), chance: defaultChance(index, values.length) }))
+        };
+    }),
     disasters: DISASTERS
 };
 
@@ -105,20 +108,45 @@ function cleanScore(value, fallback) {
     return Math.round(Math.min(100, Math.max(0, parsed)) * 10) / 10;
 }
 
+function cleanChance(value, fallback) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.round(Math.min(100, Math.max(0, parsed)) * 100) / 100;
+}
+
+function defaultChance(index, count) {
+    if (!count) return 0;
+    const base = Math.floor((100 / count) * 100) / 100;
+    return index === count - 1 ? Math.round((100 - base * (count - 1)) * 100) / 100 : base;
+}
+
 function normalizeGameConfig(rawConfig) {
     const rawCategories = Array.isArray(rawConfig?.categories) ? rawConfig.categories : DEFAULT_GAME_CONFIG.categories;
     const usedIds = new Set();
     const categories = rawCategories.map((category) => {
         const id = cleanCategoryId(category?.id);
         const name = cleanText(category?.name, 40);
-        const rawOptions = Array.isArray(category?.options) ? category.options : category?.values;
-        const options = (Array.isArray(rawOptions) ? rawOptions : []).map((option) => {
+        const hasConfiguredOptions = Array.isArray(category?.options);
+        const rawOptions = hasConfiguredOptions ? category.options : category?.values;
+        const sourceOptions = hasConfiguredOptions
+            ? rawOptions
+            : [...new Map((Array.isArray(rawOptions) ? rawOptions : []).map((value) => [cleanText(value, 120).toLocaleLowerCase("ru"), value])).values()];
+        const options = sourceOptions.map((option, index) => {
             const value = cleanText(typeof option === "string" ? option : option?.value, 120);
             if (!value) return null;
             const rawScore = typeof option === "string" ? undefined : option?.score;
-            return { value, score: cleanScore(rawScore, defaultOptionScore(id, value)) };
+            const rawChance = typeof option === "string" ? undefined : option?.chance;
+            return {
+                value,
+                score: cleanScore(rawScore, defaultOptionScore(id, value)),
+                chance: cleanChance(rawChance, defaultChance(index, sourceOptions.length))
+            };
         }).filter(Boolean).slice(0, 40);
         if (!id || !name || !options.length || usedIds.has(id)) return null;
+        const chanceTotal = options.reduce((sum, option) => sum + option.chance, 0);
+        if (Math.abs(chanceTotal - 100) > 0.01) {
+            throw new Error(`Сумма вероятностей в категории «${name}» должна быть 100%. Сейчас: ${chanceTotal}%.`);
+        }
         usedIds.add(id);
         return { id, name, options };
     }).filter(Boolean).slice(0, 12);
@@ -216,11 +244,17 @@ function cleanNickname(value) {
 }
 
 function assignCards(players, categories) {
-    const traitOrder = categories.map((category) => category.id);
-    const decks = Object.fromEntries(categories.map((category) => [category.id, category.options.map((option) => option.value).sort(() => Math.random() - 0.5)]));
-    return Object.fromEntries(players.map((player, index) => [
+    const pickOption = (options) => {
+        let roll = Math.random() * 100;
+        for (const option of options) {
+            roll -= option.chance;
+            if (roll <= 0) return option.value;
+        }
+        return options[options.length - 1].value;
+    };
+    return Object.fromEntries(players.map((player) => [
         player.id,
-        Object.fromEntries(traitOrder.map((trait) => [trait, decks[trait][index % decks[trait].length]]))
+        Object.fromEntries(categories.map((category) => [category.id, pickOption(category.options)]))
     ]));
 }
 
