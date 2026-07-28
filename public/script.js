@@ -1,5 +1,22 @@
 const socket = io();
 const $ = (selector) => document.querySelector(selector);
+
+if (window.matchMedia("(pointer: fine)").matches && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    let pointerFrame = 0;
+    let pointerX = 50;
+    let pointerY = 18;
+    document.addEventListener("pointermove", (event) => {
+        pointerX = (event.clientX / window.innerWidth) * 100;
+        pointerY = (event.clientY / window.innerHeight) * 100;
+        if (pointerFrame) return;
+        pointerFrame = requestAnimationFrame(() => {
+            document.documentElement.style.setProperty("--cursor-x", `${pointerX}%`);
+            document.documentElement.style.setProperty("--cursor-y", `${pointerY}%`);
+            pointerFrame = 0;
+        });
+    }, { passive: true });
+}
+
 const TRAIT_NAMES = {
     health: "Здоровье",
     profession: "Профессия",
