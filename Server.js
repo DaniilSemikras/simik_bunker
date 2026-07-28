@@ -333,6 +333,50 @@ function revealRoundsFor(playerCount, categoryCount) {
 }
 
 const ACTION_DURATION_MS = 60_000;
+const RECONNECT_GRACE_MS = 60_000;
+
+function newPlayerToken() {
+    return crypto.randomBytes(24).toString("hex");
+}
+
+function cancelPendingLeave(player) {
+    if (!player?.disconnectTimer) return;
+    clearTimeout(player.disconnectTimer);
+    player.disconnectTimer = null;
+}
+
+function schedulePendingLeave(room, playerId) {
+    const player = room.players.find((candidate) => candidate.id === playerId);
+    if (!player || player.left || player.disconnectTimer) return;
+    player.disconnectTimer = setTimeout(() => {
+        player.disconnectTimer = null;
+        if (player.left || player.id !== playerId || rooms[room.code] !== room) return;
+        markPlayerLeft(room, playerId);
+        continueAfterLeave(room, playerId);
+    }, RECONNECT_GRACE_MS);
+}
+
+function movePlayerToSocket(room, player, socketId) {
+    const previousId = player.id;
+    cancelPendingLeave(player);
+    if (previousId === socketId) return;
+
+    player.id = socketId;
+    if (room.host === previousId) room.host = socketId;
+    room.turnOrder = (room.turnOrder || []).map((id) => id === previousId ? socketId : id);
+    room.eliminated = (room.eliminated || []).map((id) => id === previousId ? socketId : id);
+
+    for (const record of [room.cards, room.revealed, room.revealedThisRound]) {
+        if (!record || !Object.prototype.hasOwnProperty.call(record, previousId)) continue;
+        record[socketId] = record[previousId];
+        delete record[previousId];
+    }
+
+    room.votes = Object.fromEntries(Object.entries(room.votes || {}).map(([voterId, targetId]) => [
+        voterId === previousId ? socketId : voterId,
+        targetId === previousId ? socketId : targetId
+    ]));
+}
 
 function currentTurnPlayerId(room) {
     return room.turnOrder?.[room.turnIndex] || null;
@@ -554,6 +598,7 @@ function continueAfterLeave(room, leavingId) {
 function markPlayerLeft(room, playerId) {
     const player = room.players.find((candidate) => candidate.id === playerId);
     if (!player || player.left) return;
+    cancelPendingLeave(player);
     player.left = true;
     room.eliminated = room.eliminated.filter((id) => id !== playerId);
     delete room.revealedThisRound[playerId];
@@ -574,7 +619,7 @@ io.on("connection", (socket) => {
         rooms[code] = {
             code,
             host: socket.id,
-            players: [{ id: socket.id, nickname, avatarUrl: chooseAvatar(), left: false }],
+            players: [{ id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(), left: false }],
             phase: "lobby",
             capacity: 0,
             round: 0,
@@ -594,7 +639,7 @@ io.on("connection", (socket) => {
             timerKind: null
         };
         socket.join(code);
-        socket.emit("roomEntered", { code });
+        socket.emit("roomEntered", { code, playerToken: rooms[code].players[0].token });
         emitRoom(rooms[code]);
     });
 
@@ -610,9 +655,23 @@ io.on("connection", (socket) => {
         if (room.players.some((player) => !player.left && player.nickname.toLocaleLowerCase("ru") === nickname.toLocaleLowerCase("ru"))) {
             return emitError(socket, "Такой никнейм уже занят.");
         }
-        room.players.push({ id: socket.id, nickname, avatarUrl: chooseAvatar(room), left: false });
+        const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(room), left: false };
+        room.players.push(player);
         socket.join(code);
-        socket.emit("roomEntered", { code });
+        socket.emit("roomEntered", { code, playerToken: player.token });
+        emitRoom(room);
+    });
+
+    socket.on("resumeRoom", ({ roomCode, playerToken } = {}) => {
+        const code = String(roomCode || "").trim().toUpperCase();
+        const room = rooms[code];
+        const token = String(playerToken || "");
+        const player = room?.players.find((candidate) => !candidate.left && candidate.token === token);
+        if (!room || !player) return socket.emit("resumeFailed");
+
+        movePlayerToSocket(room, player, socket.id);
+        socket.join(code);
+        socket.emit("roomEntered", { code, playerToken: player.token });
         emitRoom(room);
     });
 
@@ -678,8 +737,7 @@ io.on("connection", (socket) => {
     socket.on("disconnect", () => {
         const room = roomFor(socket);
         if (!room) return;
-        markPlayerLeft(room, socket.id);
-        continueAfterLeave(room, socket.id);
+        schedulePendingLeave(room, socket.id);
     });
 });
 

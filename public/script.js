@@ -14,6 +14,16 @@ const TRAIT_NAMES = {
 let room = null;
 let myCards = {};
 let currentCode = "";
+const SESSION_KEY = "bunker-player-session";
+let savedSession = (() => {
+    try {
+        const value = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+        return value?.code && value?.token ? value : null;
+    } catch {
+        return null;
+    }
+})();
+let resumedSocketId = "";
 let toastTimer;
 let countdownTimer;
 let audioContext;
@@ -204,9 +214,24 @@ function renderRoom() {
     }
 }
 
-function enterRoom(code) {
+function enterRoom({ code, playerToken }) {
     currentCode = code;
+    if (playerToken) {
+        savedSession = { code, token: playerToken };
+        localStorage.setItem(SESSION_KEY, JSON.stringify(savedSession));
+    }
     $("#roomTitle").textContent = code;
+}
+
+function clearSavedSession() {
+    savedSession = null;
+    localStorage.removeItem(SESSION_KEY);
+}
+
+function tryResumeSession() {
+    if (!savedSession || resumedSocketId === socket.id) return;
+    resumedSocketId = socket.id;
+    socket.emit("resumeRoom", { roomCode: savedSession.code, playerToken: savedSession.token });
 }
 
 $("#createRoom").addEventListener("click", () => socket.emit("createRoom", playerPayload()));
@@ -246,7 +271,7 @@ $("#myCards").addEventListener("click", (event) => {
     }
 });
 
-socket.on("roomEntered", ({ code }) => enterRoom(code));
+socket.on("roomEntered", enterRoom);
 socket.on("roomState", (state) => {
     const turnKey = `${state.code}:${state.round}:${state.turnPlayerId || ""}:${state.turnDeadline || ""}`;
     const isMyTurn = state.phase === "reveal" && state.turnPlayerId === socket.id;
@@ -259,7 +284,14 @@ socket.on("leftRoom", () => {
     room = null;
     myCards = {};
     currentCode = "";
+    clearSavedSession();
     $("#roomCode").value = "";
+    show("#menu");
+});
+socket.on("resumeFailed", () => {
+    clearSavedSession();
+    currentCode = "";
+    toast("Комната уже закрыта или сессия устарела.");
     show("#menu");
 });
 socket.on("yourCards", (cards) => { myCards = cards; if (room?.phase !== "lobby") updateGame(); });
@@ -274,10 +306,11 @@ socket.on("revealLimitReached", () => { toast("Лимит раскрытий д�
 socket.on("gameFinished", ({ survivors }) => { toast(`Выжили: ${survivors.join(", ")}.`); playSound("finish"); });
 socket.on("errorMessage", toast);
 socket.on("disconnect", () => toast("Соединение с сервером потеряно."));
-socket.on("connect", () => { if (currentCode) toast("Соединение восстановлено. Войдите в комнату заново, если нужно."); });
+socket.on("connect", tryResumeSession);
 
 clearInterval(countdownTimer);
 countdownTimer = setInterval(updateActionTimer, 250);
 updateSoundToggle();
 document.addEventListener("pointerdown", unlockSound, { once: true });
 document.addEventListener("keydown", unlockSound, { once: true });
+if (socket.connected) tryResumeSession();
