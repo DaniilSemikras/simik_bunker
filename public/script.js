@@ -8,17 +8,20 @@ if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     let pointerFrame = 0;
     let pointerX = window.innerWidth / 2;
     let pointerY = window.innerHeight / 5;
-    document.addEventListener("pointermove", (event) => {
-        if (event.pointerType === "touch") return;
-        pointerX = event.clientX;
-        pointerY = event.clientY;
+    const moveAura = (clientX, clientY) => {
+        pointerX = clientX;
+        pointerY = clientY;
         cursorAura.classList.add("is-visible");
         if (pointerFrame) return;
         pointerFrame = requestAnimationFrame(() => {
             cursorAura.style.transform = `translate3d(${pointerX - 260}px, ${pointerY - 260}px, 0)`;
             pointerFrame = 0;
         });
+    };
+    document.addEventListener("pointermove", (event) => {
+        if (event.pointerType !== "touch") moveAura(event.clientX, event.clientY);
     }, { passive: true });
+    document.addEventListener("mousemove", (event) => moveAura(event.clientX, event.clientY), { passive: true });
 }
 
 const TRAIT_NAMES = {
