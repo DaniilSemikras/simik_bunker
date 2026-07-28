@@ -1,4 +1,5 @@
 services:
+  # Настройки игры загружаются из Supabase при запуске сервера.
   - type: web
     name: bunker-for-friends
     runtime: node
