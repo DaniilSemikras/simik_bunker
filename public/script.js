@@ -1,11 +1,13 @@
 const socket = io();
 const $ = (selector) => document.querySelector(selector);
 
-if (window.matchMedia("(pointer: fine)").matches && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     let pointerFrame = 0;
     let pointerX = 50;
     let pointerY = 18;
     document.addEventListener("pointermove", (event) => {
+        if (event.pointerType === "touch") return;
+        document.documentElement.classList.add("has-pointer-glow");
         pointerX = (event.clientX / window.innerWidth) * 100;
         pointerY = (event.clientY / window.innerHeight) * 100;
         if (pointerFrame) return;
