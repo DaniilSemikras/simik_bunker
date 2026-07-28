@@ -73,7 +73,11 @@ function renderAvatarLibrary() {
     $("#avatarLibrary").innerHTML = avatars.length
         ? avatars.map((url) => {
             const filename = url.split("/").pop();
-            return `<article class="library-avatar"><img src="${escapeHtml(url)}" alt="Аватар из набора"><button class="remove-library-avatar" type="button" data-avatar-file="${escapeHtml(filename)}" aria-label="Удалить аватар">×</button></article>`;
+            const isBuiltIn = url.startsWith("/assets/avatars/");
+            const action = isBuiltIn
+                ? '<span class="library-avatar-label">встроенный</span>'
+                : `<button class="remove-library-avatar" type="button" data-avatar-file="${escapeHtml(filename)}" aria-label="Удалить аватар">×</button>`;
+            return `<article class="library-avatar"><img src="${escapeHtml(url)}" alt="Аватар из набора">${action}</article>`;
         }).join("")
         : '<p class="avatar-library-empty">Пока нет аватаров. Игроки без выбора будут отображаться с первой буквой ника.</p>';
 }

@@ -76,6 +76,7 @@ const DISASTERS = [
     "Токсичный туман накрыл континент, а еды в бункере хватит на 14 месяцев."
 ];
 const CONFIG_PATH = path.join(__dirname, "data", "game-config.json");
+const BUILT_IN_AVATAR_DIRECTORY = path.join(__dirname, "public", "assets", "avatars");
 const AVATAR_DIRECTORY = path.join(__dirname, "public", "uploads", "avatars");
 const MAX_AVATAR_BYTES = 350 * 1024;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "simik";
@@ -206,12 +207,23 @@ function isAvatarFilename(filename) {
     return /^[a-f0-9]{32}\.(png|jpg|webp)$/i.test(filename);
 }
 
-function listAvatarUrls() {
-    if (!fs.existsSync(AVATAR_DIRECTORY)) return [];
-    return fs.readdirSync(AVATAR_DIRECTORY)
-        .filter(isAvatarFilename)
+function isImageFilename(filename) {
+    return /^[a-zA-Z0-9_-]+\.(png|jpg|jpeg|webp)$/i.test(filename);
+}
+
+function listAvatarDirectory(directory, publicPath, validator) {
+    if (!fs.existsSync(directory)) return [];
+    return fs.readdirSync(directory)
+        .filter(validator)
         .sort()
-        .map((filename) => `/uploads/avatars/${filename}`);
+        .map((filename) => `${publicPath}/${filename}`);
+}
+
+function listAvatarUrls() {
+    return [
+        ...listAvatarDirectory(BUILT_IN_AVATAR_DIRECTORY, "/assets/avatars", isImageFilename),
+        ...listAvatarDirectory(AVATAR_DIRECTORY, "/uploads/avatars", isAvatarFilename)
+    ];
 }
 
 function chooseAvatar(room) {
