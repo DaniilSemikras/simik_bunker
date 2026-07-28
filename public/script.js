@@ -159,13 +159,19 @@ function playerPayload() {
 function updateLobby() {
     if (!room) return;
     $("#roomTitle").textContent = room.code;
-    $("#playerCount").textContent = `${activePlayers().length}/12`;
+    const playerTotal = activePlayers().length;
+    $("#playerCount").textContent = `${playerTotal}/12`;
     $("#hostNote").textContent = isHost() ? "Вы ведущий. Когда все подключатся, запускайте игру." : "Ожидайте, пока ведущий начнёт игру.";
     $("#players").innerHTML = room.players.map((player) => `
         <div class="player-row ${player.left ? "left-player" : ""}">${avatarMarkup(player)}<span>${escaped(player.nickname)}</span>${player.left ? '<span class="host-badge">вышел</span>' : player.id === room.hostId ? '<span class="host-badge">ведущий</span>' : ""}</div>
     `).join("");
     $("#startGame").classList.toggle("hidden", !isHost());
-    $("#startHint").textContent = activePlayers().length < 3 ? "Для старта нужно минимум 3 игрока." : isHost() ? "После старта половина игроков сможет остаться в бункере." : "";
+    $("#startSoloTest").classList.toggle("hidden", !isHost() || playerTotal !== 1);
+    $("#startHint").textContent = playerTotal === 1 && isHost()
+        ? "Можно протестировать игру: две карточки без голосования."
+        : playerTotal < 3
+        ? "Для обычного старта нужно минимум 3 игрока."
+        : isHost() ? "После старта половина игроков сможет остаться в бункере." : "";
 }
 
 function cardMarkup(trait, value, revealed, canChoose) {
@@ -263,6 +269,7 @@ $("#joinRoom").addEventListener("click", () => socket.emit("joinRoom", { roomCod
 $("#nickname").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#createRoom").click(); });
 $("#roomCode").addEventListener("input", (event) => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
 $("#startGame").addEventListener("click", () => socket.emit("startGame"));
+$("#startSoloTest").addEventListener("click", () => socket.emit("startSoloTest"));
 $("#revealButton").addEventListener("click", () => {
     socket.emit("revealTrait", room?.currentTrait);
     playSound("reveal");

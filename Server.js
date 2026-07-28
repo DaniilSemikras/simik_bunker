@@ -677,6 +677,13 @@ function advanceRevealTurn(room, timedOut = false) {
 }
 
 function startNextRound(room) {
+    if (room.isSoloTest) {
+        if (room.round >= room.revealRounds - 1) return endGame(room);
+        room.round += 1;
+        io.to(room.code).emit("roundStarted", { chooseTrait: true });
+        beginRevealRound(room);
+        return;
+    }
     if (activePlayers(room).length <= room.capacity) return endGame(room);
     if (room.round >= room.revealRounds - 1) {
         io.to(room.code).emit("revealLimitReached");
@@ -823,13 +830,10 @@ io.on("connection", (socket) => {
         emitRoom(room);
     });
 
-    socket.on("startGame", () => {
-        const room = roomFor(socket);
-        if (!room || room.host !== socket.id) return emitError(socket, "Начать игру может только ведущий.");
-        if (room.phase !== "lobby") return;
-        if (activePlayers(room).length < MIN_PLAYERS_TO_START) return emitError(socket, "Нужно хотя бы три игрока.");
+    function launchGame(room, isSoloTest = false) {
+        room.isSoloTest = isSoloTest;
         room.phase = "reveal";
-        room.capacity = Math.ceil(activePlayers(room).length / 2);
+        room.capacity = isSoloTest ? 1 : Math.ceil(activePlayers(room).length / 2);
         room.traitOrder = gameConfig.categories.map((category) => category.id);
         room.revealRounds = revealRoundsFor(activePlayers(room).length, room.traitOrder.length);
         room.categoryNames = Object.fromEntries(gameConfig.categories.map((category) => [category.id, category.name]));
@@ -846,6 +850,22 @@ io.on("connection", (socket) => {
         room.round = 0;
         io.to(room.code).emit("gameStarted");
         beginRevealRound(room);
+    }
+
+    socket.on("startGame", () => {
+        const room = roomFor(socket);
+        if (!room || room.host !== socket.id) return emitError(socket, "Начать игру может только ведущий.");
+        if (room.phase !== "lobby") return;
+        if (activePlayers(room).length < MIN_PLAYERS_TO_START) return emitError(socket, "Нужно хотя бы три игрока.");
+        launchGame(room);
+    });
+
+    socket.on("startSoloTest", () => {
+        const room = roomFor(socket);
+        if (!room || room.host !== socket.id) return emitError(socket, "Тестовый запуск доступен только ведущему.");
+        if (room.phase !== "lobby") return;
+        if (activePlayers(room).length !== 1) return emitError(socket, "Для теста в соло в комнате должен остаться один игрок.");
+        launchGame(room, true);
     });
 
     socket.on("revealTrait", (requestedTrait) => {
