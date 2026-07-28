@@ -81,14 +81,17 @@ const MAX_AVATAR_BYTES = 350 * 1024;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "simik";
 const adminSessions = new Map();
 const DEFAULT_GAME_CONFIG = {
-    categories: TRAIT_ORDER.map((id) => {
-        const values = [...new Set(TRAITS[id])];
-        return {
-            id,
-            name: CATEGORY_NAMES[id],
-            options: values.map((value, index) => ({ value, score: defaultOptionScore(id, value), chance: defaultChance(index, values.length) }))
-        };
-    }),
+    categories: [{
+        id: "profession",
+        name: CATEGORY_NAMES.profession,
+        options: [
+            { value: "врач скорой помощи", score: 95, chance: 20 },
+            { value: "инженер-энергетик", score: 91, chance: 20 },
+            { value: "фермер", score: 91, chance: 20 },
+            { value: "строитель", score: 90, chance: 20 },
+            { value: "механик", score: 88, chance: 20 }
+        ]
+    }],
     disasters: DISASTERS
 };
 
@@ -160,10 +163,6 @@ function normalizeGameConfig(rawConfig) {
     } else {
         otherCategories.unshift(profession);
     }
-    if (otherCategories.length < 2) {
-        throw new Error("Нужно минимум две категории, включая профессию.");
-    }
-
     const disasters = Array.isArray(rawConfig?.disasters)
         ? rawConfig.disasters.map((item) => cleanText(item, 240)).filter(Boolean).slice(0, 30)
         : [];
