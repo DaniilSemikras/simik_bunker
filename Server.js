@@ -564,7 +564,7 @@ function calculateBunkerSurvivalChance(room) {
 }
 
 function publicState(room) {
-    const currentTrait = room.round === 0 ? room.traitOrder?.[0] || null : null;
+    const currentTrait = room.phase === "reveal" && room.round === 0 ? room.traitOrder?.[0] || null : null;
     return {
         code: room.code,
         hostId: room.host,
@@ -838,7 +838,7 @@ io.on("connection", (socket) => {
 
     function launchGame(room, isSoloTest = false) {
         room.isSoloTest = isSoloTest;
-        room.phase = "reveal";
+        room.phase = "story";
         room.capacity = isSoloTest ? 1 : Math.ceil(activePlayers(room).length / 2);
         room.traitOrder = gameConfig.categories.map((category) => category.id);
         room.revealRounds = isSoloTest
@@ -857,7 +857,7 @@ io.on("connection", (socket) => {
         room.votes = {};
         room.round = 0;
         io.to(room.code).emit("gameStarted");
-        beginRevealRound(room);
+        emitRoom(room);
     }
 
     socket.on("startGame", () => {
@@ -874,6 +874,14 @@ io.on("connection", (socket) => {
         if (room.phase !== "lobby") return;
         if (activePlayers(room).length !== 1) return emitError(socket, "Для теста в соло в комнате должен остаться один игрок.");
         launchGame(room, true);
+    });
+
+    socket.on("acknowledgeStory", () => {
+        const room = roomFor(socket);
+        if (!room || room.host !== socket.id) return emitError(socket, "Начать раунд после истории может только ведущий.");
+        if (room.phase !== "story") return;
+        io.to(room.code).emit("roundStarted", { initial: true });
+        beginRevealRound(room);
     });
 
     socket.on("revealTrait", (requestedTrait) => {

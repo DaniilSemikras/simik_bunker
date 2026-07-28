@@ -92,6 +92,8 @@ function playSound(type) {
     if (!audioContext || audioContext.state !== "running") return;
     const patterns = {
         start: [[392, 0, .12], [523, .13, .17]],
+        story: [[147, 0, .19], [175, .13, .22], [110, .31, .34]],
+        round: [[196, 0, .13], [233, .13, .16], [277, .29, .2], [196, .51, .28]],
         turn: [[740, 0, .09], [988, .11, .13]],
         reveal: [[660, 0, .11], [880, .12, .16]],
         vote: [[300, 0, .13]],
@@ -105,7 +107,7 @@ function playSound(type) {
         const oscillator = audioContext.createOscillator();
         const gain = audioContext.createGain();
         const start = audioContext.currentTime + offset;
-        oscillator.type = type === "out" || type === "skip" ? "triangle" : "sine";
+        oscillator.type = ["out", "skip", "story", "round"].includes(type) ? "triangle" : "sine";
         oscillator.frequency.setValueAtTime(frequency, start);
         gain.gain.setValueAtTime(.0001, start);
         gain.gain.exponentialRampToValueAtTime(.08, start + .018);
@@ -195,6 +197,7 @@ function updateGame() {
     const me = room.players.find((player) => player.id === socket.id);
     const active = activePlayers();
     const trait = room.currentTrait;
+    const isStory = room.phase === "story";
     const isVoting = room.phase === "voting";
     const isFinished = room.phase === "finished";
     const myRevealed = me?.revealed || {};
@@ -205,23 +208,29 @@ function updateGame() {
     const hasVoted = room.votedPlayerIds?.includes(socket.id);
 
     $("#gameCode").textContent = room.code;
-    $("#phaseTitle").textContent = isFinished ? "Игра завершена" : isVoting ? "Голосование" : "Раскрытие карт";
+    $("#phaseTitle").textContent = isFinished ? "Игра завершена" : isStory ? "История катастрофы" : isVoting ? "Голосование" : "Раскрытие карт";
     const bunkerChance = isFinished && typeof room.bunkerSurvivalChance === "number"
         ? `<span class="bunker-chance">Прогноз выживания бункера: <strong>${room.bunkerSurvivalChance}%</strong></span>`
         : "";
-    $("#disasterCard").innerHTML = `<span class="eyebrow">КАТАСТРОФА</span><p>${escaped(room.disaster || "")}</p><div class="disaster-meta"><span class="capacity">Мест в бункере: ${room.capacity}</span>${bunkerChance}</div>`;
+    const disasterText = escaped(room.disaster || "");
+    const disasterContent = isStory
+        ? `<span class="eyebrow">КАТАСТРОФА</span><p class="story-text">${disasterText}</p><div class="disaster-meta"><span class="capacity">Мест в бункере: ${room.capacity}</span>${isHost() ? '<button class="button primary story-ready" type="button" data-acknowledge-story>Все прочитали историю — начать раунд</button>' : '<span class="story-wait">Ждём, пока ведущий начнёт раунд.</span>'}</div>`
+        : `<details class="disaster-accordion"><summary><span class="eyebrow">КАТАСТРОФА · ОТКРЫТЬ ИСТОРИЮ</span><span class="accordion-icon" aria-hidden="true">⌄</span></summary><p>${disasterText}</p></details><div class="disaster-meta"><span class="capacity">Мест в бункере: ${room.capacity}</span>${bunkerChance}</div>`;
+    $("#disasterCard").classList.toggle("story-mode", isStory);
+    $("#disasterCard").innerHTML = disasterContent;
     $("#survivorCount").textContent = `${active.length} в игре`;
     const categoryCount = room.categoryOrder?.length || Object.keys(myCards).length;
     const revealRoundCount = room.revealRounds || categoryCount;
-    $("#roundLabel").textContent = isFinished ? "ИГРА ЗАВЕРШЕНА" : isVoting ? "ГОЛОСОВАНИЕ" : `РАУНД ${room.round} ИЗ ${revealRoundCount}`;
-    $("#roundTitle").textContent = isFinished ? "Бункер определил выживших" : isVoting ? "Кого не берём в бункер?" : trait ? `Первый ход: ${traitName(trait)}` : "Выберите карту для раскрытия";
-    $("#roundDescription").textContent = isFinished ? "Поздравьте тех, кому удалось попасть внутрь." : isVoting ? "Выберите одного игрока. Голос нельзя изменить." : trait ? "В первом раунде все обязаны раскрыть эту категорию." : "Теперь каждый сам выбирает одну ещё скрытую карту.";
+    $(".round-panel").classList.toggle("hidden", isStory);
+    $("#roundLabel").textContent = isFinished ? "ИГРА ЗАВЕРШЕНА" : isStory ? "ИСТОРИЯ КАТАСТРОФЫ" : isVoting ? "ГОЛОСОВАНИЕ" : `РАУНД ${room.round} ИЗ ${revealRoundCount}`;
+    $("#roundTitle").textContent = isFinished ? "Бункер определил выживших" : isStory ? "Прочитайте историю" : isVoting ? "Кого не берём в бункер?" : trait ? `Первый ход: ${traitName(trait)}` : "Выберите карту для раскрытия";
+    $("#roundDescription").textContent = isFinished ? "Поздравьте тех, кому удалось попасть внутрь." : isStory ? "Игра начнётся, когда ведущий подтвердит, что все успели прочитать историю." : isVoting ? "Выберите одного игрока. Голос нельзя изменить." : trait ? "В первом раунде все обязаны раскрыть эту категорию." : "Теперь каждый сам выбирает одну ещё скрытую карту.";
 
     const canRevealProfession = room.phase === "reveal" && trait && me && !me.eliminated && isMyTurn && !hasRevealedThisRound;
     const canChooseTrait = isChoiceRound && me && !me.eliminated && isMyTurn && !hasRevealedThisRound;
     $("#revealButton").classList.toggle("hidden", !canRevealProfession);
     $("#revealButton").textContent = canRevealProfession ? `Раскрыть: ${traitName(trait)}` : "";
-    $("#actionHint").textContent = me?.eliminated ? "Вы исключены, но можете наблюдать за игрой." : isVoting && hasVoted ? "Ваш голос принят. Ждём остальных." : isVoting ? "Голосуйте до окончания таймера." : hasRevealedThisRound ? "Карта раскрыта. Ждём остальных." : isMyTurn && canChooseTrait ? "Ваш ход: нажмите на любую ещё нераскрытую карточку." : isMyTurn ? "Ваш ход: раскройте профессию." : turnPlayer ? `Сейчас ходит ${turnPlayer.nickname}.` : "";
+    $("#actionHint").textContent = isStory ? (isHost() ? "Подтвердите начало, когда все прочитали историю." : "Ждём подтверждения ведущего.") : me?.eliminated ? "Вы исключены, но можете наблюдать за игрой." : isVoting && hasVoted ? "Ваш голос принят. Ждём остальных." : isVoting ? "Голосуйте до окончания таймера." : hasRevealedThisRound ? "Карта раскрыта. Ждём остальных." : isMyTurn && canChooseTrait ? "Ваш ход: нажмите на любую ещё нераскрытую карточку." : isMyTurn ? "Ваш ход: раскройте профессию." : turnPlayer ? `Сейчас ходит ${turnPlayer.nickname}.` : "";
 
     const cardOrder = room.categoryOrder?.length ? room.categoryOrder : Object.keys(myCards);
     $("#myCards").innerHTML = cardOrder.filter((name) => name in myCards).map((name) => cardMarkup(
@@ -314,6 +323,9 @@ $("#myCards").addEventListener("click", (event) => {
         playSound("reveal");
     }
 });
+$("#disasterCard").addEventListener("click", (event) => {
+    if (event.target.closest("[data-acknowledge-story]")) socket.emit("acknowledgeStory");
+});
 
 socket.on("roomEntered", enterRoom);
 socket.on("roomState", (state) => {
@@ -339,8 +351,8 @@ socket.on("resumeFailed", () => {
     show("#menu");
 });
 socket.on("yourCards", (cards) => { myCards = cards; if (room?.phase !== "lobby") updateGame(); });
-socket.on("gameStarted", () => { toast("Игра началась. Ваша карта — только для ваших глаз."); playSound("start"); });
-socket.on("roundStarted", () => { toast("Новый раунд: выберите карту, которую хотите раскрыть."); playSound("start"); });
+socket.on("gameStarted", () => { toast("Катастрофа выбрана. Прочитайте историю перед началом."); playSound("story"); });
+socket.on("roundStarted", ({ initial } = {}) => { toast(initial ? "История прочитана. Первый раунд начинается." : "Новый раунд: выберите карту, которую хотите раскрыть."); playSound("round"); });
 socket.on("cardRevealed", ({ playerId }) => { if (playerId !== socket.id) playSound("reveal"); });
 socket.on("votingStarted", () => { toast("Все раскрылись. Пора голосовать."); playSound("vote"); });
 socket.on("voteAccepted", () => { toast("Ваш голос принят."); playSound("accepted"); });
