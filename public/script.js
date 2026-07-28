@@ -361,7 +361,7 @@ socket.on("votingStarted", () => { toast("Все раскрылись. Пора 
 socket.on("voteAccepted", () => { toast("Ваш голос принят."); playSound("accepted"); });
 socket.on("playerEliminated", ({ nickname: name }) => { toast(`${name} не попадает в бункер.`); playSound("out"); });
 socket.on("turnSkipped", ({ nickname: name }) => { toast(`${name} не успел раскрыть карту — ход пропущен.`); playSound("skip"); });
-socket.on("voteTied", () => { toast("Ничья: никто не исключен. Начинается следующий раунд."); playSound("tie"); });
+socket.on("voteTied", ({ nextRound } = {}) => { toast(nextRound ? "Голоса разделились. Открываем следующую карту." : "Ничья: никто не исключен."); playSound("tie"); });
 socket.on("voteSkipped", () => { toast("Решение команды: никого не исключаем. Начинается следующий раунд."); playSound("tie"); });
 socket.on("revealLimitReached", () => { toast("Лимит раскрытий достигнут: оставшиеся карты останутся тайной."); playSound("vote"); });
 socket.on("gameFinished", ({ survivors }) => { toast(`Выжили: ${survivors.join(", ")}.`); playSound("finish"); });

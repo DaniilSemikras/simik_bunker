@@ -709,6 +709,18 @@ function continueWithoutElimination(room) {
     startNextRound(room);
 }
 
+function canOpenAnotherDeadlockRound(room) {
+    return activePlayers(room).length > room.capacity && room.round < room.traitOrder.length - 1;
+}
+
+function continueAfterDeadlock(room) {
+    if (!canOpenAnotherDeadlockRound(room)) return endGame(room);
+    if (room.round >= room.revealRounds - 1) {
+        room.revealRounds = Math.min(room.traitOrder.length, room.revealRounds + 1);
+    }
+    startNextRound(room);
+}
+
 function resolveVote(room, timedOut = false) {
     const voters = activePlayers(room);
     if (!timedOut && !voters.every((player) => room.votes[player.id])) return;
@@ -728,8 +740,8 @@ function resolveVote(room, timedOut = false) {
     }
     const candidates = voters.filter((player) => totals[player.id] === highestPlayerVotes);
     if (!highestPlayerVotes || candidates.length !== 1) {
-        io.to(room.code).emit("voteTied", { timedOut });
-        continueWithoutElimination(room);
+        io.to(room.code).emit("voteTied", { timedOut, nextRound: canOpenAnotherDeadlockRound(room) });
+        continueAfterDeadlock(room);
         return;
     }
 
