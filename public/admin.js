@@ -30,29 +30,28 @@ function renderCategories() {
         <article class="category-card" data-id="${escapeHtml(category.id)}">
             <div class="category-top">
                 <input class="category-name" value="${escapeHtml(category.name)}" aria-label="Название категории">
-                <label class="weight-control"><span>Влияние, %</span><input class="category-weight" type="number" min="0" max="100" step="1" value="${Number(category.weight) || 0}" aria-label="Влияние категории в процентах"></label>
                 ${category.id === "profession" ? '<span class="locked">обязательна первой</span>' : '<button class="remove" type="button">Удалить</button>'}
             </div>
-            <label>Варианты — по одному на строку</label>
-            <textarea class="category-values" rows="5">${escapeHtml(category.values.join("\n"))}</textarea>
+            <label>Варианты и их польза для бункера</label>
+            <div class="category-options">
+                ${category.options.map((option, index) => `
+                    <div class="option-row">
+                        <input class="option-value" value="${escapeHtml(option.value)}" aria-label="Вариант карточки">
+                        <label class="option-score"><span>Польза, %</span><input type="number" class="option-score-input" min="0" max="100" step="1" value="${Number(option.score) || 0}" aria-label="Польза варианта для бункера в процентах"></label>
+                        <button class="remove-option" type="button" data-option-index="${index}" aria-label="Удалить вариант">×</button>
+                    </div>
+                `).join("")}
+            </div>
+            <button class="add-option" type="button">+ Добавить вариант</button>
         </article>
     `).join("");
-    updateWeightTotal();
-}
-
-function updateWeightTotal() {
-    const total = [...document.querySelectorAll(".category-weight")].reduce((sum, input) => sum + (Number(input.value) || 0), 0);
-    const target = $("#weightTotal");
-    target.textContent = `Сумма влияния: ${total}% из 100%`;
-    target.classList.toggle("invalid", Math.abs(total - 100) > 0.01);
 }
 
 function makeCategory() {
     config.categories.push({
         id: `custom_${Date.now()}`,
         name: "Новая категория",
-        values: ["Первый вариант", "Второй вариант"],
-        weight: 0
+        options: [{ value: "Первый вариант", score: 50 }, { value: "Второй вариант", score: 50 }]
     });
     renderCategories();
 }
@@ -61,8 +60,10 @@ function collectConfig() {
     const categories = [...document.querySelectorAll(".category-card")].map((card) => ({
         id: card.dataset.id,
         name: card.querySelector(".category-name").value,
-        values: card.querySelector(".category-values").value.split("\n"),
-        weight: Number(card.querySelector(".category-weight").value)
+        options: [...card.querySelectorAll(".option-row")].map((option) => ({
+            value: option.querySelector(".option-value").value,
+            score: Number(option.querySelector(".option-score-input").value)
+        }))
     }));
     return { categories, disasters: $("#disasterList").value.split("\n") };
 }
@@ -95,13 +96,24 @@ $("#login").addEventListener("click", async () => {
 $("#password").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#login").click(); });
 $("#addCategory").addEventListener("click", makeCategory);
 $("#categories").addEventListener("click", (event) => {
-    const button = event.target.closest(".remove");
-    if (!button) return;
-    config.categories = config.categories.filter((category) => category.id !== button.closest(".category-card").dataset.id);
-    renderCategories();
-});
-$("#categories").addEventListener("input", (event) => {
-    if (event.target.matches(".category-weight")) updateWeightTotal();
+    const card = event.target.closest(".category-card");
+    if (!card) return;
+    const category = config.categories.find((item) => item.id === card.dataset.id);
+    if (event.target.closest(".remove")) {
+        config.categories = config.categories.filter((item) => item.id !== card.dataset.id);
+        renderCategories();
+        return;
+    }
+    if (event.target.closest(".add-option")) {
+        category.options.push({ value: "Новый вариант", score: 50 });
+        renderCategories();
+        return;
+    }
+    const removeOption = event.target.closest(".remove-option");
+    if (removeOption) {
+        category.options.splice(Number(removeOption.dataset.optionIndex), 1);
+        renderCategories();
+    }
 });
 $("#save").addEventListener("click", async () => {
     try {
