@@ -491,6 +491,7 @@ function revealRoundsFor(playerCount, categoryCount) {
 const ACTION_DURATION_MS = 60_000;
 const RECONNECT_GRACE_MS = 60_000;
 const MIN_PLAYERS_TO_START = 3;
+const SKIP_VOTE = "__skip_vote__";
 
 function newPlayerToken() {
     return crypto.randomBytes(24).toString("hex");
@@ -701,6 +702,13 @@ function startNextRound(room) {
     beginRevealRound(room);
 }
 
+function continueWithoutElimination(room) {
+    if (activePlayers(room).length <= room.capacity || room.round >= room.revealRounds - 1) {
+        return endGame(room);
+    }
+    startNextRound(room);
+}
+
 function resolveVote(room, timedOut = false) {
     const voters = activePlayers(room);
     if (!timedOut && !voters.every((player) => room.votes[player.id])) return;
@@ -711,11 +719,17 @@ function resolveVote(room, timedOut = false) {
     Object.values(room.votes).forEach((targetId) => {
         totals[targetId] = (totals[targetId] || 0) + 1;
     });
-    const highest = Math.max(0, ...Object.values(totals));
-    const candidates = voters.filter((player) => totals[player.id] === highest);
-    if (!highest || candidates.length !== 1) {
+    const skipVotes = totals[SKIP_VOTE] || 0;
+    const highestPlayerVotes = Math.max(0, ...voters.map((player) => totals[player.id] || 0));
+    if (skipVotes > 0 && skipVotes >= highestPlayerVotes) {
+        io.to(room.code).emit("voteSkipped", { timedOut });
+        continueWithoutElimination(room);
+        return;
+    }
+    const candidates = voters.filter((player) => totals[player.id] === highestPlayerVotes);
+    if (!highestPlayerVotes || candidates.length !== 1) {
         io.to(room.code).emit("voteTied", { timedOut });
-        startNextRound(room);
+        continueWithoutElimination(room);
         return;
     }
 
@@ -909,6 +923,16 @@ io.on("connection", (socket) => {
         if (targetId === socket.id) return emitError(socket, "Нельзя голосовать за себя.");
         if (room.votes[socket.id]) return emitError(socket, "Ваш голос уже принят.");
         room.votes[socket.id] = targetId;
+        socket.emit("voteAccepted");
+        emitRoom(room);
+        resolveVote(room);
+    });
+
+    socket.on("skipVote", () => {
+        const room = roomFor(socket);
+        if (!room || room.phase !== "voting" || room.eliminated.includes(socket.id)) return;
+        if (room.votes[socket.id]) return emitError(socket, "Ваш голос уже принят.");
+        room.votes[socket.id] = SKIP_VOTE;
         socket.emit("voteAccepted");
         emitRoom(room);
         resolveVote(room);

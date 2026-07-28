@@ -228,9 +228,11 @@ function updateGame() {
 
     const canRevealProfession = room.phase === "reveal" && trait && me && !me.eliminated && isMyTurn && !hasRevealedThisRound;
     const canChooseTrait = isChoiceRound && me && !me.eliminated && isMyTurn && !hasRevealedThisRound;
+    const canSkipVote = isVoting && me && !me.eliminated && !hasVoted;
     $("#revealButton").classList.toggle("hidden", !canRevealProfession);
     $("#revealButton").textContent = canRevealProfession ? `Раскрыть: ${traitName(trait)}` : "";
-    $("#actionHint").textContent = isStory ? (isHost() ? "Подтвердите начало, когда все прочитали историю." : "Ждём подтверждения ведущего.") : me?.eliminated ? "Вы исключены, но можете наблюдать за игрой." : isVoting && hasVoted ? "Ваш голос принят. Ждём остальных." : isVoting ? "Голосуйте до окончания таймера." : hasRevealedThisRound ? "Карта раскрыта. Ждём остальных." : isMyTurn && canChooseTrait ? "Ваш ход: нажмите на любую ещё нераскрытую карточку." : isMyTurn ? "Ваш ход: раскройте профессию." : turnPlayer ? `Сейчас ходит ${turnPlayer.nickname}.` : "";
+    $("#skipVoteButton").classList.toggle("hidden", !canSkipVote);
+    $("#actionHint").textContent = isFinished ? "Игра завершена." : isStory ? (isHost() ? "Подтвердите начало, когда все прочитали историю." : "Ждём подтверждения ведущего.") : me?.eliminated ? "Вы исключены, но можете наблюдать за игрой." : isVoting && hasVoted ? "Ваш голос принят. Ждём остальных." : isVoting ? "Голосуйте до окончания таймера." : hasRevealedThisRound ? "Карта раскрыта. Ждём остальных." : isMyTurn && canChooseTrait ? "Ваш ход: нажмите на любую ещё нераскрытую карточку." : isMyTurn ? "Ваш ход: раскройте профессию." : turnPlayer ? `Сейчас ходит ${turnPlayer.nickname}.` : "";
 
     const cardOrder = room.categoryOrder?.length ? room.categoryOrder : Object.keys(myCards);
     $("#myCards").innerHTML = cardOrder.filter((name) => name in myCards).map((name) => cardMarkup(
@@ -296,6 +298,7 @@ $("#revealButton").addEventListener("click", () => {
     socket.emit("revealTrait", room?.currentTrait);
     playSound("reveal");
 });
+$("#skipVoteButton").addEventListener("click", () => socket.emit("skipVote"));
 $("#soundToggle").addEventListener("click", () => {
     soundsEnabled = !soundsEnabled;
     localStorage.setItem("bunker-sounds", soundsEnabled ? "on" : "off");
@@ -359,6 +362,7 @@ socket.on("voteAccepted", () => { toast("Ваш голос принят."); play
 socket.on("playerEliminated", ({ nickname: name }) => { toast(`${name} не попадает в бункер.`); playSound("out"); });
 socket.on("turnSkipped", ({ nickname: name }) => { toast(`${name} не успел раскрыть карту — ход пропущен.`); playSound("skip"); });
 socket.on("voteTied", () => { toast("Ничья: никто не исключен. Начинается следующий раунд."); playSound("tie"); });
+socket.on("voteSkipped", () => { toast("Решение команды: никого не исключаем. Начинается следующий раунд."); playSound("tie"); });
 socket.on("revealLimitReached", () => { toast("Лимит раскрытий достигнут: оставшиеся карты останутся тайной."); playSound("vote"); });
 socket.on("gameFinished", ({ survivors }) => { toast(`Выжили: ${survivors.join(", ")}.`); playSound("finish"); });
 socket.on("errorMessage", toast);
