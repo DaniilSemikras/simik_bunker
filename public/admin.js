@@ -88,7 +88,7 @@ function renderCategories() {
                     </div>
                 `).join("")}
             </div>
-            <p class="distribution-total">Сумма вероятностей: 100% из 100%</p>
+            <div class="distribution-actions"><p class="distribution-total">Сумма вероятностей: 100% из 100%</p><button class="equalize-chances" type="button">Распределить поровну</button></div>
             <button class="add-option" type="button">+ Добавить вариант</button>
         </article>
     `).join("");
@@ -240,6 +240,20 @@ $("#adminAvatarFile").addEventListener("change", async (event) => {
 $("#categories").addEventListener("click", (event) => {
     const card = event.target.closest(".category-card");
     if (!card) return;
+    if (event.target.closest(".equalize-chances")) {
+        const draft = collectConfig();
+        config = { ...config, ...draft };
+        const categoryToEqualize = config.categories.find((item) => item.id === card.dataset.id);
+        const count = categoryToEqualize?.options.length || 0;
+        if (!count) return;
+        const baseChance = Math.floor((100 / count) * 100) / 100;
+        categoryToEqualize.options.forEach((option, index) => {
+            option.chance = index === count - 1 ? Math.round((100 - baseChance * (count - 1)) * 100) / 100 : baseChance;
+        });
+        markDirty();
+        renderCategories();
+        return;
+    }
     const category = config.categories.find((item) => item.id === card.dataset.id);
     if (event.target.closest(".remove")) {
         config.categories = config.categories.filter((item) => item.id !== card.dataset.id);
