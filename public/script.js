@@ -141,7 +141,7 @@ function updateLobby() {
         <div class="player-row ${player.left ? "left-player" : ""}">${avatarMarkup(player)}<span>${escaped(player.nickname)}</span>${player.left ? '<span class="host-badge">вышел</span>' : player.id === room.hostId ? '<span class="host-badge">ведущий</span>' : ""}</div>
     `).join("");
     $("#startGame").classList.toggle("hidden", !isHost());
-    $("#startHint").textContent = activePlayers().length < 2 ? "Для начала нужен ещё хотя бы один игрок." : isHost() ? "После старта половина игроков сможет остаться в бункере." : "";
+    $("#startHint").textContent = activePlayers().length < 3 ? "Для старта нужно минимум 3 игрока." : isHost() ? "После старта половина игроков сможет остаться в бункере." : "";
 }
 
 function cardMarkup(trait, value, revealed, canChoose) {

@@ -303,6 +303,12 @@ function cleanNickname(value) {
     return String(value || "").trim().replace(/\s+/g, " ").slice(0, 18);
 }
 
+const PROFESSION_RANKS = ["новичок", "вафля", "продвинутый", "нормис", "силач", "прайм"];
+
+function professionBase(value) {
+    return String(value || "").split(" — ")[0];
+}
+
 function assignCards(players, categories) {
     const pickOption = (options) => {
         let roll = Math.random() * 100;
@@ -314,7 +320,10 @@ function assignCards(players, categories) {
     };
     return Object.fromEntries(players.map((player) => [
         player.id,
-        Object.fromEntries(categories.map((category) => [category.id, pickOption(category.options)]))
+        Object.fromEntries(categories.map((category) => {
+            const option = pickOption(category.options);
+            return [category.id, category.id === "profession" ? `${option} — ${randomItem(PROFESSION_RANKS)}` : option];
+        }))
     ]));
 }
 
@@ -334,6 +343,7 @@ function revealRoundsFor(playerCount, categoryCount) {
 
 const ACTION_DURATION_MS = 60_000;
 const RECONNECT_GRACE_MS = 60_000;
+const MIN_PLAYERS_TO_START = 3;
 
 function newPlayerToken() {
     return crypto.randomBytes(24).toString("hex");
@@ -383,7 +393,7 @@ function currentTurnPlayerId(room) {
 }
 
 function scoreRevealedCard(room, trait, value) {
-    const configuredScore = room.cardScores?.[trait]?.[value];
+    const configuredScore = room.cardScores?.[trait]?.[trait === "profession" ? professionBase(value) : value];
     const score = cleanScore(configuredScore, defaultOptionScore(trait, value));
     return (score - 50) / 50;
 }
@@ -679,7 +689,7 @@ io.on("connection", (socket) => {
         const room = roomFor(socket);
         if (!room || room.host !== socket.id) return emitError(socket, "Начать игру может только ведущий.");
         if (room.phase !== "lobby") return;
-        if (activePlayers(room).length < 2) return emitError(socket, "Нужно хотя бы два игрока.");
+        if (activePlayers(room).length < MIN_PLAYERS_TO_START) return emitError(socket, "Нужно хотя бы три игрока.");
         room.phase = "reveal";
         room.capacity = Math.ceil(activePlayers(room).length / 2);
         room.traitOrder = gameConfig.categories.map((category) => category.id);
