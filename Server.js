@@ -574,7 +574,7 @@ io.on("connection", (socket) => {
         rooms[code] = {
             code,
             host: socket.id,
-            players: [{ id: socket.id, nickname, avatarUrl: payload.wantsAvatar ? chooseAvatar() : null, left: false }],
+            players: [{ id: socket.id, nickname, avatarUrl: chooseAvatar(), left: false }],
             phase: "lobby",
             capacity: 0,
             round: 0,
@@ -598,7 +598,7 @@ io.on("connection", (socket) => {
         emitRoom(rooms[code]);
     });
 
-    socket.on("joinRoom", ({ roomCode, nickname: rawNickname, wantsAvatar } = {}) => {
+    socket.on("joinRoom", ({ roomCode, nickname: rawNickname } = {}) => {
         const code = String(roomCode || "").trim().toUpperCase();
         const nickname = cleanNickname(rawNickname);
         const room = rooms[code];
@@ -610,7 +610,7 @@ io.on("connection", (socket) => {
         if (room.players.some((player) => !player.left && player.nickname.toLocaleLowerCase("ru") === nickname.toLocaleLowerCase("ru"))) {
             return emitError(socket, "Такой никнейм уже занят.");
         }
-        room.players.push({ id: socket.id, nickname, avatarUrl: wantsAvatar ? chooseAvatar(room) : null, left: false });
+        room.players.push({ id: socket.id, nickname, avatarUrl: chooseAvatar(room), left: false });
         socket.join(code);
         socket.emit("roomEntered", { code });
         emitRoom(room);

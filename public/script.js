@@ -19,7 +19,6 @@ let countdownTimer;
 let audioContext;
 let soundsEnabled = localStorage.getItem("bunker-sounds") !== "off";
 let lastTurnSoundKey = "";
-let wantsAvatar = false;
 
 function show(screen) {
     ["#menu", "#lobby", "#game"].forEach((id) => $(id).classList.toggle("hidden", id !== screen));
@@ -119,20 +118,8 @@ function avatarMarkup(player) {
     return `<span class="avatar">${escaped(fallbackInitial(player.nickname))}</span>`;
 }
 
-function updateAvatarPreview() {
-    const initial = $("#avatarInitial");
-    const random = $("#avatarRandom");
-    const toggle = $("#toggleAvatar");
-    initial.textContent = fallbackInitial();
-    initial.classList.toggle("hidden", wantsAvatar);
-    random.classList.toggle("hidden", !wantsAvatar);
-    toggle.setAttribute("aria-pressed", String(wantsAvatar));
-    toggle.textContent = wantsAvatar ? "Аватар из набора: да" : "Использовать аватар из набора";
-    $("#avatarHint").textContent = wantsAvatar ? "Сервер случайно выдаст аватар из набора ведущего." : "Если не выбирать аватар, будет первая буква ника.";
-}
-
 function playerPayload() {
-    return { nickname: nickname(), wantsAvatar };
+    return { nickname: nickname() };
 }
 
 function updateLobby() {
@@ -225,11 +212,6 @@ function enterRoom(code) {
 $("#createRoom").addEventListener("click", () => socket.emit("createRoom", playerPayload()));
 $("#joinRoom").addEventListener("click", () => socket.emit("joinRoom", { roomCode: $("#roomCode").value, ...playerPayload() }));
 $("#nickname").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#createRoom").click(); });
-$("#nickname").addEventListener("input", updateAvatarPreview);
-$("#toggleAvatar").addEventListener("click", () => {
-    wantsAvatar = !wantsAvatar;
-    updateAvatarPreview();
-});
 $("#roomCode").addEventListener("input", (event) => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
 $("#startGame").addEventListener("click", () => socket.emit("startGame"));
 $("#revealButton").addEventListener("click", () => {
@@ -297,6 +279,5 @@ socket.on("connect", () => { if (currentCode) toast("Соединение вос
 clearInterval(countdownTimer);
 countdownTimer = setInterval(updateActionTimer, 250);
 updateSoundToggle();
-updateAvatarPreview();
 document.addEventListener("pointerdown", unlockSound, { once: true });
 document.addEventListener("keydown", unlockSound, { once: true });
