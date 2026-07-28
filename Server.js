@@ -95,7 +95,8 @@ const DEFAULT_GAME_CONFIG = {
             { value: "механик", score: 88, chance: 20 }
         ]
     }],
-    disasters: DISASTERS
+    disasters: DISASTERS,
+    hiddenAvatars: []
 };
 
 function clone(value) {
@@ -171,7 +172,13 @@ function normalizeGameConfig(rawConfig) {
         : [];
     if (!disasters.length) throw new Error("Добавьте хотя бы один сценарий катастрофы.");
 
-    return { categories: otherCategories, disasters };
+    const hiddenAvatars = [...new Set(
+        (Array.isArray(rawConfig?.hiddenAvatars) ? rawConfig.hiddenAvatars : [])
+            .map((url) => String(url || ""))
+            .filter((url) => /^\/assets\/avatars\/[a-zA-Z0-9_-]+\.(png|jpg|jpeg|webp)$/i.test(url))
+    )];
+
+    return { categories: otherCategories, disasters, hiddenAvatars };
 }
 
 function loadGameConfig() {
@@ -275,11 +282,23 @@ function listAvatarDirectory(directory, publicPath, validator) {
         .map((filename) => `${publicPath}/${filename}`);
 }
 
-function listAvatarUrls() {
+function listAllAvatarUrls() {
     return [
         ...listAvatarDirectory(BUILT_IN_AVATAR_DIRECTORY, "/assets/avatars", isImageFilename),
         ...listAvatarDirectory(AVATAR_DIRECTORY, "/uploads/avatars", isAvatarFilename)
     ];
+}
+
+function listAvatarUrls() {
+    const hidden = new Set(gameConfig?.hiddenAvatars || []);
+    return listAllAvatarUrls().filter((url) => !hidden.has(url));
+}
+
+function avatarLibraryResponse() {
+    return {
+        avatars: listAllAvatarUrls(),
+        hiddenAvatars: gameConfig.hiddenAvatars || []
+    };
 }
 
 function chooseAvatar(room) {
@@ -331,16 +350,38 @@ app.put("/api/admin/config", requireAdmin, async (request, response) => {
 });
 
 app.get("/api/admin/avatars", requireAdmin, (_request, response) => {
-    response.json({ avatars: listAvatarUrls() });
+    response.json(avatarLibraryResponse());
 });
 
 app.post("/api/admin/avatars", requireAdmin, (request, response) => {
     try {
         const url = saveAvatarToPool(request.body?.imageData);
         if (!url) throw new Error("Выберите изображение для аватара.");
-        response.status(201).json({ url, avatars: listAvatarUrls() });
+        response.status(201).json({ url, ...avatarLibraryResponse() });
     } catch (error) {
         response.status(400).json({ message: error.message || "Не удалось загрузить аватар." });
+    }
+});
+
+app.put("/api/admin/avatars/visibility", requireAdmin, async (request, response) => {
+    const url = String(request.body?.url || "");
+    const builtInAvatars = listAvatarDirectory(BUILT_IN_AVATAR_DIRECTORY, "/assets/avatars", isImageFilename);
+    if (!builtInAvatars.includes(url)) {
+        return response.status(404).json({ message: "Аватар не найден." });
+    }
+
+    try {
+        const nextConfig = clone(gameConfig);
+        const hidden = new Set(nextConfig.hiddenAvatars || []);
+        if (request.body?.hidden) hidden.add(url);
+        else hidden.delete(url);
+        nextConfig.hiddenAvatars = [...hidden];
+        const normalizedConfig = normalizeGameConfig(nextConfig);
+        await saveGameConfig(normalizedConfig);
+        gameConfig = normalizedConfig;
+        response.json(avatarLibraryResponse());
+    } catch (error) {
+        response.status(400).json({ message: error.message || "Не удалось обновить набор аватаров." });
     }
 });
 
@@ -350,7 +391,7 @@ app.delete("/api/admin/avatars/:filename", requireAdmin, (request, response) => 
     const target = path.join(AVATAR_DIRECTORY, filename);
     if (!fs.existsSync(target)) return response.status(404).json({ message: "Аватар не найден." });
     fs.unlinkSync(target);
-    response.json({ avatars: listAvatarUrls() });
+    response.json(avatarLibraryResponse());
 });
 
 function randomItem(items) {

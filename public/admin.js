@@ -2,6 +2,7 @@ const $ = (selector) => document.querySelector(selector);
 const TOKEN_KEY = "bunker-admin-token";
 let config = null;
 let avatars = [];
+let hiddenAvatars = [];
 
 function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]);
@@ -74,12 +75,13 @@ function renderAvatarLibrary() {
         ? avatars.map((url) => {
             const filename = url.split("/").pop();
             const isBuiltIn = url.startsWith("/assets/avatars/");
+            const isHidden = hiddenAvatars.includes(url);
             const action = isBuiltIn
-                ? '<span class="library-avatar-label">встроенный</span>'
+                ? `<button class="toggle-library-avatar" type="button" data-avatar-url="${escapeHtml(url)}" data-next-hidden="${!isHidden}" aria-label="${isHidden ? "Вернуть аватар" : "Убрать аватар"}">${isHidden ? "Вернуть" : "Убрать"}</button><span class="library-avatar-label">${isHidden ? "скрыт" : "встроенный"}</span>`
                 : `<button class="remove-library-avatar" type="button" data-avatar-file="${escapeHtml(filename)}" aria-label="Удалить аватар">×</button>`;
-            return `<article class="library-avatar"><img src="${escapeHtml(url)}" alt="Аватар из набора">${action}</article>`;
+            return `<article class="library-avatar${isHidden ? " is-hidden" : ""}"><img src="${escapeHtml(url)}" alt="Аватар из набора">${action}</article>`;
         }).join("")
-        : '<p class="avatar-library-empty">Пока нет аватаров. Игроки без выбора будут отображаться с первой буквой ника.</p>';
+        : '<p class="avatar-library-empty">Пока нет аватаров. Игроки будут отображаться с первой буквой ника.</p>';
 }
 
 function readImage(file) {
@@ -111,13 +113,14 @@ function collectConfig() {
         }))
     }));
     const disasters = [...document.querySelectorAll(".disaster-value")].map((input) => input.value);
-    return { categories, disasters };
+    return { categories, disasters, hiddenAvatars };
 }
 
 async function loadEditor() {
     const [nextConfig, avatarResponse] = await Promise.all([request("/api/admin/config"), request("/api/admin/avatars")]);
     config = nextConfig;
     avatars = avatarResponse.avatars;
+    hiddenAvatars = avatarResponse.hiddenAvatars || [];
     renderCategories();
     renderDisasters();
     renderAvatarLibrary();
@@ -161,7 +164,7 @@ $("#adminAvatarFile").addEventListener("change", async (event) => {
     }
 
     let uploadedCount = 0;
-    let latestAvatars = avatars;
+    let latestAvatarLibrary = { avatars, hiddenAvatars };
     const errors = [];
     for (const file of validFiles) {
         try {
@@ -171,13 +174,14 @@ $("#adminAvatarFile").addEventListener("change", async (event) => {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ imageData })
             });
-            latestAvatars = response.avatars;
+            latestAvatarLibrary = response;
             uploadedCount += 1;
         } catch (error) {
             errors.push(`${file.name}: ${error.message}`);
         }
     }
-    avatars = latestAvatars;
+    avatars = latestAvatarLibrary.avatars;
+    hiddenAvatars = latestAvatarLibrary.hiddenAvatars || [];
     renderAvatarLibrary();
 
     const skippedCount = rejectedCount + errors.length;
@@ -214,11 +218,32 @@ $("#disasterOptions").addEventListener("click", (event) => {
     renderDisasters();
 });
 $("#avatarLibrary").addEventListener("click", async (event) => {
+    const toggleButton = event.target.closest(".toggle-library-avatar");
+    if (toggleButton) {
+        try {
+            const response = await request("/api/admin/avatars/visibility", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    url: toggleButton.dataset.avatarUrl,
+                    hidden: toggleButton.dataset.nextHidden === "true"
+                })
+            });
+            avatars = response.avatars;
+            hiddenAvatars = response.hiddenAvatars || [];
+            renderAvatarLibrary();
+            showMessage("#saveMessage", toggleButton.dataset.nextHidden === "true" ? "Аватар убран из случайного набора." : "Аватар снова в наборе.", "success");
+        } catch (error) {
+            showMessage("#saveMessage", error.message, "error");
+        }
+        return;
+    }
     const button = event.target.closest(".remove-library-avatar");
     if (!button) return;
     try {
         const response = await request(`/api/admin/avatars/${encodeURIComponent(button.dataset.avatarFile)}`, { method: "DELETE" });
         avatars = response.avatars;
+        hiddenAvatars = response.hiddenAvatars || [];
         renderAvatarLibrary();
         showMessage("#saveMessage", "Аватар удалён из набора.", "success");
     } catch (error) {
