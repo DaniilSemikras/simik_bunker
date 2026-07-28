@@ -30,19 +30,29 @@ function renderCategories() {
         <article class="category-card" data-id="${escapeHtml(category.id)}">
             <div class="category-top">
                 <input class="category-name" value="${escapeHtml(category.name)}" aria-label="Название категории">
+                <label class="weight-control"><span>Влияние, %</span><input class="category-weight" type="number" min="0" max="100" step="1" value="${Number(category.weight) || 0}" aria-label="Влияние категории в процентах"></label>
                 ${category.id === "profession" ? '<span class="locked">обязательна первой</span>' : '<button class="remove" type="button">Удалить</button>'}
             </div>
             <label>Варианты — по одному на строку</label>
             <textarea class="category-values" rows="5">${escapeHtml(category.values.join("\n"))}</textarea>
         </article>
     `).join("");
+    updateWeightTotal();
+}
+
+function updateWeightTotal() {
+    const total = [...document.querySelectorAll(".category-weight")].reduce((sum, input) => sum + (Number(input.value) || 0), 0);
+    const target = $("#weightTotal");
+    target.textContent = `Сумма влияния: ${total}% из 100%`;
+    target.classList.toggle("invalid", Math.abs(total - 100) > 0.01);
 }
 
 function makeCategory() {
     config.categories.push({
         id: `custom_${Date.now()}`,
         name: "Новая категория",
-        values: ["Первый вариант", "Второй вариант"]
+        values: ["Первый вариант", "Второй вариант"],
+        weight: 0
     });
     renderCategories();
 }
@@ -51,7 +61,8 @@ function collectConfig() {
     const categories = [...document.querySelectorAll(".category-card")].map((card) => ({
         id: card.dataset.id,
         name: card.querySelector(".category-name").value,
-        values: card.querySelector(".category-values").value.split("\n")
+        values: card.querySelector(".category-values").value.split("\n"),
+        weight: Number(card.querySelector(".category-weight").value)
     }));
     return { categories, disasters: $("#disasterList").value.split("\n") };
 }
@@ -88,6 +99,9 @@ $("#categories").addEventListener("click", (event) => {
     if (!button) return;
     config.categories = config.categories.filter((category) => category.id !== button.closest(".category-card").dataset.id);
     renderCategories();
+});
+$("#categories").addEventListener("input", (event) => {
+    if (event.target.matches(".category-weight")) updateWeightTotal();
 });
 $("#save").addEventListener("click", async () => {
     try {

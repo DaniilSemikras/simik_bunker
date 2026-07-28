@@ -34,6 +34,18 @@ const CATEGORY_NAMES = {
     backpack: "Рюкзак",
     specialAbility: "Спецвозможность"
 };
+// Проценты показывают, насколько категория влияет на общий прогноз бункера.
+// Их можно менять в админке, но сумма всегда должна оставаться равной 100.
+const DEFAULT_CATEGORY_WEIGHTS = {
+    profession: 35,
+    health: 20,
+    gender: 0,
+    age: 10,
+    body: 10,
+    parents: 0,
+    backpack: 12,
+    specialAbility: 13
+};
 const DISASTERS = [
     "После серии солнечных вспышек поверхность непригодна для жизни ещё 12 месяцев.",
     "Неизвестный вирус охватил планету. В бункере есть запас воздуха на год.",
@@ -45,7 +57,7 @@ const CONFIG_PATH = path.join(__dirname, "data", "game-config.json");
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "simik";
 const adminSessions = new Map();
 const DEFAULT_GAME_CONFIG = {
-    categories: TRAIT_ORDER.map((id) => ({ id, name: CATEGORY_NAMES[id], values: TRAITS[id] })),
+    categories: TRAIT_ORDER.map((id) => ({ id, name: CATEGORY_NAMES[id], values: TRAITS[id], weight: DEFAULT_CATEGORY_WEIGHTS[id] || 0 })),
     disasters: DISASTERS
 };
 
@@ -61,6 +73,12 @@ function cleanCategoryId(value) {
     return String(value || "").trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 32);
 }
 
+function cleanWeight(value, fallback) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.round(Math.min(100, Math.max(0, parsed)) * 10) / 10;
+}
+
 function normalizeGameConfig(rawConfig) {
     const rawCategories = Array.isArray(rawConfig?.categories) ? rawConfig.categories : DEFAULT_GAME_CONFIG.categories;
     const usedIds = new Set();
@@ -72,7 +90,7 @@ function normalizeGameConfig(rawConfig) {
             : [];
         if (!id || !name || !values.length || usedIds.has(id)) return null;
         usedIds.add(id);
-        return { id, name, values };
+        return { id, name, values, weight: cleanWeight(category?.weight, DEFAULT_CATEGORY_WEIGHTS[id] || 0) };
     }).filter(Boolean).slice(0, 12);
 
     const profession = categories.find((category) => category.id === "profession");
@@ -84,6 +102,11 @@ function normalizeGameConfig(rawConfig) {
     }
     if (otherCategories.length < 2) {
         throw new Error("Нужно минимум две категории, включая профессию.");
+    }
+
+    const totalWeight = otherCategories.reduce((sum, category) => sum + category.weight, 0);
+    if (Math.abs(totalWeight - 100) > 0.01) {
+        throw new Error(`Сумма влияния всех характеристик должна быть 100%. Сейчас: ${totalWeight}%.`);
     }
 
     const disasters = Array.isArray(rawConfig?.disasters)
@@ -190,32 +213,71 @@ function currentTurnPlayerId(room) {
     return room.turnOrder?.[room.turnIndex] || null;
 }
 
+const PROFESSION_RATINGS = [
+    { terms: ["врач", "фельдшер", "хирург", "медик"], score: 1, role: "медик" },
+    { terms: ["инженер", "механик", "электрик", "строител"], score: 0.9, role: "техник" },
+    { terms: ["фермер", "агроном", "садовод"], score: 0.9, role: "продовольствие" },
+    { terms: ["повар", "кулинар"], score: 0.78, role: "питание" },
+    { terms: ["биолог", "химик", "учен"], score: 0.82, role: "наука" },
+    { terms: ["военн", "спасател", "пожарн"], score: 0.75, role: "защита" },
+    { terms: ["ветеринар"], score: 0.68, role: "медик" },
+    { terms: ["психолог"], score: 0.58, role: "команда" },
+    { terms: ["программист", "разработчик"], score: 0.5, role: "техник" },
+    { terms: ["учител"], score: 0.42, role: "команда" }
+];
+
+function professionRating(value) {
+    const text = String(value || "").toLocaleLowerCase("ru");
+    return PROFESSION_RATINGS.find((rating) => rating.terms.some((term) => text.includes(term))) || { score: 0, role: null };
+}
+
 function scoreRevealedCard(trait, value) {
     const text = String(value).toLocaleLowerCase("ru");
+    if (trait === "profession") return professionRating(value).score;
     if (trait === "gender" || trait === "parents") return 0;
     if (trait === "age") {
         const age = Number.parseInt(text, 10);
-        if (age < 20) return -1;
-        if (age > 60) return -2;
-        return 1;
+        if (age < 20) return -0.4;
+        if (age > 60) return -0.8;
+        return 0.5;
     }
 
     const positive = ["врач", "инженер", "фермер", "повар", "военн", "биолог", "механик", "ветеринар", "здоров", "иммунитет", "идеальн", "атлет", "крепк", "вынослив", "аптечк", "инструмент", "семен", "батаре", "рация", "фильтр", "генератор", "консерв", "первая помощь", "почин", "замки", "химии", "грибы", "радиосвяз"];
     const negative = ["астма", "бессон", "диабет", "мигрень", "перелом", "паничес", "близорук", "быстро устаю", "травм", "плохая координац"];
-    let score = positive.some((word) => text.includes(word)) ? 2 : 0;
-    if (negative.some((word) => text.includes(word))) score -= 2;
+    let score = positive.some((word) => text.includes(word)) ? 0.8 : 0;
+    if (negative.some((word) => text.includes(word))) score -= 0.8;
     return score;
+}
+
+function professionInsight(room, players) {
+    const roles = new Set();
+    for (const player of players) {
+        const profession = room.revealed[player.id]?.profession;
+        const role = professionRating(profession).role;
+        if (role) roles.add(role);
+    }
+    return roles.size ? `Полезные роли: ${[...roles].join(", ")}.` : "";
 }
 
 function calculateBunkerSurvivalChance(room) {
     const players = activePlayers(room);
     if (!players.length || !room.capacity) return null;
-    const totalScore = players.reduce((sum, player) => sum + Object.entries(room.revealed[player.id] || {}).reduce((playerScore, [trait, value]) => playerScore + scoreRevealedCard(trait, value), 0), 0);
-    const revealedCards = players.reduce((sum, player) => sum + Object.keys(room.revealed[player.id] || {}).length, 0);
-    const maxRevealedCards = players.length * Math.max(1, room.traitOrder.length);
-    const averageScore = totalScore / players.length;
-    const informationBonus = (revealedCards / maxRevealedCards) * 6;
-    return Math.max(20, Math.min(95, Math.round(55 + averageScore * 7 + informationBonus)));
+    const weights = room.categoryWeights || Object.fromEntries(gameConfig.categories.map((category) => [category.id, category.weight]));
+    let weightedScore = 0;
+    let revealedWeight = 0;
+    for (const player of players) {
+        for (const [trait, value] of Object.entries(room.revealed[player.id] || {})) {
+            const weight = Number(weights[trait]) || 0;
+            if (!weight) continue;
+            weightedScore += scoreRevealedCard(trait, value) * weight;
+            revealedWeight += weight;
+        }
+    }
+    const maxWeight = players.length * 100;
+    const averageScore = revealedWeight ? weightedScore / revealedWeight : 0;
+    const informationBonus = (revealedWeight / maxWeight) * 7;
+    const professionBonus = new Set(players.map((player) => professionRating(room.revealed[player.id]?.profession).role).filter(Boolean)).size * 2;
+    return Math.max(20, Math.min(95, Math.round(55 + averageScore * 31 + informationBonus + Math.min(8, professionBonus))));
 }
 
 function publicState(room) {
@@ -229,6 +291,7 @@ function publicState(room) {
         currentTrait,
         categoryOrder: room.traitOrder || gameConfig.categories.map((category) => category.id),
         categoryNames: room.categoryNames || Object.fromEntries(gameConfig.categories.map((category) => [category.id, category.name])),
+        professionInsight: professionInsight(room, activePlayers(room)),
         revealedThisRound: room.revealedThisRound || {},
         capacity: room.capacity,
         actionSeconds: ACTION_DURATION_MS / 1000,
@@ -467,6 +530,7 @@ io.on("connection", (socket) => {
         room.capacity = Math.ceil(activePlayers(room).length / 2);
         room.traitOrder = gameConfig.categories.map((category) => category.id);
         room.categoryNames = Object.fromEntries(gameConfig.categories.map((category) => [category.id, category.name]));
+        room.categoryWeights = Object.fromEntries(gameConfig.categories.map((category) => [category.id, category.weight]));
         room.disaster = randomItem(gameConfig.disasters);
         room.cards = assignCards(activePlayers(room), gameConfig.categories);
         room.revealed = Object.fromEntries(activePlayers(room).map((player) => [player.id, {}]));

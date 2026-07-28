@@ -147,7 +147,8 @@ function updateGame() {
     $("#gameCode").textContent = room.code;
     $("#phaseTitle").textContent = isFinished ? "Игра завершена" : isVoting ? "Голосование" : "Раскрытие карт";
     const bunkerChance = typeof room.bunkerSurvivalChance === "number" ? `${room.bunkerSurvivalChance}%` : "—";
-    $("#disasterCard").innerHTML = `<span class="eyebrow">КАТАСТРОФА</span><p>${escaped(room.disaster || "")}</p><div class="disaster-meta"><span class="capacity">Мест в бункере: ${room.capacity}</span><span class="bunker-chance">Прогноз выживания бункера: <strong>${bunkerChance}</strong></span></div>`;
+    const professionInsight = room.professionInsight ? `<span class="profession-insight">${escaped(room.professionInsight)}</span>` : "";
+    $("#disasterCard").innerHTML = `<span class="eyebrow">КАТАСТРОФА</span><p>${escaped(room.disaster || "")}</p><div class="disaster-meta"><span class="capacity">Мест в бункере: ${room.capacity}</span><span class="bunker-chance">Прогноз выживания бункера: <strong>${bunkerChance}</strong></span>${professionInsight}</div>`;
     $("#survivorCount").textContent = `${active.length} в игре`;
     const categoryCount = room.categoryOrder?.length || Object.keys(myCards).length;
     $("#roundLabel").textContent = isFinished ? "ИГРА ЗАВЕРШЕНА" : isVoting ? "ГОЛОСОВАНИЕ" : `РАУНД ${room.round} ИЗ ${categoryCount}`;
