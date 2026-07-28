@@ -77,7 +77,7 @@ function renderAvatarLibrary() {
             const isBuiltIn = url.startsWith("/assets/avatars/");
             const isHidden = hiddenAvatars.includes(url);
             const action = isBuiltIn
-                ? `<button class="toggle-library-avatar" type="button" data-avatar-url="${escapeHtml(url)}" data-next-hidden="${!isHidden}" aria-label="${isHidden ? "Вернуть аватар" : "Убрать аватар"}">${isHidden ? "Вернуть" : "Убрать"}</button><span class="library-avatar-label">${isHidden ? "скрыт" : "встроенный"}</span>`
+                ? `<button class="toggle-library-avatar" type="button" data-avatar-url="${escapeHtml(url)}" data-next-hidden="${!isHidden}" aria-label="${isHidden ? "Вернуть аватар" : "Убрать аватар"}" title="${isHidden ? "Вернуть аватар" : "Убрать аватар"}"><span class="eye-icon" aria-hidden="true"></span></button><span class="library-avatar-label">${isHidden ? "скрыт" : "встроенный"}</span>`
                 : `<button class="remove-library-avatar" type="button" data-avatar-file="${escapeHtml(filename)}" aria-label="Удалить аватар">×</button>`;
             return `<article class="library-avatar${isHidden ? " is-hidden" : ""}"><img src="${escapeHtml(url)}" alt="Аватар из набора">${action}</article>`;
         }).join("")
