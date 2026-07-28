@@ -10,7 +10,12 @@ const server = http.createServer(app);
 const io = new Server(server, { maxHttpBufferSize: 600_000 });
 
 app.use(express.json({ limit: "600kb" }));
-app.use(express.static("public"));
+app.use(express.static("public", {
+    maxAge: 0,
+    setHeaders(response) {
+        response.setHeader("Cache-Control", "no-store, max-age=0");
+    }
+}));
 
 const rooms = Object.create(null);
 const TRAITS = {

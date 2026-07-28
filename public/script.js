@@ -15,6 +15,10 @@ if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         if (pointerFrame) return;
         pointerFrame = requestAnimationFrame(() => {
             cursorAura.style.transform = `translate3d(${pointerX - 260}px, ${pointerY - 260}px, 0)`;
+            const shiftX = (pointerX - window.innerWidth / 2) * -0.018;
+            const shiftY = (pointerY - window.innerHeight / 2) * -0.014;
+            document.documentElement.style.setProperty("--bunker-x", `${shiftX}px`);
+            document.documentElement.style.setProperty("--bunker-y", `${shiftY}px`);
             pointerFrame = 0;
         });
     };
@@ -56,6 +60,9 @@ let lastTurnSoundKey = "";
 
 function show(screen) {
     ["#menu", "#lobby", "#game"].forEach((id) => $(id).classList.toggle("hidden", id !== screen));
+    document.body.classList.toggle("in-menu", screen === "#menu");
+    document.body.classList.toggle("in-lobby", screen === "#lobby");
+    document.body.classList.toggle("in-game", screen === "#game");
 }
 
 function toast(message) {
