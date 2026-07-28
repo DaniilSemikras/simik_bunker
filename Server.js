@@ -170,7 +170,7 @@ function normalizeGameConfig(rawConfig) {
         otherCategories.unshift(profession);
     }
     const disasters = Array.isArray(rawConfig?.disasters)
-        ? rawConfig.disasters.map((item) => cleanText(item, 240)).filter(Boolean).slice(0, 30)
+        ? rawConfig.disasters.map((item) => String(item || "").trim().replace(/\s+/g, " ")).filter(Boolean).slice(0, 30)
         : [];
     if (!disasters.length) throw new Error("Добавьте хотя бы один сценарий катастрофы.");
 
