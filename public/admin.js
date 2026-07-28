@@ -145,26 +145,40 @@ $("#addDisaster").addEventListener("click", () => {
     renderDisasters();
 });
 $("#adminAvatarFile").addEventListener("change", async (event) => {
-    const file = event.target.files?.[0];
+    const files = [...(event.target.files || [])];
     event.target.value = "";
-    if (!file) return;
-    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 350 * 1024) {
-        showMessage("#saveMessage", "Выберите PNG, JPG или WebP размером до 350 КБ.", "error");
+    if (!files.length) return;
+
+    const validFiles = files.filter((file) => ["image/png", "image/jpeg", "image/webp"].includes(file.type) && file.size <= 350 * 1024);
+    const rejectedCount = files.length - validFiles.length;
+    if (!validFiles.length) {
+        showMessage("#saveMessage", "Нужны PNG, JPG или WebP размером до 350 КБ.", "error");
         return;
     }
-    try {
-        const imageData = await readImage(file);
-        const response = await request("/api/admin/avatars", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ imageData })
-        });
-        avatars = response.avatars;
-        renderAvatarLibrary();
-        showMessage("#saveMessage", "Аватар загружен в набор.", "success");
-    } catch (error) {
-        showMessage("#saveMessage", error.message, "error");
+
+    let uploadedCount = 0;
+    let latestAvatars = avatars;
+    const errors = [];
+    for (const file of validFiles) {
+        try {
+            const imageData = await readImage(file);
+            const response = await request("/api/admin/avatars", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ imageData })
+            });
+            latestAvatars = response.avatars;
+            uploadedCount += 1;
+        } catch (error) {
+            errors.push(`${file.name}: ${error.message}`);
+        }
     }
+    avatars = latestAvatars;
+    renderAvatarLibrary();
+
+    const skippedCount = rejectedCount + errors.length;
+    const result = `Загружено: ${uploadedCount}${skippedCount ? `, пропущено: ${skippedCount}` : ""}.`;
+    showMessage("#saveMessage", errors.length ? `${result} ${errors[0]}` : result, uploadedCount ? "success" : "error");
 });
 $("#categories").addEventListener("click", (event) => {
     const card = event.target.closest(".category-card");

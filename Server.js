@@ -398,16 +398,6 @@ function scoreRevealedCard(room, trait, value) {
     return (score - 50) / 50;
 }
 
-function professionInsight(room, players) {
-    const roles = new Set();
-    for (const player of players) {
-        const profession = room.revealed[player.id]?.profession;
-        const role = professionRating(profession).role;
-        if (role) roles.add(role);
-    }
-    return roles.size ? `Полезные роли: ${[...roles].join(", ")}.` : "";
-}
-
 function calculateBunkerSurvivalChance(room) {
     const players = activePlayers(room);
     if (!players.length || !room.capacity) return null;
@@ -438,7 +428,6 @@ function publicState(room) {
         currentTrait,
         categoryOrder: room.traitOrder || gameConfig.categories.map((category) => category.id),
         categoryNames: room.categoryNames || Object.fromEntries(gameConfig.categories.map((category) => [category.id, category.name])),
-        professionInsight: professionInsight(room, activePlayers(room)),
         revealedThisRound: room.revealedThisRound || {},
         capacity: room.capacity,
         actionSeconds: ACTION_DURATION_MS / 1000,

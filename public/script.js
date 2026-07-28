@@ -172,8 +172,7 @@ function updateGame() {
     const bunkerChance = isFinished && typeof room.bunkerSurvivalChance === "number"
         ? `<span class="bunker-chance">Прогноз выживания бункера: <strong>${room.bunkerSurvivalChance}%</strong></span>`
         : "";
-    const professionInsight = room.professionInsight ? `<span class="profession-insight">${escaped(room.professionInsight)}</span>` : "";
-    $("#disasterCard").innerHTML = `<span class="eyebrow">КАТАСТРОФА</span><p>${escaped(room.disaster || "")}</p><div class="disaster-meta"><span class="capacity">Мест в бункере: ${room.capacity}</span>${bunkerChance}${professionInsight}</div>`;
+    $("#disasterCard").innerHTML = `<span class="eyebrow">КАТАСТРОФА</span><p>${escaped(room.disaster || "")}</p><div class="disaster-meta"><span class="capacity">Мест в бункере: ${room.capacity}</span>${bunkerChance}</div>`;
     $("#survivorCount").textContent = `${active.length} в игре`;
     const categoryCount = room.categoryOrder?.length || Object.keys(myCards).length;
     const revealRoundCount = room.revealRounds || categoryCount;
