@@ -2,18 +2,20 @@ const socket = io();
 const $ = (selector) => document.querySelector(selector);
 
 if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const cursorAura = document.createElement("div");
+    cursorAura.className = "cursor-aura";
+    document.body.prepend(cursorAura);
     let pointerFrame = 0;
-    let pointerX = 50;
-    let pointerY = 18;
+    let pointerX = window.innerWidth / 2;
+    let pointerY = window.innerHeight / 5;
     document.addEventListener("pointermove", (event) => {
         if (event.pointerType === "touch") return;
-        document.documentElement.classList.add("has-pointer-glow");
-        pointerX = (event.clientX / window.innerWidth) * 100;
-        pointerY = (event.clientY / window.innerHeight) * 100;
+        pointerX = event.clientX;
+        pointerY = event.clientY;
+        cursorAura.classList.add("is-visible");
         if (pointerFrame) return;
         pointerFrame = requestAnimationFrame(() => {
-            document.documentElement.style.setProperty("--cursor-x", `${pointerX}%`);
-            document.documentElement.style.setProperty("--cursor-y", `${pointerY}%`);
+            cursorAura.style.transform = `translate3d(${pointerX - 260}px, ${pointerY - 260}px, 0)`;
             pointerFrame = 0;
         });
     }, { passive: true });
