@@ -91,6 +91,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .bunker-trait-card span,.bunker-trait-card strong { position:relative; z-index:1; display:block; }
 .bunker-trait-card span { margin-bottom:8px; color:#ffc77e; font-size:10px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
 .bunker-trait-card strong { font-size:15px; line-height:1.28; }
+.bunker-trait-card small { position:relative; z-index:1; display:inline-flex; margin-top:7px; border-radius:100px; padding:3px 6px; color:#ffd9ad; background:rgba(241,168,78,.12); font-size:9px; font-weight:850; text-transform:uppercase; }
 .round-panel, .cards-panel, .players-panel { padding:22px; }
 .round-panel { display:grid; grid-template-columns:184px minmax(360px,650px) max-content; align-items:center; justify-content:start; column-gap:22px; position:sticky; top:12px; z-index:4; padding:15px 22px; box-shadow:0 14px 38px rgba(0,0,0,.28); }
 .round-panel #roundLabel { grid-column:1; grid-row:1; }

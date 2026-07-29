@@ -293,10 +293,15 @@ function updateGame() {
     const bunkerChance = isFinished && typeof room.bunkerSurvivalChance === "number"
         ? `<span class="bunker-chance">Прогноз выживания бункера: <strong>${room.bunkerSurvivalChance}%</strong></span>`
         : "";
+    const occupiedSlots = Number(room.bunkerOccupiedSlots) || 0;
+    const occupiedSlotsLabel = occupiedSlots
+        ? ` · жителями занято: ${occupiedSlots}`
+        : "";
+    const capacityLabel = `Мест для игроков: ${room.capacity}${occupiedSlotsLabel}`;
     const disasterText = escaped(room.disaster || "");
     const disasterContent = isStory
-        ? `<span class="eyebrow">КАТАСТРОФА</span><p class="story-text">${disasterText}</p><div class="disaster-meta"><span class="capacity">Мест в бункере: ${room.capacity}</span>${isHost() ? '<button class="button primary story-ready" type="button" data-acknowledge-story>Все прочитали историю — начать раунд</button>' : '<span class="story-wait">Ждём, пока ведущий начнёт раунд.</span>'}</div>`
-        : `<details class="disaster-accordion"><summary><span class="eyebrow">КАТАСТРОФА · ОТКРЫТЬ ИСТОРИЮ</span><span class="accordion-icon" aria-hidden="true">⌄</span></summary><p>${disasterText}</p></details><div class="disaster-meta"><span class="capacity">Мест в бункере: ${room.capacity}</span>${bunkerChance}</div>`;
+        ? `<span class="eyebrow">КАТАСТРОФА</span><p class="story-text">${disasterText}</p><div class="disaster-meta"><span class="capacity">${capacityLabel}</span>${isHost() ? '<button class="button primary story-ready" type="button" data-acknowledge-story>Все прочитали историю — начать раунд</button>' : '<span class="story-wait">Ждём, пока ведущий начнёт раунд.</span>'}</div>`
+        : `<details class="disaster-accordion"><summary><span class="eyebrow">КАТАСТРОФА · ОТКРЫТЬ ИСТОРИЮ</span><span class="accordion-icon" aria-hidden="true">⌄</span></summary><p>${disasterText}</p></details><div class="disaster-meta"><span class="capacity">${capacityLabel}</span>${bunkerChance}</div>`;
     $("#disasterCard").classList.toggle("story-mode", isStory);
     $("#disasterCard").innerHTML = disasterContent;
     const bunkerTraits = Array.isArray(room.bunkerTraits) ? room.bunkerTraits : [];
@@ -305,6 +310,7 @@ function updateGame() {
         '<article class="bunker-trait-card">',
         '<span>' + escaped(trait.name) + '</span>',
         '<strong>' + escaped(trait.value) + '</strong>',
+        trait.occupiedSlots ? '<small>занято мест: ' + escaped(trait.occupiedSlots) + '</small>' : '',
         '</article>'
     ].join("")).join("");
     $("#survivorCount").textContent = `${active.length} в игре`;

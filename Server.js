@@ -89,6 +89,56 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim().replace(/\/+$
 const SUPABASE_SECRET_KEY = String(process.env.SUPABASE_SECRET_KEY || "").trim();
 const adminSessions = new Map();
 const ADMIN_ROOM = "admin-editors";
+const BUNKER_TRAITS_SEED_VERSION = 1;
+const DEFAULT_BUNKER_TRAITS = [
+    {
+        id: "water",
+        name: "Вода",
+        options: [
+            { value: "Воды нет", chance: 15 },
+            { value: "Запас воды на 3 дня", chance: 35 },
+            { value: "Запас воды на месяц", chance: 30 },
+            { value: "Запас воды на год", chance: 20 }
+        ]
+    },
+    {
+        id: "food",
+        name: "Еда",
+        options: [
+            { value: "Еды нет", chance: 15 },
+            { value: "Запас еды на 3 дня", chance: 35 },
+            { value: "Запас еды на месяц", chance: 30 },
+            { value: "Запас еды на год", chance: 20 }
+        ]
+    },
+    {
+        id: "electricity",
+        name: "Электричество",
+        options: [
+            { value: "Генератор работает", chance: 45 },
+            { value: "Только аварийное освещение", chance: 25 },
+            { value: "Проводка повреждена — нужен электрик", chance: 30 }
+        ]
+    },
+    {
+        id: "ventilation",
+        name: "Вентиляция",
+        options: [
+            { value: "Вентиляция исправна", chance: 45 },
+            { value: "Фильтры на исходе", chance: 30 },
+            { value: "Вентиляция сломана — нужен ремонт", chance: 25 }
+        ]
+    },
+    {
+        id: "previous_residents",
+        name: "Предыдущие жители",
+        options: [
+            { value: "Бункер пуст", chance: 55, occupiedSlots: 0 },
+            { value: "Внутри живёт бездомный", chance: 30, occupiedSlots: 1 },
+            { value: "Внутри живут двое прежних жильцов", chance: 15, occupiedSlots: 2 }
+        ]
+    }
+];
 const DEFAULT_GAME_CONFIG = {
     categories: [{
         id: "profession",
@@ -102,7 +152,8 @@ const DEFAULT_GAME_CONFIG = {
         ]
     }],
     disasters: DISASTERS,
-    bunkerTraits: [],
+    bunkerTraits: DEFAULT_BUNKER_TRAITS,
+    bunkerTraitsSeedVersion: BUNKER_TRAITS_SEED_VERSION,
     specialCards: [
         {
             id: "swap_random_trait",
@@ -169,6 +220,12 @@ function cleanChance(value, fallback) {
     return Math.round(Math.min(100, Math.max(0, parsed)) * 100) / 100;
 }
 
+function cleanOccupiedSlots(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, Math.min(12, Math.round(parsed)));
+}
+
 function defaultChance(index, count) {
     if (!count) return 0;
     const base = Math.floor((100 / count) * 100) / 100;
@@ -186,6 +243,35 @@ function defaultProfessionItem(value) {
     if (/(программист|радист|связист)/.test(text)) return "рация и набор для связи";
     if (/(психолог|учител)/.test(text)) return "набор для коммуникации с группой";
     return "";
+}
+
+function bunkerTraitMatchesDefault(trait, defaultTrait) {
+    const text = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
+    const aliases = {
+        water: ["water", "вод"],
+        food: ["food", "ед", "пищ"],
+        electricity: ["electric", "электр", "свет"],
+        ventilation: ["ventilat", "вентил"],
+        previous_residents: ["previous", "предыдущ", "жител", "бомж"]
+    };
+    return (aliases[defaultTrait.id] || [defaultTrait.id]).some((term) => text.includes(term));
+}
+
+function seedDefaultBunkerTraits(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.bunkerTraitsSeedVersion) >= BUNKER_TRAITS_SEED_VERSION) {
+        return { config: source, changed: false };
+    }
+    const existing = Array.isArray(source.bunkerTraits) ? source.bunkerTraits : [];
+    const missing = DEFAULT_BUNKER_TRAITS.filter((defaultTrait) => !existing.some((trait) => bunkerTraitMatchesDefault(trait, defaultTrait)));
+    return {
+        config: {
+            ...source,
+            bunkerTraits: [...existing, ...clone(missing)],
+            bunkerTraitsSeedVersion: BUNKER_TRAITS_SEED_VERSION
+        },
+        changed: true
+    };
 }
 
 function normalizeGameConfig(rawConfig) {
@@ -244,7 +330,11 @@ function normalizeGameConfig(rawConfig) {
             const value = cleanText(typeof option === "string" ? option : option?.value, 120);
             if (!value) return null;
             const rawChance = typeof option === "string" ? undefined : option?.chance;
-            return { value, chance: cleanChance(rawChance, defaultChance(index, source.length)) };
+            return {
+                value,
+                chance: cleanChance(rawChance, defaultChance(index, source.length)),
+                occupiedSlots: cleanOccupiedSlots(typeof option === "string" ? 0 : option?.occupiedSlots ?? option?.slots)
+            };
         }).filter(Boolean).slice(0, 40);
         if (!id || !name || !options.length || usedBunkerTraitIds.has(id)) return null;
         const chanceTotal = options.reduce((sum, option) => sum + option.chance, 0);
@@ -293,13 +383,16 @@ function normalizeGameConfig(rawConfig) {
 
     const rawRevision = Number(rawConfig?.revision);
     const revision = Number.isSafeInteger(rawRevision) && rawRevision >= 0 ? rawRevision : 0;
-    return { categories: otherCategories, disasters, bunkerTraits, specialCards, hiddenAvatars, revision };
+    const bunkerTraitsSeedVersion = Number(rawConfig?.bunkerTraitsSeedVersion) >= BUNKER_TRAITS_SEED_VERSION
+        ? BUNKER_TRAITS_SEED_VERSION
+        : 0;
+    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, specialCards, hiddenAvatars, revision };
 }
 
 function loadGameConfig() {
     try {
         if (fs.existsSync(CONFIG_PATH)) {
-            return normalizeGameConfig(JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8")));
+            return normalizeGameConfig(seedDefaultBunkerTraits(JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"))).config);
         }
     } catch (error) {
         console.warn("Не удалось загрузить настройки игры, используются стандартные.", error.message);
@@ -355,7 +448,13 @@ async function initializeGameConfig() {
     try {
         const storedConfig = await readSupabaseConfig();
         if (storedConfig) {
-            gameConfig = normalizeGameConfig(storedConfig);
+            const seeded = seedDefaultBunkerTraits(storedConfig);
+            gameConfig = normalizeGameConfig(seeded.config);
+            if (seeded.changed) {
+                gameConfig.revision = Math.max(0, Number(gameConfig.revision) || 0) + 1;
+                await saveGameConfig(gameConfig);
+                console.log("Добавлены базовые характеристики бункера.");
+            }
             console.log("Настройки игры загружены из Supabase.");
         } else {
             await writeSupabaseConfig(gameConfig);
@@ -562,13 +661,17 @@ function professionBase(value) {
     return String(value || "").split(" — ")[0];
 }
 
-function pickWeightedOption(options) {
+function pickWeightedEntry(options) {
     let roll = Math.random() * 100;
     for (const option of options) {
         roll -= option.chance;
-        if (roll <= 0) return option.value;
+        if (roll <= 0) return option;
     }
-    return options[options.length - 1].value;
+    return options[options.length - 1];
+}
+
+function pickWeightedOption(options) {
+    return pickWeightedEntry(options).value;
 }
 
 function assignCards(players, categories) {
@@ -582,11 +685,15 @@ function assignCards(players, categories) {
 }
 
 function assignBunkerTraits(traits) {
-    return traits.map((trait) => ({
-        id: trait.id,
-        name: trait.name,
-        value: pickWeightedOption(trait.options)
-    }));
+    return traits.map((trait) => {
+        const option = pickWeightedEntry(trait.options);
+        return {
+            id: trait.id,
+            name: trait.name,
+            value: option.value,
+            occupiedSlots: cleanOccupiedSlots(option.occupiedSlots)
+        };
+    });
 }
 
 function assignSpecialCards(players, specialCards, traitOrder) {
@@ -829,6 +936,8 @@ function publicState(room) {
         categoryNames: room.categoryNames || Object.fromEntries(gameConfig.categories.map((category) => [category.id, category.name])),
         revealedThisRound: room.revealedThisRound || {},
         capacity: room.capacity,
+        bunkerBaseCapacity: room.bunkerBaseCapacity || room.capacity,
+        bunkerOccupiedSlots: room.bunkerOccupiedSlots || 0,
         bunkerTraits: room.bunkerTraits || [],
         actionSeconds: ACTION_DURATION_MS / 1000,
         turnPlayerId: currentTurnPlayerId(room),
@@ -1258,7 +1367,7 @@ io.on("connection", (socket) => {
     function launchGame(room, isSoloTest = false) {
         room.isSoloTest = isSoloTest;
         room.phase = "story";
-        room.capacity = isSoloTest ? 1 : Math.max(2, Math.floor(activePlayers(room).length / 2));
+        room.bunkerBaseCapacity = isSoloTest ? 1 : Math.max(2, Math.floor(activePlayers(room).length / 2));
         room.traitOrder = gameConfig.categories.map((category) => category.id);
         room.revealRounds = isSoloTest
             ? room.traitOrder.length
@@ -1271,6 +1380,8 @@ io.on("connection", (socket) => {
         room.cardOptionsByTrait = Object.fromEntries(gameConfig.categories.map((category) => [category.id, clone(category.options)]));
         room.disaster = randomItem(gameConfig.disasters);
         room.bunkerTraits = assignBunkerTraits(gameConfig.bunkerTraits || []);
+        room.bunkerOccupiedSlots = room.bunkerTraits.reduce((total, trait) => total + cleanOccupiedSlots(trait.occupiedSlots), 0);
+        room.capacity = Math.max(1, room.bunkerBaseCapacity - room.bunkerOccupiedSlots);
         room.cards = assignCards(activePlayers(room), gameConfig.categories);
         room.playerSpecialCards = assignSpecialCards(activePlayers(room), gameConfig.specialCards || [], room.traitOrder);
         room.playerProfessionItems = {};
@@ -1287,6 +1398,9 @@ io.on("connection", (socket) => {
         room.actionLog = [];
         room.actionLogSequence = 0;
         addActionLog(room, "Игра началась. Катастрофа определена.", "system");
+        if (room.bunkerOccupiedSlots) {
+            addActionLog(room, `Предыдущие жители заняли ${room.bunkerOccupiedSlots} ${room.bunkerOccupiedSlots === 1 ? "место" : "места"} в бункере.`, "system");
+        }
         io.to(room.code).emit("gameStarted");
         emitRoom(room);
     }

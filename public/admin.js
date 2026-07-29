@@ -105,6 +105,7 @@ function renderBunkerTraits() {
             '<div class="option-row bunker-option-row">',
             '<input class="bunker-option-value" value="' + escapeHtml(option.value) + '" aria-label="Вариант характеристики бункера">',
             '<label class="option-chance"><span>Выпадение, %</span><input type="number" class="bunker-option-chance-input" min="0" max="100" step="0.01" value="' + (Number(option.chance) || 0) + '" aria-label="Вероятность выпадения варианта в процентах"></label>',
+            '<label class="option-chance"><span>Занимает мест</span><input type="number" class="bunker-option-slots-input" min="0" max="12" step="1" value="' + (Math.max(0, Number(option.occupiedSlots) || 0)) + '" aria-label="Сколько мест в бункере занимает этот вариант"></label>',
             '<button class="remove-option remove-bunker-option" type="button" data-option-index="' + index + '" aria-label="Удалить вариант">×</button>',
             '</div>'
         ].join("")).join("");
@@ -191,7 +192,7 @@ function makeBunkerTrait() {
     config.bunkerTraits.push({
         id: `bunker_${Date.now()}`,
         name: "Новая характеристика",
-        options: [{ value: "Первый вариант", chance: 50 }, { value: "Второй вариант", chance: 50 }]
+        options: [{ value: "Первый вариант", chance: 50, occupiedSlots: 0 }, { value: "Второй вариант", chance: 50, occupiedSlots: 0 }]
     });
     markDirty();
     renderBunkerTraits();
@@ -226,7 +227,8 @@ function collectConfig() {
         name: card.querySelector(".bunker-trait-name").value,
         options: [...card.querySelectorAll(".bunker-option-row")].map((option) => ({
             value: option.querySelector(".bunker-option-value").value,
-            chance: Number(option.querySelector(".bunker-option-chance-input").value)
+            chance: Number(option.querySelector(".bunker-option-chance-input").value),
+            occupiedSlots: Number(option.querySelector(".bunker-option-slots-input").value)
         }))
     }));
     const specialCards = [...document.querySelectorAll("#specialCards .special-card")].map((card) => ({
@@ -236,7 +238,7 @@ function collectConfig() {
         effect: card.querySelector(".special-card-effect").value
     }));
     const disasters = [...document.querySelectorAll(".disaster-value")].map((input) => input.value);
-    return { categories, disasters, bunkerTraits, specialCards, hiddenAvatars, revision: config.revision };
+    return { categories, disasters, bunkerTraits, bunkerTraitsSeedVersion: config.bunkerTraitsSeedVersion, specialCards, hiddenAvatars, revision: config.revision };
 }
 
 async function loadEditor() {
