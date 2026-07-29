@@ -468,8 +468,12 @@ socket.on("roomEntered", enterRoom);
 socket.on("roomState", (state) => {
     const turnKey = `${state.code}:${state.round}:${state.turnPlayerId || ""}:${state.turnDeadline || ""}`;
     const isMyTurn = state.phase === "reveal" && state.turnPlayerId === socket.id;
+    const justFinished = state.phase === "finished" && (!room || room.code !== state.code || room.phase !== "finished");
     room = state;
     renderRoom();
+    if (justFinished) {
+        requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }));
+    }
     if (isMyTurn && turnKey !== lastTurnSoundKey) playSound("turn");
     lastTurnSoundKey = turnKey;
 });
