@@ -157,6 +157,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .table-vote-markers { margin-top:5px; }
 .table-player .table-vote-markers .avatar { flex-basis:20px; width:20px; height:20px; font-size:8px; }
 .table-player .table-vote-markers .vote-more { width:20px; height:20px; font-size:8px; }
+.table-vote-count { margin-left:4px; color:#ffd39c; font-size:9px; font-weight:850; white-space:nowrap; }
 .table-extra { max-width:0; }
 .table-player-actions { display:flex; min-width:0; gap:6px; }
 .table-player-actions .vote-button,.table-player-actions .special-target-button { min-width:0; min-height:32px; height:auto; padding:5px; overflow-wrap:anywhere; font-size:10px; line-height:1.1; white-space:normal; }

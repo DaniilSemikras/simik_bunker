@@ -230,7 +230,7 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
         const voteMarkerMarkup = visibleVoters.length
             ? '<div class="vote-markers table-vote-markers" aria-label="Голоса против игрока">' + visibleVoters.map((voter) => (
                 '<span class="vote-avatar" title="' + escaped(voter.nickname) + '">' + avatarMarkup(voter) + '</span>'
-            )).join("") + (voters.length > visibleVoters.length ? '<span class="vote-more">+' + (voters.length - visibleVoters.length) + '</span>' : '') + '</div>'
+            )).join("") + (voters.length > visibleVoters.length ? '<span class="vote-more">+' + (voters.length - visibleVoters.length) + '</span>' : '') + '<span class="table-vote-count">' + voters.length + ' ' + (voters.length === 1 ? 'голос' : voters.length < 5 ? 'голоса' : 'голосов') + '</span></div>'
             : "";
         const values = cardOrder.map((trait) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, trait);
