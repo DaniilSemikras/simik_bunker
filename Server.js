@@ -1192,7 +1192,7 @@ io.on("connection", (socket) => {
             actionLogSequence: 0
         };
         socket.join(code);
-        socket.emit("roomEntered", { code, playerToken: rooms[code].players[0].token });
+        socket.emit("roomEntered", { code, playerToken: rooms[code].players[0].token, playerId: socket.id });
         emitRoom(rooms[code]);
     });
 
@@ -1211,7 +1211,7 @@ io.on("connection", (socket) => {
         const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(room), left: false, isBot: false };
         room.players.push(player);
         socket.join(code);
-        socket.emit("roomEntered", { code, playerToken: player.token });
+        socket.emit("roomEntered", { code, playerToken: player.token, playerId: socket.id });
         emitRoom(room);
     });
 
@@ -1224,7 +1224,7 @@ io.on("connection", (socket) => {
 
         movePlayerToSocket(room, player, socket.id);
         socket.join(code);
-        socket.emit("roomEntered", { code, playerToken: player.token });
+        socket.emit("roomEntered", { code, playerToken: player.token, playerId: socket.id });
         emitRoom(room);
     });
 

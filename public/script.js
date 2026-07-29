@@ -43,6 +43,7 @@ const TRAIT_NAMES = {
 
 let room = null;
 let myCards = {};
+let myPlayerId = "";
 let currentCode = "";
 const SESSION_KEY = "bunker-player-session";
 let savedSession = (() => {
@@ -130,7 +131,11 @@ function escaped(value) {
 }
 
 function isHost() {
-    return room?.hostId === socket.id;
+    return room?.hostId === ownPlayerId();
+}
+
+function ownPlayerId() {
+    return myPlayerId || socket.id;
 }
 
 function activePlayers() {
@@ -219,7 +224,7 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
         traitName(trait),
         players.map((player) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, trait);
-            const isMe = player.id === socket.id;
+            const isMe = player.id === ownPlayerId();
             const hasOwnValue = isMe && Object.prototype.hasOwnProperty.call(myCards, trait);
             const value = hasOwnValue ? myCards[trait] : isRevealed ? player.revealed[trait] : "скрыто";
             const canRevealHere = isMe && !isRevealed && (canChooseTrait || (canRevealProfession && trait === room.currentTrait));
@@ -241,20 +246,20 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
         return `<td class="table-vote-cell ${playerState(player)}">${visibleVoters.map((voter) => `<span class="vote-avatar" title="${escaped(voter.nickname)}">${avatarMarkup(voter)}</span>`).join("")}${voters.length > visibleVoters.length ? `<span class="vote-more">+${voters.length - visibleVoters.length}</span>` : ""}<span class="table-vote-count ${voters.length ? "" : "is-empty"}">${voters.length} ${voteWord}</span></td>`;
     }).join(""), "table-vote-row") : "";
     const actionRow = (isVoting || specialTargetMode) ? traitRow("Действие", players.map((player) => {
-        const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== socket.id;
-        const canSelectSpecialTarget = specialTargetMode && !player.left && !player.eliminated && player.id !== socket.id;
+        const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== ownPlayerId();
+        const canSelectSpecialTarget = specialTargetMode && !player.left && !player.eliminated && player.id !== ownPlayerId();
         const action = canSelectSpecialTarget
             ? `<button class="special-target-button" data-special-target="${player.id}">${escaped(specialTargetAction)}</button>`
             : canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : "—";
         return `<td class="table-action-cell ${playerState(player)}">${action}</td>`;
     }).join(""), "table-action-row") : "";
-    const playerHeaders = players.map((player) => `<th scope="col" class="${playerState(player)}"><span class="table-player-head">${avatarMarkup(player)}<strong title="${escaped(player.nickname)}">${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus(player)}</small></span></th>`).join("");
+    const playerHeaders = players.map((player) => `<th scope="col" class="${playerState(player)}"><span class="table-player-head">${avatarMarkup(player)}<strong title="${escaped(player.nickname)}">${escaped(player.nickname)}${player.id === ownPlayerId() ? " (вы)" : ""}</strong><small>${playerStatus(player)}</small></span></th>`).join("");
     return `<div class="players-table-scroll"><table class="players-table"><thead><tr><th><span class="table-header-value" title="Характеристика">Характеристика</span></th>${playerHeaders}</tr></thead><tbody>${traitRows}${extraRows}${voteRow}${actionRow}</tbody></table></div>`;
 }
 
 function updateGame() {
     if (!room) return;
-    const me = room.players.find((player) => player.id === socket.id);
+    const me = room.players.find((player) => player.id === ownPlayerId());
     const active = activePlayers();
     const trait = room.currentTrait;
     const isStory = room.phase === "story";
@@ -262,11 +267,11 @@ function updateGame() {
     const isFinished = room.phase === "finished";
     const winners = room.players.filter((player) => !player.left && !player.eliminated);
     const myRevealed = me?.revealed || {};
-    const hasRevealedThisRound = Boolean(room.revealedThisRound?.[socket.id]);
+    const hasRevealedThisRound = Boolean(room.revealedThisRound?.[ownPlayerId()]);
     const isChoiceRound = room.phase === "reveal" && !trait;
     const turnPlayer = room.players.find((player) => player.id === room.turnPlayerId);
-    const isMyTurn = room.turnPlayerId === socket.id;
-    const hasVoted = room.votedPlayerIds?.includes(socket.id);
+    const isMyTurn = room.turnPlayerId === ownPlayerId();
+    const hasVoted = room.votedPlayerIds?.includes(ownPlayerId());
     const canUseSpecialCard = Boolean(mySpecialCard && !mySpecialCard.used && me && !me.eliminated && room.phase === "reveal" && isMyTurn);
     const specialNeedsTarget = ["swap_random_trait", "take_backpack"].includes(mySpecialCard?.effect);
     const specialTraitLabel = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать предмет из рюкзака"
@@ -330,7 +335,7 @@ function updateGame() {
         myCards[name],
         Boolean(myRevealed[name]),
         canChooseTrait && !myRevealed[name],
-        isNewReveal(socket.id, name)
+        isNewReveal(ownPlayerId(), name)
     )).join("");
     const professionBaggage = me?.professionItem
         ? '<article class="my-card is-revealed profession-item-card"><span>Багаж от профессии</span><strong>' + escaped(me.professionItem) + '</strong><em>получен</em></article>'
@@ -345,7 +350,7 @@ function updateGame() {
     const playerCardsMarkup = room.players.map((player) => {
         const playerCards = cardOrder.map((name) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, name);
-            const isMe = player.id === socket.id;
+            const isMe = player.id === ownPlayerId();
             const hasOwnValue = isMe && Object.prototype.hasOwnProperty.call(myCards, name);
             const value = hasOwnValue ? myCards[name] : isRevealed ? player.revealed[name] : "скрыто";
             const canRevealHere = isMe && !isRevealed && (canChooseTrait || (canRevealProfession && name === room.currentTrait));
@@ -358,8 +363,8 @@ function updateGame() {
             + (player.professionItem ? `<span class="public-card profession-item"><b>Багаж:</b> ${escaped(player.professionItem)}</span>` : "")
             + (Array.isArray(player.extraBaggage) ? player.extraBaggage.map((item) => `<span class="public-card profession-item"><b>Багаж:</b> ${escaped(item)}</span>`).join("") : "")
             + (player.usedSpecialCard ? `<span class="public-card special-card-used"><b>Спецкарта:</b> ${escaped(player.usedSpecialCard.name)}</span>` : "");
-        const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== socket.id;
-        const canSelectSpecialTarget = specialTargetMode && !player.left && !player.eliminated && player.id !== socket.id;
+        const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== ownPlayerId();
+        const canSelectSpecialTarget = specialTargetMode && !player.left && !player.eliminated && player.id !== ownPlayerId();
         const playerActions = [
             canSelectSpecialTarget ? `<button class="special-target-button" data-special-target="${player.id}">${escaped(specialTargetAction)}</button>` : "",
             canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : ""
@@ -376,7 +381,7 @@ function updateGame() {
         const playerState = player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
         const playerStatus = player.left ? "вышел" : player.eliminated ? "исключён" : isFinished ? "победитель" : "в игре";
         return `<article class="game-player ${playerState}${voters.length ? " has-votes" : ""}${playerActions ? " has-actions" : ""}">
-            <div class="player-name">${avatarMarkup(player)}<div><strong>${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></div>${voteMarkerMarkup}</div>
+            <div class="player-name">${avatarMarkup(player)}<div><strong>${escaped(player.nickname)}${player.id === ownPlayerId() ? " (вы)" : ""}</strong><small>${playerStatus}</small></div>${voteMarkerMarkup}</div>
             <div class="public-cards">${playerCards || '<span class="muted">карты ещё не раскрыты</span>'}</div>
             ${playerActions ? `<div class="player-actions">${playerActions}</div>` : ""}
             ${player.id === room.hostId ? '<span class="host-star" aria-label="Ведущий" title="Ведущий">★</span>' : ""}
@@ -405,8 +410,9 @@ function renderRoom() {
     }
 }
 
-function enterRoom({ code, playerToken }) {
+function enterRoom({ code, playerToken, playerId }) {
     currentCode = code;
+    myPlayerId = playerId || socket.id;
     if (playerToken) {
         savedSession = { code, token: playerToken };
         localStorage.setItem(SESSION_KEY, JSON.stringify(savedSession));
@@ -499,7 +505,7 @@ $("#disasterCard").addEventListener("click", (event) => {
 socket.on("roomEntered", enterRoom);
 socket.on("roomState", (state) => {
     const turnKey = `${state.code}:${state.round}:${state.turnPlayerId || ""}:${state.turnDeadline || ""}`;
-    const isMyTurn = state.phase === "reveal" && state.turnPlayerId === socket.id;
+    const isMyTurn = state.phase === "reveal" && state.turnPlayerId === ownPlayerId();
     const justFinished = state.phase === "finished" && (!room || room.code !== state.code || room.phase !== "finished");
     room = state;
     renderRoom();
@@ -512,6 +518,7 @@ socket.on("roomState", (state) => {
 socket.on("leftRoom", () => {
     room = null;
     myCards = {};
+    myPlayerId = "";
     mySpecialCard = null;
     specialTargetMode = false;
     currentCode = "";
@@ -527,6 +534,7 @@ socket.on("resumeFailed", () => {
 socket.on("roomExpired", () => {
     room = null;
     myCards = {};
+    myPlayerId = "";
     mySpecialCard = null;
     specialTargetMode = false;
     currentCode = "";
@@ -545,10 +553,10 @@ socket.on("roundStarted", ({ initial } = {}) => { toast(initial ? "Истори�
 socket.on("cardRevealed", ({ playerId, trait }) => {
     pendingRevealAnimation = { playerId, trait };
     if (room?.phase !== "lobby") updateGame();
-    if (playerId !== socket.id) playSound("reveal");
+    if (playerId !== ownPlayerId()) playSound("reveal");
 });
 socket.on("professionItemReceived", ({ playerId, nickname: name, item }) => {
-    toast(playerId === socket.id ? "В багаж добавлено: " + item + "." : name + " получает в багаж: " + item + ".");
+    toast(playerId === ownPlayerId() ? "В багаж добавлено: " + item + "." : name + " получает в багаж: " + item + ".");
     playSound("accepted");
 });
 socket.on("specialCardUsed", ({ nickname: name, targetNickname, cardName, trait, action, item, capacity }) => {
