@@ -1132,7 +1132,12 @@ function assignCards(players, categories) {
     ]));
 }
 
-function assignBunkerTraits(traits) {
+function isPreviousResidentsTrait(trait) {
+    const hint = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
+    return /previous|предыдущ|жител|бомж/.test(hint);
+}
+
+function assignBunkerTraits(traits, playerCount) {
     return traits.map((trait) => {
         if (trait.randomPercentage) {
             const fillPercent = Math.floor(Math.random() * 101);
@@ -1145,7 +1150,14 @@ function assignBunkerTraits(traits) {
                 evictedResidents: 0
             };
         }
-        const option = pickWeightedEntry(trait.options);
+        const emptyResidentOptions = isPreviousResidentsTrait(trait) && playerCount < 6
+            ? trait.options.filter((option) => cleanOccupiedSlots(option?.occupiedSlots) === 0)
+            : null;
+        const option = emptyResidentOptions?.length
+            ? pickWeightedEntry(emptyResidentOptions)
+            : emptyResidentOptions
+                ? { value: "Бункер пуст", occupiedSlots: 0 }
+                : pickWeightedEntry(trait.options);
         return {
             id: trait.id,
             name: trait.name,
@@ -1925,7 +1937,7 @@ io.on("connection", (socket) => {
         const selectedDisaster = randomItem(gameConfig.disasters);
         room.disaster = disasterText(selectedDisaster);
         room.disasterDuration = disasterDuration(selectedDisaster);
-        room.bunkerTraits = assignBunkerTraits(gameConfig.bunkerTraits || []);
+        room.bunkerTraits = assignBunkerTraits(gameConfig.bunkerTraits || [], activePlayers(room).length);
         room.bunkerOccupiedSlots = room.bunkerTraits.reduce((total, trait) => total + cleanOccupiedSlots(trait.occupiedSlots), 0);
         room.capacity = Math.max(1, room.bunkerBaseCapacity - room.bunkerOccupiedSlots);
         room.cards = assignCards(activePlayers(room), gameConfig.categories);
