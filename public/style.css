@@ -156,9 +156,10 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .table-player-actions .vote-button,.table-player-actions .special-target-button { min-width:118px; }
 .action-log-panel { padding:16px 20px 18px; }
 .action-log-panel .lobby-heading { margin-top:0; }
-.action-log { display:grid; gap:6px; max-height:310px; margin:12px 0 0; padding:0; overflow:auto; list-style:none; }
-.action-log-entry { display:grid; grid-template-columns:42px minmax(0,1fr); gap:9px; padding:9px 10px; border-left:3px solid rgba(241,168,78,.44); border-radius:8px; background:rgba(12,10,9,.22); color:#e2d6cf; font-size:12px; line-height:1.35; }
+.action-log { display:grid; gap:5px; max-height:174px; margin:10px 0 0; padding:0; overflow:auto; list-style:none; }
+.action-log-entry { display:grid; grid-template-columns:42px minmax(0,1fr); gap:9px; min-width:0; padding:8px 10px; border-left:3px solid rgba(241,168,78,.44); border-radius:8px; background:rgba(12,10,9,.22); color:#e2d6cf; font-size:12px; line-height:1.25; }
 .action-log-entry time { color:#aa9d94; font-variant-numeric:tabular-nums; font-size:11px; }
+.action-log-entry span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .action-log-entry.reveal { border-left-color:#8fdca0; }.action-log-entry.vote { border-left-color:#f0ae5f; }.action-log-entry.special { border-left-color:#c495ff; }.action-log-entry.out { border-left-color:#e7887d; }.action-log-entry.finish { border-left-color:#f7db86; }
 .action-log-empty { padding:12px; color:#9d9188; font-size:12px; }
 .game-player { position:relative; display:grid; grid-template-columns:148px minmax(0,1fr); grid-template-rows:minmax(0,1fr); grid-template-areas:"identity cards"; overflow:hidden; padding:0; border:1px solid var(--line); border-radius:17px; background:linear-gradient(135deg,rgba(35,31,28,.9),rgba(18,15,14,.88)); box-shadow:inset 0 1px rgba(255,255,255,.04),0 10px 26px rgba(0,0,0,.15); transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease; }
