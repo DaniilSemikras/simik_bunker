@@ -210,9 +210,9 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
     const hasProfessionItems = room.players.some((player) => player.professionItem);
     const hasUsedSpecialCards = room.players.some((player) => player.usedSpecialCard);
     const extraHeaders = [
-        hasProfessionItems ? "<th>Багаж от профессии</th>" : "",
-        hasUsedSpecialCards ? "<th>Спецкарта</th>" : "",
-        (isVoting || specialTargetMode) ? "<th>Действие</th>" : ""
+        hasProfessionItems ? '<th><span class="table-header-value" title="Багаж от профессии">Багаж от профессии</span></th>' : "",
+        hasUsedSpecialCards ? '<th><span class="table-header-value" title="Спецкарта">Спецкарта</span></th>' : "",
+        (isVoting || specialTargetMode) ? '<th><span class="table-header-value" title="Действие">Действие</span></th>' : ""
     ].join("");
     const rows = room.players.map((player) => {
         const playerState = player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
@@ -225,17 +225,18 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
         ].filter(Boolean).join("");
         const values = cardOrder.map((trait) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, trait);
-            return `<td class="${isRevealed ? "" : "is-hidden-value"}">${isRevealed ? escaped(player.revealed[trait]) : "скрыто"}</td>`;
+            const value = isRevealed ? player.revealed[trait] : "скрыто";
+            return `<td class="${isRevealed ? "" : "is-hidden-value"}"><span class="table-cell-value" title="${escaped(value)}">${escaped(value)}</span></td>`;
         }).join("");
         return `<tr class="${playerState}">
-            <th scope="row"><span class="table-player">${avatarMarkup(player)}<span><strong>${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></span></span></th>
+            <th scope="row"><span class="table-player">${avatarMarkup(player)}<span><strong title="${escaped(player.nickname)}">${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></span></span></th>
             ${values}
-            ${hasProfessionItems ? `<td class="table-extra">${player.professionItem ? escaped(player.professionItem) : "—"}</td>` : ""}
-            ${hasUsedSpecialCards ? `<td class="table-extra">${player.usedSpecialCard ? escaped(player.usedSpecialCard.name) : "—"}</td>` : ""}
+            ${hasProfessionItems ? `<td class="table-extra"><span class="table-cell-value" title="${escaped(player.professionItem || "—")}">${player.professionItem ? escaped(player.professionItem) : "—"}</span></td>` : ""}
+            ${hasUsedSpecialCards ? `<td class="table-extra"><span class="table-cell-value" title="${escaped(player.usedSpecialCard?.name || "—")}">${player.usedSpecialCard ? escaped(player.usedSpecialCard.name) : "—"}</span></td>` : ""}
             ${(isVoting || specialTargetMode) ? `<td><div class="table-player-actions">${actions || "—"}</div></td>` : ""}
         </tr>`;
     }).join("");
-    return `<div class="players-table-scroll"><table class="players-table"><thead><tr><th>Игрок</th>${cardOrder.map((trait) => `<th>${escaped(traitName(trait))}</th>`).join("")}${extraHeaders}</tr></thead><tbody>${rows}</tbody></table></div>`;
+    return `<div class="players-table-scroll"><table class="players-table"><thead><tr><th><span class="table-header-value" title="Игрок">Игрок</span></th>${cardOrder.map((trait) => `<th><span class="table-header-value" title="${escaped(traitName(trait))}">${escaped(traitName(trait))}</span></th>`).join("")}${extraHeaders}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function updateGame() {

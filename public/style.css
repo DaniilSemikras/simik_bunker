@@ -138,7 +138,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .game-players.players-table-view { display:block; min-width:0; overflow:hidden; }
 .players-table-scroll { width:100%; min-width:0; max-width:100%; overflow:auto; margin-top:14px; border:1px solid rgba(244,238,232,.12); border-radius:13px; }
 .players-table { width:100%; min-width:0; table-layout:fixed; border-collapse:separate; border-spacing:0; color:#eadfd7; font-size:12px; text-align:left; }
-.players-table th,.players-table td { max-width:none; overflow-wrap:anywhere; border-right:1px solid rgba(244,238,232,.08); border-bottom:1px solid rgba(244,238,232,.08); padding:9px 10px; line-height:1.32; vertical-align:middle; }
+.players-table th,.players-table td { max-width:none; overflow:hidden; border-right:1px solid rgba(244,238,232,.08); border-bottom:1px solid rgba(244,238,232,.08); padding:9px 10px; line-height:1.32; vertical-align:middle; }
 .players-table th:first-child { width:180px; }
 .players-table thead th { position:sticky; top:0; z-index:1; color:#ffc77e; background:#2a211e; font-size:10px; font-weight:850; letter-spacing:.045em; text-transform:uppercase; }
 .players-table tr > :last-child { border-right:0; }
@@ -147,10 +147,11 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .players-table tbody tr.survivor { background:rgba(52,115,65,.3); }
 .players-table tbody tr.eliminated,.players-table tbody tr.left-player { color:#978a84; background:rgba(52,38,36,.32); }
 .players-table .is-hidden-value { color:#938981; font-style:italic; }
+.table-cell-value,.table-header-value { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .table-player { display:flex; align-items:center; gap:8px; min-width:135px; }
 .table-player .avatar { display:grid; flex:0 0 31px; width:31px; height:31px; border:1px solid rgba(255,228,190,.58); font-size:12px; }
 .table-player strong,.table-player small { display:block; }
-.table-player strong { color:#fff4eb; font-size:12px; }
+.table-player > span:last-child { min-width:0; }.table-player strong { overflow:hidden; color:#fff4eb; font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
 .table-player small { margin-top:2px; color:#bdecc5; font-size:9px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
 .table-extra { max-width:190px; }
 .table-player-actions { display:flex; min-width:0; gap:6px; }
