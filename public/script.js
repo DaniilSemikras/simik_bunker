@@ -267,11 +267,20 @@ function updateGame() {
     $("#gamePlayers").innerHTML = room.players.map((player) => {
         const playerCards = Object.entries(player.revealed || {}).map(([name, value]) => `<span class="public-card ${isNewReveal(player.id, name) ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> ${escaped(value)}</span>`).join("");
         const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== socket.id;
+        const voters = (room.voteMarkers?.[player.id] || [])
+            .map((voterId) => room.players.find((candidate) => candidate.id === voterId))
+            .filter(Boolean);
+        const visibleVoters = voters.slice(0, 4);
+        const voteMarkerMarkup = visibleVoters.length
+            ? '<div class="vote-markers" aria-label="Голоса против игрока">' + visibleVoters.map((voter) => (
+                '<span class="vote-avatar" title="' + escaped(voter.nickname) + '">' + avatarMarkup(voter) + '</span>'
+            )).join("") + (voters.length > visibleVoters.length ? '<span class="vote-more">+' + (voters.length - visibleVoters.length) + '</span>' : '') + '</div>'
+            : "";
         const playerState = player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
         const playerStatus = player.left ? "вышел" : player.eliminated ? "исключён" : isFinished ? "победитель" : "в игре";
-        return `<article class="game-player ${playerState}">
+        return `<article class="game-player ${playerState}${voters.length ? " has-votes" : ""}">
             <div class="player-name">${avatarMarkup(player)}<div><strong>${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></div></div>
-            <div class="public-cards">${playerCards || '<span class="muted">карты ещё не раскрыты</span>'}</div>
+            <div class="public-cards">${voteMarkerMarkup}${playerCards || '<span class="muted">карты ещё не раскрыты</span>'}</div>
             ${canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : ""}
             ${player.id === room.hostId ? '<span class="host-star" aria-label="Ведущий" title="Ведущий">★</span>' : ""}
         </article>`;

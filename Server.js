@@ -596,6 +596,12 @@ function calculateBunkerSurvivalChance(room) {
 
 function publicState(room) {
     const currentTrait = room.phase === "reveal" && room.round === 0 ? room.traitOrder?.[0] || null : null;
+    const voteMarkers = Object.entries(room.votes || {}).reduce((markers, [voterId, targetId]) => {
+        if (targetId === SKIP_VOTE) return markers;
+        if (!markers[targetId]) markers[targetId] = [];
+        markers[targetId].push(voterId);
+        return markers;
+    }, {});
     return {
         code: room.code,
         hostId: room.host,
@@ -614,6 +620,7 @@ function publicState(room) {
         turnDeadline: room.turnDeadline || null,
         voteDeadline: room.voteDeadline || null,
         votedPlayerIds: Object.keys(room.votes || {}),
+        voteMarkers,
         voteCanBeSkipped: voteCanBeSkipped(room),
         bunkerSurvivalChance: room.phase === "finished" ? calculateBunkerSurvivalChance(room) : null,
         players: room.players.map((player) => ({
