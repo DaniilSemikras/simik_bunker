@@ -345,8 +345,15 @@ function updateGame() {
     const playerCardsMarkup = room.players.map((player) => {
         const playerCards = cardOrder.map((name) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, name);
-            const value = isRevealed ? player.revealed[name] : "скрыто";
-            return `<span class="public-card ${isRevealed ? "" : "is-hidden-card"} ${isNewReveal(player.id, name) ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> ${escaped(value)}</span>`;
+            const isMe = player.id === socket.id;
+            const hasOwnValue = isMe && Object.prototype.hasOwnProperty.call(myCards, name);
+            const value = hasOwnValue ? myCards[name] : isRevealed ? player.revealed[name] : "скрыто";
+            const canRevealHere = isMe && !isRevealed && (canChooseTrait || (canRevealProfession && name === room.currentTrait));
+            const visibilityClass = isRevealed ? "" : hasOwnValue ? "is-private-card" : "is-hidden-card";
+            const revealControl = canRevealHere
+                ? `<button class="card-reveal-eye" type="button" data-reveal-trait="${name}" title="Раскрыть: ${escaped(traitName(name))}" aria-label="Раскрыть: ${escaped(traitName(name))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.8"></circle></svg></button>`
+                : "";
+            return `<div class="public-card ${visibilityClass} ${canRevealHere ? "has-reveal-control" : ""} ${isNewReveal(player.id, name) ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> <span class="public-card-value">${escaped(value)}</span>${revealControl}</div>`;
         }).join("")
             + (player.professionItem ? `<span class="public-card profession-item"><b>Багаж:</b> ${escaped(player.professionItem)}</span>` : "")
             + (Array.isArray(player.extraBaggage) ? player.extraBaggage.map((item) => `<span class="public-card profession-item"><b>Багаж:</b> ${escaped(item)}</span>`).join("") : "")
