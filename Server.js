@@ -223,11 +223,14 @@ function normalizeGameConfig(rawConfig) {
         const id = cleanCategoryId(card?.id);
         const name = cleanText(card?.name, 60);
         const description = cleanText(card?.description, 1200);
-        const effect = card?.effect === "swap_trait" ? "swap_trait" : "";
-        const trait = cleanCategoryId(card?.trait);
-        if (!id || !name || !description || !effect || !trait || usedSpecialCardIds.has(id)) return null;
+        const effect = card?.effect === "take_backpack"
+            ? "take_backpack"
+            : card?.effect === "swap_random_trait" || card?.effect === "swap_trait"
+                ? "swap_random_trait"
+                : "";
+        if (!id || !name || !description || !effect || usedSpecialCardIds.has(id)) return null;
         usedSpecialCardIds.add(id);
-        return { id, name, description, effect, trait };
+        return { id, name, description, effect };
     }).filter(Boolean).slice(0, 20);
 
     const hiddenAvatars = [...new Set(
@@ -534,12 +537,17 @@ function assignBunkerTraits(traits) {
     }));
 }
 
-function assignSpecialCards(players, specialCards) {
-    if (!specialCards?.length) return {};
-    return Object.fromEntries(players.map((player) => [
-        player.id,
-        { ...clone(randomItem(specialCards)), used: false }
-    ]));
+function assignSpecialCards(players, specialCards, traitOrder) {
+    const exchangeTraits = traitOrder.filter((trait) => !["profession", "backpack"].includes(trait));
+    const usableCards = specialCards.filter((card) => (
+        card.effect === "swap_random_trait" ? exchangeTraits.length > 0 : traitOrder.includes("backpack")
+    ));
+    if (!usableCards.length) return {};
+    return Object.fromEntries(players.map((player) => {
+        const card = clone(randomItem(usableCards));
+        card.trait = card.effect === "swap_random_trait" ? randomItem(exchangeTraits) : "backpack";
+        return [player.id, { ...card, used: false }];
+    }));
 }
 
 function roomFor(socket) {
@@ -625,7 +633,7 @@ function giveProfessionItem(room, playerId) {
 function useSpecialCard(room, playerId, targetId) {
     const specialCard = room.playerSpecialCards?.[playerId];
     if (!specialCard || specialCard.used) return { error: "Эта спецкарта уже использована." };
-    if (specialCard.effect !== "swap_trait") return { error: "Неизвестный эффект спецкарты." };
+    if (!["swap_random_trait", "take_backpack"].includes(specialCard.effect)) return { error: "Неизвестный эффект спецкарты." };
     if (!room.traitOrder.includes(specialCard.trait)) return { error: "Для этой спецкарты в игре нет нужной категории." };
     if (!room.cards[playerId] || !room.cards[targetId]) return { error: "Не удалось найти карточки игроков." };
 
@@ -634,16 +642,16 @@ function useSpecialCard(room, playerId, targetId) {
     if (myValue === undefined || targetValue === undefined) return { error: "Этой характеристики нет у выбранного игрока." };
 
     room.cards[playerId][specialCard.trait] = targetValue;
-    room.cards[targetId][specialCard.trait] = myValue;
+    room.cards[targetId][specialCard.trait] = specialCard.effect === "take_backpack" ? "рюкзак забран" : myValue;
     if (Object.prototype.hasOwnProperty.call(room.revealed[playerId] || {}, specialCard.trait)) {
         room.revealed[playerId][specialCard.trait] = targetValue;
     }
     if (Object.prototype.hasOwnProperty.call(room.revealed[targetId] || {}, specialCard.trait)) {
-        room.revealed[targetId][specialCard.trait] = myValue;
+        room.revealed[targetId][specialCard.trait] = room.cards[targetId][specialCard.trait];
     }
     specialCard.used = true;
     specialCard.targetId = targetId;
-    return { card: specialCard, trait: specialCard.trait };
+    return { card: specialCard, trait: specialCard.trait, action: specialCard.effect };
 }
 
 function calculateBunkerSurvivalChance(room) {
@@ -1098,7 +1106,7 @@ io.on("connection", (socket) => {
         room.disaster = randomItem(gameConfig.disasters);
         room.bunkerTraits = assignBunkerTraits(gameConfig.bunkerTraits || []);
         room.cards = assignCards(activePlayers(room), gameConfig.categories);
-        room.playerSpecialCards = assignSpecialCards(activePlayers(room), gameConfig.specialCards || []);
+        room.playerSpecialCards = assignSpecialCards(activePlayers(room), gameConfig.specialCards || [], room.traitOrder);
         room.playerProfessionItems = {};
         room.professionItemsByProfession = Object.fromEntries((gameConfig.categories.find((category) => category.id === "profession")?.options || []).map((option) => [
             String(option.value || "").toLocaleLowerCase("ru"),
@@ -1163,7 +1171,8 @@ io.on("connection", (socket) => {
             nickname: player?.nickname,
             targetNickname: target?.nickname,
             cardName: result.card.name,
-            trait: result.trait
+            trait: result.trait,
+            action: result.action
         });
     });
 

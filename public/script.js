@@ -215,6 +215,8 @@ function updateGame() {
     const isMyTurn = room.turnPlayerId === socket.id;
     const hasVoted = room.votedPlayerIds?.includes(socket.id);
     const canUseSpecialCard = Boolean(mySpecialCard && !mySpecialCard.used && me && !me.eliminated && ["reveal", "voting"].includes(room.phase));
+    const specialTraitLabel = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать: Рюкзак" : `Обмен: ${traitName(mySpecialCard.trait)}`;
+    const specialTargetAction = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать рюкзак" : `Обменяться: ${traitName(mySpecialCard.trait)}`;
     if (!canUseSpecialCard) specialTargetMode = false;
 
     $("#gameCode").textContent = room.code;
@@ -245,7 +247,7 @@ function updateGame() {
     $("#specialCard").innerHTML = mySpecialCard ? [
         '<article class="special-card-game-inner ' + (mySpecialCard.used ? 'is-used' : '') + '">',
         '<div class="special-card-copy"><span class="eyebrow">ЛИЧНАЯ СПОСОБНОСТЬ</span><h3>' + escaped(mySpecialCard.name) + '</h3><p>' + escaped(mySpecialCard.description) + '</p></div>',
-        '<div class="special-card-status"><span class="special-needed">Обмен: ' + escaped(traitName(mySpecialCard.trait)) + '</span>' + (
+        '<div class="special-card-status"><span class="special-needed">' + escaped(specialTraitLabel) + '</span>' + (
             mySpecialCard.used
                 ? '<span class="special-used">использована</span>'
                 : canUseSpecialCard
@@ -272,7 +274,7 @@ function updateGame() {
     $("#revealButton").classList.toggle("hidden", !canRevealProfession);
     $("#revealButton").textContent = canRevealProfession ? `Раскрыть: ${traitName(trait)}` : "";
     $("#skipVoteButton").classList.toggle("hidden", !canSkipVote);
-    $("#actionHint").textContent = isFinished ? "Игра завершена." : isStory ? (isHost() ? "Подтвердите начало, когда все прочитали историю." : "Ждём подтверждения ведущего.") : me?.eliminated ? "Вы исключены, но можете наблюдать за игрой." : specialTargetMode ? `Выберите игрока для обмена карточкой «${traitName(mySpecialCard.trait)}».` : isVoting && hasVoted ? "Ваш голос принят. Ждём остальных." : isVoting ? "Голосуйте до окончания таймера." : hasRevealedThisRound ? "Карта раскрыта. Ждём остальных." : isMyTurn && canChooseTrait ? "Ваш ход: нажмите на любую ещё нераскрытую карточку." : isMyTurn ? "Ваш ход: раскройте профессию." : turnPlayer ? `Сейчас ходит ${turnPlayer.nickname}.` : "";
+    $("#actionHint").textContent = isFinished ? "Игра завершена." : isStory ? (isHost() ? "Подтвердите начало, когда все прочитали историю." : "Ждём подтверждения ведущего.") : me?.eliminated ? "Вы исключены, но можете наблюдать за игрой." : specialTargetMode ? `Выберите игрока: ${specialTargetAction.toLocaleLowerCase("ru")}.` : isVoting && hasVoted ? "Ваш голос принят. Ждём остальных." : isVoting ? "Голосуйте до окончания таймера." : hasRevealedThisRound ? "Карта раскрыта. Ждём остальных." : isMyTurn && canChooseTrait ? "Ваш ход: нажмите на любую ещё нераскрытую карточку." : isMyTurn ? "Ваш ход: раскройте профессию." : turnPlayer ? `Сейчас ходит ${turnPlayer.nickname}.` : "";
 
     const cardOrder = room.categoryOrder?.length ? room.categoryOrder : Object.keys(myCards);
     const personalCards = cardOrder.filter((name) => name in myCards).map((name) => cardMarkup(
@@ -293,7 +295,7 @@ function updateGame() {
         const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== socket.id;
         const canSelectSpecialTarget = specialTargetMode && !player.left && !player.eliminated && player.id !== socket.id;
         const playerActions = [
-            canSelectSpecialTarget ? `<button class="special-target-button" data-special-target="${player.id}">Обменяться: ${escaped(traitName(mySpecialCard.trait))}</button>` : "",
+            canSelectSpecialTarget ? `<button class="special-target-button" data-special-target="${player.id}">${escaped(specialTargetAction)}</button>` : "",
             canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : ""
         ].filter(Boolean).join("");
         const voters = (room.voteMarkers?.[player.id] || [])
@@ -445,8 +447,10 @@ socket.on("professionItemReceived", ({ playerId, nickname: name, item }) => {
     toast(playerId === socket.id ? "В багаж добавлено: " + item + "." : name + " получает в багаж: " + item + ".");
     playSound("accepted");
 });
-socket.on("specialCardUsed", ({ nickname: name, targetNickname, cardName, trait }) => {
-    toast(name + " применяет «" + cardName + "»: обмен «" + traitName(trait) + "» с " + targetNickname + ".");
+socket.on("specialCardUsed", ({ nickname: name, targetNickname, cardName, trait, action }) => {
+    toast(action === "take_backpack"
+        ? name + " применяет «" + cardName + "» и забирает рюкзак у " + targetNickname + "."
+        : name + " применяет «" + cardName + "»: обмен «" + traitName(trait) + "» с " + targetNickname + ".");
     playSound("accepted");
 });
 socket.on("votingStarted", () => { toast("Все раскрылись. Пора голосовать."); playSound("vote"); });

@@ -98,12 +98,6 @@ function renderCategories() {
     updateDistributionTotals();
 }
 
-function specialTraitOptions(selectedTrait) {
-    const traits = config.categories.filter((category) => category.id !== "profession");
-    if (!traits.length) return '<option value="" selected>Сначала добавьте категорию</option>';
-    return traits.map((category) => '<option value="' + escapeHtml(category.id) + '"' + (category.id === selectedTrait ? " selected" : "") + ">" + escapeHtml(category.name) + "</option>").join("");
-}
-
 function renderBunkerTraits() {
     const traits = Array.isArray(config.bunkerTraits) ? config.bunkerTraits : [];
     $("#bunkerTraits").innerHTML = traits.length ? traits.map((trait) => {
@@ -134,11 +128,10 @@ function renderSpecialCards() {
         '<div class="category-top"><input class="special-card-name" value="' + escapeHtml(card.name) + '" aria-label="Название специальной карты"><button class="remove remove-special-card" type="button">Удалить</button></div>',
         '<label>Что делает карта</label><textarea class="special-card-description" rows="4" aria-label="Описание специальной карты">' + escapeHtml(card.description) + '</textarea>',
         '<div class="special-card-fields">',
-        '<label>Эффект<select class="special-card-effect" aria-label="Эффект специальной карты"><option value="swap_trait" selected>Обменяться карточкой</option></select></label>',
-        '<label>Какой карточкой меняться<select class="special-card-trait" aria-label="Характеристика для обмена">' + specialTraitOptions(card.trait) + '</select></label>',
+        '<label>Эффект<select class="special-card-effect" aria-label="Эффект специальной карты"><option value="swap_random_trait"' + (card.effect === "swap_random_trait" ? " selected" : "") + '>Обмен случайной характеристикой</option><option value="take_backpack"' + (card.effect === "take_backpack" ? " selected" : "") + '>Забрать карточку рюкзака</option></select></label>',
         '</div>',
         '</article>'
-    ].join("")).join("") : '<p class="avatar-library-empty">Пока нет спецкарт. Например: «Обмен здоровьем» — один раз обменяться здоровьем с выбранным игроком.</p>';
+    ].join("")).join("") : '<p class="avatar-library-empty">Пока нет спецкарт. Добавьте «Обмен случайной характеристикой» или «Забрать карточку рюкзака».</p>';
 }
 
 function updateDistributionTotals() {
@@ -207,13 +200,11 @@ function makeBunkerTrait() {
 function makeSpecialCard() {
     config = { ...config, ...collectConfig() };
     config.specialCards = config.specialCards || [];
-    const exchangeTrait = config.categories.find((category) => category.id === "health")?.id || config.categories.find((category) => category.id !== "profession")?.id || "health";
     config.specialCards.push({
         id: `special_${Date.now()}`,
-        name: "Обмен здоровьем",
-        description: "Один раз за игру обменяйтесь этой характеристикой с выбранным игроком.",
-        effect: "swap_trait",
-        trait: exchangeTrait
+        name: "Обмен случайной характеристикой",
+        description: "В начале игры карта случайно выберет характеристику. Один раз обменяйтесь ею с выбранным игроком.",
+        effect: "swap_random_trait"
     });
     markDirty();
     renderSpecialCards();
@@ -242,8 +233,7 @@ function collectConfig() {
         id: card.dataset.id,
         name: card.querySelector(".special-card-name").value,
         description: card.querySelector(".special-card-description").value,
-        effect: card.querySelector(".special-card-effect").value,
-        trait: card.querySelector(".special-card-trait").value
+        effect: card.querySelector(".special-card-effect").value
     }));
     const disasters = [...document.querySelectorAll(".disaster-value")].map((input) => input.value);
     return { categories, disasters, bunkerTraits, specialCards, hiddenAvatars, revision: config.revision };
