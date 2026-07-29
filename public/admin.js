@@ -246,7 +246,7 @@ function collectConfig() {
         text: row.querySelector(".disaster-value").value,
         shelterDuration: row.querySelector(".disaster-duration-value").value
     }));
-    return { categories, disasters, bunkerTraits, bunkerTraitsSeedVersion: config.bunkerTraitsSeedVersion, backpackWeaponSeedVersion: config.backpackWeaponSeedVersion, waterTraitLabelSeedVersion: config.waterTraitLabelSeedVersion, waterOptionsSeedVersion: config.waterOptionsSeedVersion, waterRandomPercentSeedVersion: config.waterRandomPercentSeedVersion, disasterDurationSeedVersion: config.disasterDurationSeedVersion, contentFillSeedVersion: config.contentFillSeedVersion, specialCards, hiddenAvatars, revision: config.revision };
+    return { categories, disasters, bunkerTraits, bunkerTraitsSeedVersion: config.bunkerTraitsSeedVersion, backpackWeaponSeedVersion: config.backpackWeaponSeedVersion, waterTraitLabelSeedVersion: config.waterTraitLabelSeedVersion, waterOptionsSeedVersion: config.waterOptionsSeedVersion, waterRandomPercentSeedVersion: config.waterRandomPercentSeedVersion, backpackWaterSeedVersion: config.backpackWaterSeedVersion, genderOptionsSeedVersion: config.genderOptionsSeedVersion, disasterDurationSeedVersion: config.disasterDurationSeedVersion, contentFillSeedVersion: config.contentFillSeedVersion, specialCards, hiddenAvatars, revision: config.revision };
 }
 
 async function loadEditor() {

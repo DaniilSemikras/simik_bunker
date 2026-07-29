@@ -94,9 +94,24 @@ const BACKPACK_WEAPON_SEED_VERSION = 1;
 const WATER_TRAIT_LABEL_SEED_VERSION = 1;
 const WATER_OPTIONS_SEED_VERSION = 1;
 const WATER_RANDOM_PERCENT_SEED_VERSION = 1;
+const BACKPACK_WATER_SEED_VERSION = 1;
+const GENDER_OPTIONS_SEED_VERSION = 1;
 const DISASTER_DURATION_SEED_VERSION = 1;
 const CONTENT_FILL_SEED_VERSION = 1;
 const WEAPON_BACKPACK_OPTION = { value: "Оружие", score: 70, chance: 10 };
+const WATER_BACKPACK_OPTIONS = [
+    { value: "Запас питьевой воды на 3 дня", score: 72, chance: 8 },
+    { value: "Канистры воды на 2 недели", score: 84, chance: 7 },
+    { value: "Запас питьевой воды на месяц", score: 94, chance: 5 }
+];
+const DEFAULT_GENDER_CATEGORY = {
+    id: "gender",
+    name: "Пол",
+    options: [
+        { value: "Мужчина", score: 50, chance: 50 },
+        { value: "Женщина", score: 50, chance: 50 }
+    ]
+};
 const DEFAULT_BUNKER_TRAITS = [
     {
         id: "water",
@@ -151,12 +166,13 @@ const DEFAULT_BACKPACK_CATEGORY = {
     name: "Багаж",
     options: [
         WEAPON_BACKPACK_OPTION,
-        { value: "Аптечка и набор лекарств", score: 85, chance: 18 },
-        { value: "Набор инструментов", score: 85, chance: 16 },
-        { value: "Фильтр для воды", score: 85, chance: 14 },
-        { value: "Солнечная батарея", score: 85, chance: 14 },
-        { value: "Рация", score: 85, chance: 10 },
-        { value: "Ящик консервов", score: 85, chance: 18 }
+        { value: "Аптечка и набор лекарств", score: 85, chance: 14 },
+        { value: "Набор инструментов", score: 85, chance: 12 },
+        { value: "Фильтр для воды", score: 85, chance: 10 },
+        { value: "Солнечная батарея", score: 85, chance: 10 },
+        { value: "Рация", score: 85, chance: 8 },
+        { value: "Ящик консервов", score: 85, chance: 16 },
+        ...WATER_BACKPACK_OPTIONS
     ]
 };
 const DEFAULT_GAME_CONFIG = {
@@ -178,6 +194,8 @@ const DEFAULT_GAME_CONFIG = {
     waterTraitLabelSeedVersion: WATER_TRAIT_LABEL_SEED_VERSION,
     waterOptionsSeedVersion: WATER_OPTIONS_SEED_VERSION,
     waterRandomPercentSeedVersion: WATER_RANDOM_PERCENT_SEED_VERSION,
+    backpackWaterSeedVersion: BACKPACK_WATER_SEED_VERSION,
+    genderOptionsSeedVersion: GENDER_OPTIONS_SEED_VERSION,
     disasterDurationSeedVersion: DISASTER_DURATION_SEED_VERSION,
     contentFillSeedVersion: CONTENT_FILL_SEED_VERSION,
     specialCards: [
@@ -570,6 +588,96 @@ function seedBackpackWeapon(rawConfig) {
     };
 }
 
+function isWaterSupplyItem(value) {
+    const text = String(value || "").toLocaleLowerCase("ru");
+    return /(?:запас|канистр|бутыл|фляг).*(?:вод|питьев)|(?:вод|питьев).*(?:запас|канистр|бутыл|фляг)/.test(text);
+}
+
+function optionsWithWaterSupplies(rawOptions) {
+    const source = Array.isArray(rawOptions) ? rawOptions : [];
+    if (!source.length) return clone(DEFAULT_BACKPACK_CATEGORY.options);
+    if (source.some((option) => isWaterSupplyItem(typeof option === "string" ? option : option?.value))) return source;
+    const waterChance = WATER_BACKPACK_OPTIONS.reduce((sum, option) => sum + option.chance, 0);
+    const availableChance = 100 - waterChance;
+    const total = source.reduce((sum, option, index) => sum + cleanChance(
+        typeof option === "string" ? undefined : option?.chance,
+        defaultChance(index, source.length)
+    ), 0);
+    let assignedChance = 0;
+    const adjusted = source.map((option, index) => {
+        const rawChance = cleanChance(
+            typeof option === "string" ? undefined : option?.chance,
+            defaultChance(index, source.length)
+        );
+        const chance = index === source.length - 1
+            ? Math.round((availableChance - assignedChance) * 100) / 100
+            : Math.round(((total > 0 ? rawChance / total : 1 / source.length) * availableChance) * 100) / 100;
+        assignedChance += chance;
+        return typeof option === "string" ? { value: option, chance } : { ...option, chance };
+    });
+    return [...adjusted, ...clone(WATER_BACKPACK_OPTIONS)];
+}
+
+function seedBackpackWater(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.backpackWaterSeedVersion) >= BACKPACK_WATER_SEED_VERSION) {
+        return { config: source, changed: false };
+    }
+    const categories = Array.isArray(source.categories) ? clone(source.categories) : [];
+    const backpackIndex = categories.findIndex(isBackpackCategory);
+    if (backpackIndex < 0) {
+        categories.push(clone(DEFAULT_BACKPACK_CATEGORY));
+    } else {
+        const category = categories[backpackIndex];
+        categories[backpackIndex] = {
+            ...category,
+            options: optionsWithWaterSupplies(Array.isArray(category.options) ? category.options : category.values),
+            values: undefined
+        };
+    }
+    return {
+        config: {
+            ...source,
+            categories,
+            backpackWaterSeedVersion: BACKPACK_WATER_SEED_VERSION
+        },
+        changed: true
+    };
+}
+
+function isGenderCategory(category) {
+    const id = String(category?.id || "").toLocaleLowerCase("ru");
+    const name = String(category?.name || "").toLocaleLowerCase("ru").trim();
+    return id === "gender" || name === "пол";
+}
+
+function seedNormalGenderOptions(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.genderOptionsSeedVersion) >= GENDER_OPTIONS_SEED_VERSION) {
+        return { config: source, changed: false };
+    }
+    const categories = Array.isArray(source.categories) ? clone(source.categories) : [];
+    const genderIndex = categories.findIndex(isGenderCategory);
+    if (genderIndex < 0) {
+        categories.push(clone(DEFAULT_GENDER_CATEGORY));
+    } else {
+        categories[genderIndex] = {
+            ...categories[genderIndex],
+            name: "Пол",
+            options: clone(DEFAULT_GENDER_CATEGORY.options),
+            values: undefined
+        };
+    }
+    return {
+        config: {
+            ...source,
+            categories,
+            genderOptionsSeedVersion: GENDER_OPTIONS_SEED_VERSION
+        },
+        changed: true
+    };
+}
+
 function seedGameConfig(rawConfig) {
     const bunkerSeed = seedDefaultBunkerTraits(rawConfig);
     const waterLabelSeed = seedWaterTraitLabel(bunkerSeed.config);
@@ -577,10 +685,12 @@ function seedGameConfig(rawConfig) {
     const waterPercentageSeed = seedRandomWaterPercentage(waterOptionsSeed.config);
     const contentSeed = seedPlaceholderContent(waterPercentageSeed.config);
     const backpackSeed = seedBackpackWeapon(contentSeed.config);
-    const disasterSeed = seedDisasterDurations(backpackSeed.config);
+    const backpackWaterSeed = seedBackpackWater(backpackSeed.config);
+    const genderSeed = seedNormalGenderOptions(backpackWaterSeed.config);
+    const disasterSeed = seedDisasterDurations(genderSeed.config);
     return {
         config: disasterSeed.config,
-        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || backpackSeed.changed || disasterSeed.changed || contentSeed.changed
+        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || backpackSeed.changed || backpackWaterSeed.changed || genderSeed.changed || disasterSeed.changed || contentSeed.changed
     };
 }
 
@@ -712,13 +822,19 @@ function normalizeGameConfig(rawConfig) {
     const waterRandomPercentSeedVersion = Number(rawConfig?.waterRandomPercentSeedVersion) >= WATER_RANDOM_PERCENT_SEED_VERSION
         ? WATER_RANDOM_PERCENT_SEED_VERSION
         : 0;
+    const backpackWaterSeedVersion = Number(rawConfig?.backpackWaterSeedVersion) >= BACKPACK_WATER_SEED_VERSION
+        ? BACKPACK_WATER_SEED_VERSION
+        : 0;
+    const genderOptionsSeedVersion = Number(rawConfig?.genderOptionsSeedVersion) >= GENDER_OPTIONS_SEED_VERSION
+        ? GENDER_OPTIONS_SEED_VERSION
+        : 0;
     const disasterDurationSeedVersion = Number(rawConfig?.disasterDurationSeedVersion) >= DISASTER_DURATION_SEED_VERSION
         ? DISASTER_DURATION_SEED_VERSION
         : 0;
     const contentFillSeedVersion = Number(rawConfig?.contentFillSeedVersion) >= CONTENT_FILL_SEED_VERSION
         ? CONTENT_FILL_SEED_VERSION
         : 0;
-    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, hiddenAvatars, revision };
+    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, backpackWaterSeedVersion, genderOptionsSeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, hiddenAvatars, revision };
 }
 
 function loadGameConfig() {
