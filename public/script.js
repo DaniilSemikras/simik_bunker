@@ -224,7 +224,7 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
             const value = hasOwnValue ? myCards[trait] : isRevealed ? player.revealed[trait] : "скрыто";
             const canRevealHere = isMe && !isRevealed && (canChooseTrait || (canRevealProfession && trait === room.currentTrait));
             const visibilityClass = isRevealed ? "is-revealed-value" : hasOwnValue ? "is-private-value" : "is-hidden-value";
-            return `<td class="${visibilityClass} ${playerState(player)}"><span class="table-cell-value" title="${escaped(value)}">${escaped(value)}</span>${canRevealHere ? `<button class="table-reveal-button" type="button" data-reveal-trait="${trait}">Раскрыть</button>` : ""}</td>`;
+            return `<td class="${visibilityClass} ${playerState(player)}"><span class="table-cell-value" title="${escaped(value)}">${escaped(value)}</span>${canRevealHere ? `<button class="table-reveal-button" type="button" data-reveal-trait="${trait}" title="Раскрыть: ${escaped(traitName(trait))}" aria-label="Раскрыть: ${escaped(traitName(trait))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.8"></circle></svg></button>` : ""}</td>`;
         }).join("")
     )).join("");
     const extraRows = [
