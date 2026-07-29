@@ -218,12 +218,12 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
         players.map((player) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, trait);
             const value = isRevealed ? player.revealed[trait] : "скрыто";
-            return `<td class="${isRevealed ? "" : "is-hidden-value"}"><span class="table-cell-value" title="${escaped(value)}">${escaped(value)}</span></td>`;
+            return `<td class="${isRevealed ? "is-revealed-value" : "is-hidden-value"} ${playerState(player)}"><span class="table-cell-value" title="${escaped(value)}">${escaped(value)}</span></td>`;
         }).join("")
     )).join("");
     const extraRows = [
-        hasProfessionItems ? traitRow("Багаж от профессии", players.map((player) => `<td class="table-extra"><span class="table-cell-value" title="${escaped(player.professionItem || "—")}">${player.professionItem ? escaped(player.professionItem) : "—"}</span></td>`).join("")) : "",
-        hasUsedSpecialCards ? traitRow("Спецкарта", players.map((player) => `<td class="table-extra"><span class="table-cell-value" title="${escaped(player.usedSpecialCard?.name || "—")}">${player.usedSpecialCard ? escaped(player.usedSpecialCard.name) : "—"}</span></td>`).join("")) : ""
+        hasProfessionItems ? traitRow("Багаж от профессии", players.map((player) => `<td class="table-extra ${player.professionItem ? "is-revealed-value" : ""} ${playerState(player)}"><span class="table-cell-value" title="${escaped(player.professionItem || "—")}">${player.professionItem ? escaped(player.professionItem) : "—"}</span></td>`).join("")) : "",
+        hasUsedSpecialCards ? traitRow("Спецкарта", players.map((player) => `<td class="table-extra ${player.usedSpecialCard ? "is-revealed-value" : ""} ${playerState(player)}"><span class="table-cell-value" title="${escaped(player.usedSpecialCard?.name || "—")}">${player.usedSpecialCard ? escaped(player.usedSpecialCard.name) : "—"}</span></td>`).join("")) : ""
     ].join("");
     const showVotes = isVoting || players.some((player) => (room.voteMarkers?.[player.id] || []).length);
     const voteRow = showVotes ? traitRow("Голоса против", players.map((player) => {
@@ -232,7 +232,7 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
             .filter(Boolean);
         const visibleVoters = voters.slice(0, 3);
         const voteWord = voters.length === 1 ? "голос" : voters.length >= 2 && voters.length <= 4 ? "голоса" : "голосов";
-        return `<td class="table-vote-cell">${visibleVoters.map((voter) => `<span class="vote-avatar" title="${escaped(voter.nickname)}">${avatarMarkup(voter)}</span>`).join("")}${voters.length > visibleVoters.length ? `<span class="vote-more">+${voters.length - visibleVoters.length}</span>` : ""}<span class="table-vote-count ${voters.length ? "" : "is-empty"}">${voters.length} ${voteWord}</span></td>`;
+        return `<td class="table-vote-cell ${playerState(player)}">${visibleVoters.map((voter) => `<span class="vote-avatar" title="${escaped(voter.nickname)}">${avatarMarkup(voter)}</span>`).join("")}${voters.length > visibleVoters.length ? `<span class="vote-more">+${voters.length - visibleVoters.length}</span>` : ""}<span class="table-vote-count ${voters.length ? "" : "is-empty"}">${voters.length} ${voteWord}</span></td>`;
     }).join(""), "table-vote-row") : "";
     const actionRow = (isVoting || specialTargetMode) ? traitRow("Действие", players.map((player) => {
         const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== socket.id;
@@ -240,7 +240,7 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
         const action = canSelectSpecialTarget
             ? `<button class="special-target-button" data-special-target="${player.id}">${escaped(specialTargetAction)}</button>`
             : canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : "—";
-        return `<td class="table-action-cell">${action}</td>`;
+        return `<td class="table-action-cell ${playerState(player)}">${action}</td>`;
     }).join(""), "table-action-row") : "";
     const playerHeaders = players.map((player) => `<th scope="col" class="${playerState(player)}"><span class="table-player-head">${avatarMarkup(player)}<strong title="${escaped(player.nickname)}">${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus(player)}</small></span></th>`).join("");
     return `<div class="players-table-scroll"><table class="players-table"><thead><tr><th><span class="table-header-value" title="Характеристика">Характеристика</span></th>${playerHeaders}</tr></thead><tbody>${traitRows}${extraRows}${voteRow}${actionRow}</tbody></table></div>`;

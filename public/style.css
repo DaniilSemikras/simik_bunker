@@ -147,6 +147,11 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .players-table tbody tr.survivor { background:rgba(52,115,65,.3); }
 .players-table tbody tr.eliminated,.players-table tbody tr.left-player { color:#978a84; background:rgba(52,38,36,.32); }
 .players-table .is-hidden-value { color:#938981; font-style:italic; }
+.players-table td.is-revealed-value { background:linear-gradient(135deg,rgba(49,113,65,.48),rgba(26,62,36,.38)); box-shadow:inset 0 1px rgba(194,255,205,.12); }
+.players-table td.eliminated,.players-table td.left-player { color:#9a918c; background:rgba(72,66,62,.42); }
+.players-table td.eliminated .table-cell-value,.players-table td.left-player .table-cell-value { color:#a39a94; }
+.players-table thead th.eliminated,.players-table thead th.left-player { background:linear-gradient(145deg,rgba(73,68,65,.96),rgba(45,42,40,.98)); }
+.players-table thead th.eliminated .table-player-head,.players-table thead th.left-player .table-player-head { filter:grayscale(1); opacity:.72; }
 .table-cell-value,.table-header-value { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .table-player-head { display:grid; justify-items:center; gap:3px; min-width:0; text-align:center; }
 .table-player-head .avatar { display:grid; flex:0 0 30px; width:30px; height:30px; border:1px solid rgba(255,228,190,.58); font-size:11px; }
