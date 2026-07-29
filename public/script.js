@@ -388,6 +388,9 @@ socket.on("cardRevealed", ({ playerId, trait }) => {
 socket.on("votingStarted", () => { toast("Все раскрылись. Пора голосовать."); playSound("vote"); });
 socket.on("voteAccepted", () => { toast("Ваш голос принят."); playSound("accepted"); });
 socket.on("playerEliminated", ({ nickname: name }) => { toast(`${name} не попадает в бункер.`); playSound("out"); });
+socket.on("turnAutoRevealed", ({ nickname: name, trait }) => {
+    toast(`${name} не выбрал карту — автоматически раскрыта «${traitName(trait)}».`);
+});
 socket.on("turnSkipped", ({ nickname: name }) => { toast(`${name} не успел раскрыть карту — ход пропущен.`); playSound("skip"); });
 socket.on("voteTied", ({ nextRound } = {}) => { toast(nextRound ? "Голоса разделились. Открываем следующую карту." : "Ничья: никто не исключен."); playSound("tie"); });
 socket.on("voteSkipped", () => { toast("Решение команды: никого не исключаем. Начинается следующий раунд."); playSound("tie"); });

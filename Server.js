@@ -748,6 +748,12 @@ function advanceRevealTurn(room, timedOut = false) {
     const playerId = currentTurnPlayerId(room);
     if (timedOut && playerId) {
         const player = room.players.find((candidate) => candidate.id === playerId);
+        const availableTraits = room.traitOrder.filter((trait) => !room.revealed[playerId]?.[trait]);
+        const trait = room.round === 0 ? room.traitOrder[0] : randomItem(availableTraits);
+        if (player && trait && revealTraitForPlayer(room, playerId, trait)) {
+            io.to(room.code).emit("turnAutoRevealed", { nickname: player.nickname, trait });
+            return;
+        }
         if (player) io.to(room.code).emit("turnSkipped", { nickname: player.nickname });
     }
     room.turnIndex += 1;
