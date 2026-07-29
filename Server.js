@@ -583,6 +583,7 @@ function revealRoundsFor(playerCount, categoryCount) {
 
 const ACTION_DURATION_MS = 60_000;
 const RECONNECT_GRACE_MS = 60_000;
+const FINISHED_ROOM_TTL_MS = 5 * 60_000;
 const MIN_PLAYERS_TO_START = 3;
 const SKIP_VOTE = "__skip_vote__";
 
@@ -605,6 +606,16 @@ function schedulePendingLeave(room, playerId) {
         markPlayerLeft(room, playerId);
         continueAfterLeave(room, playerId);
     }, RECONNECT_GRACE_MS);
+}
+
+function closeRoom(room, notifyPlayers = true) {
+    if (!room || rooms[room.code] !== room) return;
+    clearActionTimer(room);
+    if (room.closeTimer) clearTimeout(room.closeTimer);
+    room.closeTimer = null;
+    for (const player of room.players) cancelPendingLeave(player);
+    if (notifyPlayers) io.to(room.code).emit("roomExpired");
+    delete rooms[room.code];
 }
 
 function movePlayerToSocket(room, player, socketId) {
@@ -718,6 +729,7 @@ function publicState(room) {
         voteMarkers,
         voteCanBeSkipped: voteCanBeSkipped(room),
         bunkerSurvivalChance: room.phase === "finished" ? calculateBunkerSurvivalChance(room) : null,
+        roomCloseDeadline: room.roomCloseDeadline || null,
         players: room.players.map((player) => ({
             id: player.id,
             nickname: player.nickname,
@@ -765,10 +777,13 @@ function scheduleBotAction(room, callback, delay) {
 }
 
 function endGame(room) {
+    if (room.phase === "finished") return;
     clearActionTimer(room);
     room.phase = "finished";
     room.turnDeadline = null;
     room.voteDeadline = null;
+    room.roomCloseDeadline = Date.now() + FINISHED_ROOM_TTL_MS;
+    room.closeTimer = setTimeout(() => closeRoom(room), FINISHED_ROOM_TTL_MS);
     emitRoom(room);
     io.to(room.code).emit("gameFinished", {
         survivors: activePlayers(room).map((player) => player.nickname)
@@ -973,8 +988,7 @@ function resolveVote(room, timedOut = false) {
 
 function continueAfterLeave(room, leavingId) {
     if (activePlayers(room).length === 0) {
-        clearActionTimer(room);
-        delete rooms[room.code];
+        closeRoom(room, false);
         return;
     }
     if (!room.players.some((player) => player.id === room.host && !player.left)) room.host = activePlayers(room)[0].id;
@@ -1046,7 +1060,9 @@ io.on("connection", (socket) => {
             voteDeadline: null,
             actionTimer: null,
             timerKind: null,
-            botTimers: []
+            botTimers: [],
+            roomCloseDeadline: null,
+            closeTimer: null
         };
         socket.join(code);
         socket.emit("roomEntered", { code, playerToken: rooms[code].players[0].token });

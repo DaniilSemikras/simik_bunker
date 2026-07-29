@@ -142,13 +142,19 @@ function traitName(trait) {
 
 function updateActionTimer() {
     const timer = $("#actionTimer");
-    const deadline = room?.phase === "voting" ? room.voteDeadline : room?.phase === "reveal" ? room.turnDeadline : null;
+    const deadline = room?.phase === "finished"
+        ? room.roomCloseDeadline
+        : room?.phase === "voting"
+            ? room.voteDeadline
+            : room?.phase === "reveal"
+                ? room.turnDeadline
+                : null;
     if (!deadline) {
         timer.classList.add("hidden");
         return;
     }
     const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
-    const kind = room.phase === "voting" ? "До конца голосования" : "Время хода";
+    const kind = room.phase === "finished" ? "Комната закроется через" : room.phase === "voting" ? "До конца голосования" : "Время хода";
     timer.textContent = `${kind}: ${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
     timer.classList.toggle("urgent", seconds <= 10);
     timer.classList.remove("hidden");
@@ -418,8 +424,18 @@ socket.on("leftRoom", () => {
 socket.on("resumeFailed", () => {
     clearSavedSession();
     currentCode = "";
-    toast("Комната уже закрыта или сессия устарела.");
     show("#menu");
+});
+socket.on("roomExpired", () => {
+    room = null;
+    myCards = {};
+    mySpecialCard = null;
+    specialTargetMode = false;
+    currentCode = "";
+    clearSavedSession();
+    $("#roomCode").value = "";
+    show("#menu");
+    toast("Комната закрыта. Спасибо за игру!");
 });
 socket.on("yourCards", (cards) => { myCards = cards; if (room?.phase !== "lobby") updateGame(); });
 socket.on("yourSpecialCard", (card) => {
