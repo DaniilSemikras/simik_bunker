@@ -200,6 +200,7 @@ function updateGame() {
     const isStory = room.phase === "story";
     const isVoting = room.phase === "voting";
     const isFinished = room.phase === "finished";
+    const winners = room.players.filter((player) => !player.left && !player.eliminated);
     const myRevealed = me?.revealed || {};
     const hasRevealedThisRound = Boolean(room.revealedThisRound?.[socket.id]);
     const isChoiceRound = room.phase === "reveal" && !trait;
@@ -209,6 +210,12 @@ function updateGame() {
 
     $("#gameCode").textContent = room.code;
     $("#phaseTitle").textContent = isFinished ? "Игра завершена" : isStory ? "История катастрофы" : isVoting ? "Голосование" : "Раскрытие карт";
+    $("#resultsBanner").classList.toggle("hidden", !isFinished);
+    $("#resultsBanner").innerHTML = isFinished ? `
+        <div class="result-emblem" aria-hidden="true">✦</div>
+        <div class="result-copy"><span class="result-kicker">ПОБЕДИТЕЛИ БУНКЕРА</span><h3>${winners.length ? "В бункере остались" : "Выживших не осталось"}</h3></div>
+        <div class="winner-list">${winners.map((player) => `<span class="winner-chip">${avatarMarkup(player)}<strong>${escaped(player.nickname)}</strong></span>`).join("")}</div>
+    ` : "";
     const bunkerChance = isFinished && typeof room.bunkerSurvivalChance === "number"
         ? `<span class="bunker-chance">Прогноз выживания бункера: <strong>${room.bunkerSurvivalChance}%</strong></span>`
         : "";
@@ -246,12 +253,12 @@ function updateGame() {
         const playerCards = Object.entries(player.revealed || {}).map(([name, value]) => `<span class="public-card ${room.revealedThisRound?.[player.id] === name ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> ${escaped(value)}</span>`).join("");
         const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== socket.id;
         const playerState = player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
-        const playerStatus = player.left ? "вышел" : player.eliminated ? "выбыл" : isFinished ? "в бункере" : "в игре";
+        const playerStatus = player.left ? "вышел" : player.eliminated ? "исключён" : isFinished ? "победитель" : "в игре";
         return `<article class="game-player ${playerState}">
             <div class="player-name">${avatarMarkup(player)}<div><strong>${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></div></div>
             <div class="public-cards">${playerCards || '<span class="muted">карты ещё не раскрыты</span>'}</div>
             ${canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : ""}
-            ${player.id === room.hostId ? '<span class="host-star" aria-label="Ведущий" title="Ведущий">★</span>' : ""}
+            ${player.eliminated ? '<span class="eliminated-mark">ИСКЛЮЧЁН</span>' : isFinished && !player.left ? '<span class="winner-mark">ПОБЕДИТЕЛЬ</span>' : player.id === room.hostId ? '<span class="host-star" aria-label="Ведущий" title="Ведущий">★</span>' : ""}
         </article>`;
     }).join("");
     updateActionTimer();
