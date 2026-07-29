@@ -147,24 +147,6 @@ function traitName(trait) {
     return room?.categoryNames?.[trait] || TRAIT_NAMES[trait] || trait;
 }
 
-function waterFillPercentage(trait) {
-    const traitHint = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
-    if (!/water|вод/.test(traitHint)) return null;
-    const value = String(trait?.value || "").toLocaleLowerCase("ru");
-    if (/нет|отсутств|пуст/.test(value)) return 0;
-    const percentValue = Number((value.match(/(\d{1,3})\s*%/) || [])[1]);
-    if (Number.isFinite(percentValue)) return Math.max(0, Math.min(100, percentValue));
-    const directFill = Number(trait?.fillPercent);
-    if (Number.isFinite(directFill)) return Math.max(0, Math.min(100, Math.round(directFill)));
-    const hasTwoYears = /(?:2|два|две)\s*(?:год|лет)/.test(value);
-    const hasYear = /год|лет/.test(value);
-    const hasMonths = /месяц/.test(value);
-    const hasDays = /дн(?:я|ей|ь)?/.test(value);
-    const number = Number((value.match(/\d+(?:[.,]\d+)?/) || [])[0]?.replace(",", ".")) || 1;
-    const months = hasTwoYears ? 24 : hasYear ? number * 12 : hasMonths ? number : hasDays ? number / 30 : 3;
-    return Math.max(0, Math.min(100, Math.round((months / 24) * 100)));
-}
-
 function updateActionTimer() {
     const timer = $("#actionTimer");
     const deadline = room?.phase === "finished"
@@ -337,17 +319,14 @@ function updateGame() {
     $("#disasterCard").innerHTML = disasterContent;
     const bunkerTraits = Array.isArray(room.bunkerTraits) ? room.bunkerTraits : [];
     $("#bunkerTraitsPanel").classList.toggle("hidden", !bunkerTraits.length);
-    $("#bunkerTraits").innerHTML = bunkerTraits.map((trait) => {
-        const waterLevel = waterFillPercentage(trait);
-        return [
-        '<article class="bunker-trait-card' + (waterLevel === null ? '' : ' is-water-reserve') + '"' + (waterLevel === null ? '' : ' style="--water-fill:' + waterLevel + '%"') + '>',
+    $("#bunkerTraits").innerHTML = bunkerTraits.map((trait) => [
+        '<article class="bunker-trait-card">',
         '<span>' + escaped(trait.name) + '</span>',
         '<strong>' + escaped(trait.value) + '</strong>',
         trait.occupiedSlots ? '<small>занято мест: ' + escaped(trait.occupiedSlots) + '</small>' : '',
         trait.evictedResidents ? '<small>выгнано жителей: ' + escaped(trait.evictedResidents) + '</small>' : '',
         '</article>'
-        ].join("");
-    }).join("");
+    ].join("")).join("");
     $("#survivorCount").textContent = `${active.length} в игре`;
     const categoryCount = room.categoryOrder?.length || Object.keys(myCards).length;
     const revealRoundCount = room.revealRounds || categoryCount;

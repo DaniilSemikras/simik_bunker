@@ -94,6 +94,7 @@ const BACKPACK_WEAPON_SEED_VERSION = 1;
 const WATER_TRAIT_LABEL_SEED_VERSION = 1;
 const WATER_OPTIONS_SEED_VERSION = 1;
 const WATER_RANDOM_PERCENT_SEED_VERSION = 1;
+const WATER_DURATION_SEED_VERSION = 1;
 const BACKPACK_WATER_SEED_VERSION = 1;
 const GENDER_OPTIONS_SEED_VERSION = 1;
 const DISASTER_DURATION_SEED_VERSION = 1;
@@ -194,6 +195,7 @@ const DEFAULT_GAME_CONFIG = {
     waterTraitLabelSeedVersion: WATER_TRAIT_LABEL_SEED_VERSION,
     waterOptionsSeedVersion: WATER_OPTIONS_SEED_VERSION,
     waterRandomPercentSeedVersion: WATER_RANDOM_PERCENT_SEED_VERSION,
+    waterDurationSeedVersion: WATER_DURATION_SEED_VERSION,
     backpackWaterSeedVersion: BACKPACK_WATER_SEED_VERSION,
     genderOptionsSeedVersion: GENDER_OPTIONS_SEED_VERSION,
     disasterDurationSeedVersion: DISASTER_DURATION_SEED_VERSION,
@@ -373,6 +375,34 @@ function seedRandomWaterPercentage(rawConfig) {
     });
     return {
         config: { ...source, bunkerTraits, waterRandomPercentSeedVersion: WATER_RANDOM_PERCENT_SEED_VERSION },
+        changed: true
+    };
+}
+
+function seedWaterAsDuration(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.waterDurationSeedVersion) >= WATER_DURATION_SEED_VERSION) {
+        return { config: source, changed: false };
+    }
+    const fallbackOptions = clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "water").options);
+    const bunkerTraits = (Array.isArray(source.bunkerTraits) ? source.bunkerTraits : []).map((trait) => {
+        const hint = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
+        if (!/water|вод|вокд/.test(hint)) return trait;
+        const rawOptions = Array.isArray(trait?.options) ? trait.options : trait?.values;
+        const hasDurationOptions = Array.isArray(rawOptions) && rawOptions.some((option) => {
+            const value = typeof option === "string" ? option : option?.value;
+            return /дн|месяц|год|лет|воды нет/i.test(String(value || ""));
+        });
+        return {
+            ...trait,
+            name: "Наличие воды",
+            options: hasDurationOptions ? rawOptions : fallbackOptions,
+            values: undefined,
+            randomPercentage: false
+        };
+    });
+    return {
+        config: { ...source, bunkerTraits, waterDurationSeedVersion: WATER_DURATION_SEED_VERSION },
         changed: true
     };
 }
@@ -683,14 +713,15 @@ function seedGameConfig(rawConfig) {
     const waterLabelSeed = seedWaterTraitLabel(bunkerSeed.config);
     const waterOptionsSeed = seedRandomWaterOptions(waterLabelSeed.config);
     const waterPercentageSeed = seedRandomWaterPercentage(waterOptionsSeed.config);
-    const contentSeed = seedPlaceholderContent(waterPercentageSeed.config);
+    const waterDurationSeed = seedWaterAsDuration(waterPercentageSeed.config);
+    const contentSeed = seedPlaceholderContent(waterDurationSeed.config);
     const backpackSeed = seedBackpackWeapon(contentSeed.config);
     const backpackWaterSeed = seedBackpackWater(backpackSeed.config);
     const genderSeed = seedNormalGenderOptions(backpackWaterSeed.config);
     const disasterSeed = seedDisasterDurations(genderSeed.config);
     return {
         config: disasterSeed.config,
-        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || backpackSeed.changed || backpackWaterSeed.changed || genderSeed.changed || disasterSeed.changed || contentSeed.changed
+        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || waterDurationSeed.changed || backpackSeed.changed || backpackWaterSeed.changed || genderSeed.changed || disasterSeed.changed || contentSeed.changed
     };
 }
 
@@ -766,7 +797,8 @@ function normalizeGameConfig(rawConfig) {
             throw new Error("Сумма вероятностей в характеристике бункера «" + name + "» должна быть 100%. Сейчас: " + chanceTotal + "%.");
         }
         usedBunkerTraitIds.add(id);
-        return { id, name, options, randomPercentage: Boolean(trait?.randomPercentage) };
+        const isWaterTrait = /water|вод|вокд/.test(`${id} ${name}`.toLocaleLowerCase("ru"));
+        return { id, name, options, randomPercentage: isWaterTrait ? false : Boolean(trait?.randomPercentage) };
     }).filter(Boolean).slice(0, 16);
 
     const usedSpecialCardIds = new Set();
@@ -822,6 +854,9 @@ function normalizeGameConfig(rawConfig) {
     const waterRandomPercentSeedVersion = Number(rawConfig?.waterRandomPercentSeedVersion) >= WATER_RANDOM_PERCENT_SEED_VERSION
         ? WATER_RANDOM_PERCENT_SEED_VERSION
         : 0;
+    const waterDurationSeedVersion = Number(rawConfig?.waterDurationSeedVersion) >= WATER_DURATION_SEED_VERSION
+        ? WATER_DURATION_SEED_VERSION
+        : 0;
     const backpackWaterSeedVersion = Number(rawConfig?.backpackWaterSeedVersion) >= BACKPACK_WATER_SEED_VERSION
         ? BACKPACK_WATER_SEED_VERSION
         : 0;
@@ -834,7 +869,7 @@ function normalizeGameConfig(rawConfig) {
     const contentFillSeedVersion = Number(rawConfig?.contentFillSeedVersion) >= CONTENT_FILL_SEED_VERSION
         ? CONTENT_FILL_SEED_VERSION
         : 0;
-    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, backpackWaterSeedVersion, genderOptionsSeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, hiddenAvatars, revision };
+    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, waterDurationSeedVersion, backpackWaterSeedVersion, genderOptionsSeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, hiddenAvatars, revision };
 }
 
 function loadGameConfig() {

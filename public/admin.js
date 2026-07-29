@@ -101,7 +101,8 @@ function renderCategories() {
 function renderBunkerTraits() {
     const traits = Array.isArray(config.bunkerTraits) ? config.bunkerTraits : [];
     $("#bunkerTraits").innerHTML = traits.length ? traits.map((trait) => {
-        const isRandomPercentage = Boolean(trait.randomPercentage);
+        const isWaterTrait = /water|вод|вокд/.test(`${trait.id || ""} ${trait.name || ""}`.toLocaleLowerCase("ru"));
+        const isRandomPercentage = !isWaterTrait && Boolean(trait.randomPercentage);
         const options = trait.options.map((option, index) => [
             '<div class="option-row bunker-option-row">',
             '<input class="bunker-option-value" value="' + escapeHtml(option.value) + '" aria-label="Вариант характеристики бункера">',
@@ -113,7 +114,7 @@ function renderBunkerTraits() {
         return [
             '<article class="category-card bunker-trait-card' + (isRandomPercentage ? ' is-random-percentage' : '') + '" data-id="' + escapeHtml(trait.id) + '">',
             '<div class="category-top"><input class="bunker-trait-name" value="' + escapeHtml(trait.name) + '" aria-label="Название характеристики бункера"><button class="remove remove-bunker-trait" type="button">Удалить</button></div>',
-            '<label class="random-percentage-toggle"><input class="bunker-random-percentage-input" type="checkbox"' + (isRandomPercentage ? ' checked' : '') + '><span>Случайный процент от 0 до 100%</span></label>',
+            isWaterTrait ? '' : '<label class="random-percentage-toggle"><input class="bunker-random-percentage-input" type="checkbox"' + (isRandomPercentage ? ' checked' : '') + '><span>Случайный процент от 0 до 100%</span></label>',
             '<div class="bunker-variant-editor"><label>Варианты и вероятность выпадения</label><div class="category-options">' + options + '</div><div class="distribution-actions"><p class="distribution-total">Сумма вероятностей: 100% из 100%</p><button class="equalize-chances equalize-bunker-chances" type="button">Распределить поровну</button></div><button class="add-option add-bunker-option" type="button">+ Добавить вариант</button></div>',
             '</article>'
         ].join("");
@@ -226,16 +227,21 @@ function collectConfig() {
             passiveItem: option.querySelector(".option-passive-item-input")?.value || ""
         }))
     }));
-    const bunkerTraits = [...document.querySelectorAll("#bunkerTraits .bunker-trait-card")].map((card) => ({
-        id: card.dataset.id,
-        name: card.querySelector(".bunker-trait-name").value,
-        randomPercentage: Boolean(card.querySelector(".bunker-random-percentage-input")?.checked),
+    const bunkerTraits = [...document.querySelectorAll("#bunkerTraits .bunker-trait-card")].map((card) => {
+        const id = card.dataset.id;
+        const name = card.querySelector(".bunker-trait-name").value;
+        const isWaterTrait = /water|вод|вокд/.test(`${id} ${name}`.toLocaleLowerCase("ru"));
+        return {
+        id,
+        name,
+        randomPercentage: !isWaterTrait && Boolean(card.querySelector(".bunker-random-percentage-input")?.checked),
         options: [...card.querySelectorAll(".bunker-option-row")].map((option) => ({
             value: option.querySelector(".bunker-option-value").value,
             chance: Number(option.querySelector(".bunker-option-chance-input").value),
             occupiedSlots: Number(option.querySelector(".bunker-option-slots-input").value)
         }))
-    }));
+        };
+    });
     const specialCards = [...document.querySelectorAll("#specialCards .special-card")].map((card) => ({
         id: card.dataset.id,
         name: card.querySelector(".special-card-name").value,
@@ -246,7 +252,7 @@ function collectConfig() {
         text: row.querySelector(".disaster-value").value,
         shelterDuration: row.querySelector(".disaster-duration-value").value
     }));
-    return { categories, disasters, bunkerTraits, bunkerTraitsSeedVersion: config.bunkerTraitsSeedVersion, backpackWeaponSeedVersion: config.backpackWeaponSeedVersion, waterTraitLabelSeedVersion: config.waterTraitLabelSeedVersion, waterOptionsSeedVersion: config.waterOptionsSeedVersion, waterRandomPercentSeedVersion: config.waterRandomPercentSeedVersion, backpackWaterSeedVersion: config.backpackWaterSeedVersion, genderOptionsSeedVersion: config.genderOptionsSeedVersion, disasterDurationSeedVersion: config.disasterDurationSeedVersion, contentFillSeedVersion: config.contentFillSeedVersion, specialCards, hiddenAvatars, revision: config.revision };
+    return { categories, disasters, bunkerTraits, bunkerTraitsSeedVersion: config.bunkerTraitsSeedVersion, backpackWeaponSeedVersion: config.backpackWeaponSeedVersion, waterTraitLabelSeedVersion: config.waterTraitLabelSeedVersion, waterOptionsSeedVersion: config.waterOptionsSeedVersion, waterRandomPercentSeedVersion: config.waterRandomPercentSeedVersion, waterDurationSeedVersion: config.waterDurationSeedVersion, backpackWaterSeedVersion: config.backpackWaterSeedVersion, genderOptionsSeedVersion: config.genderOptionsSeedVersion, disasterDurationSeedVersion: config.disasterDurationSeedVersion, contentFillSeedVersion: config.contentFillSeedVersion, specialCards, hiddenAvatars, revision: config.revision };
 }
 
 async function loadEditor() {
