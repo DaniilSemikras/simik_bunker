@@ -206,7 +206,7 @@ function cardMarkup(trait, value, revealed, canChoose, isRevealing = false) {
         : `<article class="${classes}">${content}</article>`;
 }
 
-function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specialTargetAction) {
+function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specialTargetAction, canChooseTrait, canRevealProfession) {
     const players = room.players;
     const baggageFor = (player) => [player.professionItem, ...(Array.isArray(player.extraBaggage) ? player.extraBaggage : [])].filter(Boolean);
     const baggageText = (player) => baggageFor(player).join(" · ");
@@ -219,8 +219,12 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
         traitName(trait),
         players.map((player) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, trait);
-            const value = isRevealed ? player.revealed[trait] : "скрыто";
-            return `<td class="${isRevealed ? "is-revealed-value" : "is-hidden-value"} ${playerState(player)}"><span class="table-cell-value" title="${escaped(value)}">${escaped(value)}</span></td>`;
+            const isMe = player.id === socket.id;
+            const hasOwnValue = isMe && Object.prototype.hasOwnProperty.call(myCards, trait);
+            const value = hasOwnValue ? myCards[trait] : isRevealed ? player.revealed[trait] : "скрыто";
+            const canRevealHere = isMe && !isRevealed && (canChooseTrait || (canRevealProfession && trait === room.currentTrait));
+            const visibilityClass = isRevealed ? "is-revealed-value" : hasOwnValue ? "is-private-value" : "is-hidden-value";
+            return `<td class="${visibilityClass} ${playerState(player)}"><span class="table-cell-value" title="${escaped(value)}">${escaped(value)}</span>${canRevealHere ? `<button class="table-reveal-button" type="button" data-reveal-trait="${trait}">Раскрыть</button>` : ""}</td>`;
         }).join("")
     )).join("");
     const extraRows = [
@@ -268,8 +272,9 @@ function updateGame() {
     const specialTraitLabel = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать предмет из рюкзака"
         : mySpecialCard.effect === "increase_capacity" ? "Добавить 1 место в бункере"
             : mySpecialCard.effect === "decrease_capacity" ? "Убрать 1 место в бункере"
-                : mySpecialCard.effect === "reroll_own_trait" ? `Переролл: ${traitName(mySpecialCard.trait)}`
-                    : `Обмен: ${traitName(mySpecialCard.trait)}`;
+                : mySpecialCard.effect === "random_capacity" ? "Случайно: +1 или −1 место"
+                    : mySpecialCard.effect === "reroll_own_trait" ? `Переролл: ${traitName(mySpecialCard.trait)}`
+                        : `Обмен: ${traitName(mySpecialCard.trait)}`;
     const specialTargetAction = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать предмет" : `Обменяться: ${traitName(mySpecialCard.trait)}`;
     if (!canUseSpecialCard) specialTargetMode = false;
 
@@ -372,7 +377,7 @@ function updateGame() {
     }).join("");
     $("#gamePlayers").classList.toggle("players-table-view", playersView === "table");
     $("#gamePlayers").innerHTML = playersView === "table"
-        ? playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specialTargetAction)
+        ? playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specialTargetAction, canChooseTrait, canRevealProfession)
         : playerCardsMarkup;
     const logEntries = Array.isArray(room.actionLog) ? room.actionLog : [];
     $("#actionLog").innerHTML = logEntries.length
@@ -452,6 +457,12 @@ $("#gamePlayers").addEventListener("click", (event) => {
         specialTargetMode = false;
         socket.emit("useSpecialCard", specialTarget.dataset.specialTarget);
         playSound("accepted");
+        return;
+    }
+    const revealCard = event.target.closest("[data-reveal-trait]");
+    if (revealCard) {
+        socket.emit("revealTrait", revealCard.dataset.revealTrait);
+        playSound("reveal");
         return;
     }
     const button = event.target.closest("[data-vote]");
@@ -538,7 +549,7 @@ socket.on("specialCardUsed", ({ nickname: name, targetNickname, cardName, trait,
         ? name + " применяет «" + cardName + "» и забирает «" + item + "» у " + targetNickname + " в багаж."
         : action === "increase_capacity"
             ? name + " применяет «" + cardName + "»: мест в бункере стало " + capacity + "."
-            : action === "decrease_capacity"
+        : action === "decrease_capacity" || action === "random_capacity"
                 ? name + " применяет «" + cardName + "»: мест в бункере стало " + capacity + "."
                 : action === "reroll_own_trait"
                     ? name + " применяет «" + cardName + "» и переролливает «" + traitName(trait) + "»."

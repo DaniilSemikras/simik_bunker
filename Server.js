@@ -129,6 +129,12 @@ const DEFAULT_GAME_CONFIG = {
             effect: "decrease_capacity"
         },
         {
+            id: "random_capacity",
+            name: "Изменить размер бункера",
+            description: "Один раз случайно добавьте или уберите одно место в бункере.",
+            effect: "random_capacity"
+        },
+        {
             id: "reroll_own_trait",
             name: "Переролл характеристики",
             description: "Один раз случайно измените одну свою характеристику.",
@@ -262,15 +268,17 @@ function normalizeGameConfig(rawConfig) {
             ? "increase_capacity"
             : /уменьш|отнят|убрат.*(?:мест|слот)|сократ/.test(hint)
                 ? "decrease_capacity"
-                : /перерол|зарандом|рандом.*сво|измен.*сво.*характер/.test(hint)
-                    ? "reroll_own_trait"
-                    : card?.effect === "take_backpack"
-                        ? "take_backpack"
-                        : card?.effect === "increase_capacity" || card?.effect === "decrease_capacity" || card?.effect === "reroll_own_trait"
-                            ? card.effect
-                            : card?.effect === "swap_random_trait" || card?.effect === "swap_trait"
-                                ? "swap_random_trait"
-                                : "";
+                : /размер.*бункер|бункер.*размер|измен.*(?:мест|слот)/.test(hint)
+                    ? "random_capacity"
+                    : /перерол|зарандом|рандом.*сво|измен.*сво.*характер/.test(hint)
+                        ? "reroll_own_trait"
+                        : card?.effect === "take_backpack"
+                            ? "take_backpack"
+                            : ["increase_capacity", "decrease_capacity", "random_capacity", "reroll_own_trait"].includes(card?.effect)
+                                ? card.effect
+                                : card?.effect === "swap_random_trait" || card?.effect === "swap_trait"
+                                    ? "swap_random_trait"
+                                    : "";
         if (!id || !name || !description || !effect || usedSpecialCardIds.has(id)) return null;
         usedSpecialCardIds.add(id);
         return { id, name, description, effect };
@@ -588,7 +596,7 @@ function assignSpecialCards(players, specialCards, traitOrder) {
         card.effect === "swap_random_trait" ? exchangeTraits.length > 0
             : card.effect === "take_backpack" ? traitOrder.includes("backpack")
                 : card.effect === "reroll_own_trait" ? rerollTraits.length > 0
-                    : ["increase_capacity", "decrease_capacity"].includes(card.effect)
+                    : ["increase_capacity", "decrease_capacity", "random_capacity"].includes(card.effect)
     ));
     if (!usableCards.length) return {};
     return Object.fromEntries(players.map((player) => {
@@ -705,7 +713,7 @@ function giveProfessionItem(room, playerId) {
 function useSpecialCard(room, playerId, targetId) {
     const specialCard = room.playerSpecialCards?.[playerId];
     if (!specialCard || specialCard.used) return { error: "Эта спецкарта уже использована." };
-    if (!["swap_random_trait", "take_backpack", "increase_capacity", "decrease_capacity", "reroll_own_trait"].includes(specialCard.effect)) return { error: "Неизвестный эффект спецкарты." };
+    if (!["swap_random_trait", "take_backpack", "increase_capacity", "decrease_capacity", "random_capacity", "reroll_own_trait"].includes(specialCard.effect)) return { error: "Неизвестный эффект спецкарты." };
     if (!room.cards[playerId]) return { error: "Не удалось найти ваши карточки." };
 
     if (specialCard.effect === "increase_capacity") {
@@ -722,6 +730,17 @@ function useSpecialCard(room, playerId, targetId) {
         if (room.capacity === previousCapacity) return { error: "Нельзя уменьшить бункер меньше чем до одного места." };
         specialCard.used = true;
         return { card: specialCard, action: specialCard.effect, previousCapacity, capacity: room.capacity };
+    }
+
+    if (specialCard.effect === "random_capacity") {
+        const previousCapacity = room.capacity;
+        const canIncrease = room.capacity < activePlayers(room).length;
+        const canDecrease = room.capacity > 1;
+        if (!canIncrease && !canDecrease) return { error: "Размер бункера уже нельзя изменить." };
+        const change = canIncrease && canDecrease ? (Math.random() < 0.5 ? 1 : -1) : canIncrease ? 1 : -1;
+        room.capacity += change;
+        specialCard.used = true;
+        return { card: specialCard, action: specialCard.effect, previousCapacity, capacity: room.capacity, change };
     }
 
     if (specialCard.effect === "reroll_own_trait") {
@@ -1319,13 +1338,13 @@ io.on("connection", (socket) => {
             ? player?.nickname + " применяет «" + result.card.name + "» и забирает «" + result.item + "» у " + target?.nickname + " в свой багаж."
             : result.action === "increase_capacity"
                 ? player?.nickname + " применяет «" + result.card.name + "»: мест в бункере " + result.previousCapacity + " → " + result.capacity + "."
-                : result.action === "decrease_capacity"
+                : result.action === "decrease_capacity" || result.action === "random_capacity"
                     ? player?.nickname + " применяет «" + result.card.name + "»: мест в бункере " + result.previousCapacity + " → " + result.capacity + "."
                     : result.action === "reroll_own_trait"
                         ? player?.nickname + " применяет «" + result.card.name + "» и меняет «" + (room.categoryNames?.[result.trait] || result.trait) + "»."
                         : player?.nickname + " применяет «" + result.card.name + "» и меняется «" + (room.categoryNames?.[result.trait] || result.trait) + "» с " + target?.nickname + ".";
         addActionLog(room, actionLog, "special");
-        if (result.action === "increase_capacity" && activePlayers(room).length <= room.capacity) endGame(room);
+        if (["increase_capacity", "random_capacity"].includes(result.action) && result.capacity > result.previousCapacity && activePlayers(room).length <= room.capacity) endGame(room);
         else emitRoom(room);
         io.to(room.code).emit("specialCardUsed", {
             nickname: player?.nickname,
