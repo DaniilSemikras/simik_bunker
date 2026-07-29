@@ -5,7 +5,10 @@ button,input,textarea { font:inherit; }
 button { cursor:pointer; }
 .admin-shell { width:min(100%, 1060px); margin:0 auto; padding:32px 20px 64px; }
 .admin-header,.section-head,.save-bar { display:flex; align-items:center; justify-content:space-between; gap:18px; }
-.admin-header { margin-bottom:30px; }
+.admin-header { position:relative; justify-content:center; margin-bottom:30px; text-align:center; }
+.admin-header .back-link { position:absolute; left:0; top:50%; transform:translateY(-50%); }
+.admin-header #logout { position:absolute; right:0; top:50%; transform:translateY(-50%); }
+.admin-header > div { min-width:0; }
 .back-link,.text-button { color:var(--muted); background:none; border:0; text-decoration:none; font-size:14px; }
 .back-link:hover,.text-button:hover { color:var(--ink); }
 .eyebrow { margin:0 0 5px; color:var(--accent); font-size:11px; font-weight:800; letter-spacing:.14em; }
@@ -77,4 +80,4 @@ input:focus,textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px rg
 .message { margin:0; color:var(--muted); font-size:13px; }
 .message.error { color:#ffaaa1; }.message.success { color:#ffc77e; }
 .hidden { display:none!important; }
-@media (max-width:620px) { .admin-shell { padding:22px 14px 42px; }.admin-header { align-items:flex-start; }.category-top { align-items:stretch; flex-wrap:wrap; }.category-top > .category-name { flex-basis:100%; }.option-row { grid-template-columns:minmax(0,1fr) 75px 88px 28px; gap:5px; }.bunker-option-row { grid-template-columns:minmax(0,1fr) 88px 28px; }.option-score span,.option-chance span { font-size:9px; }.save-bar { align-items:stretch; flex-direction:column; }.save-bar .primary { width:100%; } }
+@media (max-width:620px) { .admin-shell { padding:22px 14px 42px; }.admin-header { display:block; text-align:left; }.admin-header .back-link,.admin-header #logout { position:static; display:inline-block; margin-bottom:17px; transform:none; }.admin-header #logout { float:right; }.category-top { align-items:stretch; flex-wrap:wrap; }.category-top > .category-name { flex-basis:100%; }.option-row { grid-template-columns:minmax(0,1fr) 75px 88px 28px; gap:5px; }.bunker-option-row { grid-template-columns:minmax(0,1fr) 88px 28px; }.option-score span,.option-chance span { font-size:9px; }.save-bar { align-items:stretch; flex-direction:column; }.save-bar .primary { width:100%; } }
