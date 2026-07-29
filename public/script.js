@@ -305,7 +305,7 @@ function updateGame() {
             : "";
         const playerState = player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
         const playerStatus = player.left ? "вышел" : player.eliminated ? "исключён" : isFinished ? "победитель" : "в игре";
-        return `<article class="game-player ${playerState}${voters.length ? " has-votes" : ""}">
+        return `<article class="game-player ${playerState}${voters.length ? " has-votes" : ""}${playerActions ? " has-actions" : ""}">
             <div class="player-name">${avatarMarkup(player)}<div><strong>${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></div></div>
             <div class="public-cards">${voteMarkerMarkup}${playerCards || '<span class="muted">карты ещё не раскрыты</span>'}</div>
             ${playerActions ? `<div class="player-actions">${playerActions}</div>` : ""}

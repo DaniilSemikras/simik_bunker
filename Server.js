@@ -782,6 +782,7 @@ function endGame(room) {
     room.phase = "finished";
     room.turnDeadline = null;
     room.voteDeadline = null;
+    room.votes = {};
     room.roomCloseDeadline = Date.now() + FINISHED_ROOM_TTL_MS;
     room.closeTimer = setTimeout(() => closeRoom(room), FINISHED_ROOM_TTL_MS);
     emitRoom(room);
