@@ -138,6 +138,19 @@ function defaultChance(index, count) {
     return index === count - 1 ? Math.round((100 - base * (count - 1)) * 100) / 100 : base;
 }
 
+function defaultProfessionItem(value) {
+    const text = String(value || "").toLocaleLowerCase("ru");
+    if (/(врач|фельдшер|медик|ветеринар)/.test(text)) return "аптечка и запас лекарств";
+    if (/(электрик|энергетик|инженер|электронщик)/.test(text)) return "мультитул и запас предохранителей";
+    if (/(фермер|агроном|садовод)/.test(text)) return "семена и мини-набор для выращивания";
+    if (/(повар|кондитер)/.test(text)) return "набор сухих пайков";
+    if (/(строител|сварщик)/.test(text)) return "ремонтный набор";
+    if (/(механик|автомеханик)/.test(text)) return "набор инструментов";
+    if (/(программист|радист|связист)/.test(text)) return "рация и набор для связи";
+    if (/(психолог|учител)/.test(text)) return "набор для коммуникации с группой";
+    return "";
+}
+
 function normalizeGameConfig(rawConfig) {
     const rawCategories = Array.isArray(rawConfig?.categories) ? rawConfig.categories : DEFAULT_GAME_CONFIG.categories;
     const usedIds = new Set();
@@ -154,11 +167,15 @@ function normalizeGameConfig(rawConfig) {
             if (!value) return null;
             const rawScore = typeof option === "string" ? undefined : option?.score;
             const rawChance = typeof option === "string" ? undefined : option?.chance;
-            return {
+            const normalizedOption = {
                 value,
                 score: cleanScore(rawScore, defaultOptionScore(id, value)),
                 chance: cleanChance(rawChance, defaultChance(index, sourceOptions.length))
             };
+            if (id === "profession") {
+                normalizedOption.passiveItem = cleanText(typeof option === "string" ? "" : option?.passiveItem, 120) || defaultProfessionItem(value);
+            }
+            return normalizedOption;
         }).filter(Boolean).slice(0, 40);
         if (!id || !name || !options.length || usedIds.has(id)) return null;
         const chanceTotal = options.reduce((sum, option) => sum + option.chance, 0);
@@ -206,16 +223,11 @@ function normalizeGameConfig(rawConfig) {
         const id = cleanCategoryId(card?.id);
         const name = cleanText(card?.name, 60);
         const description = cleanText(card?.description, 1200);
-        const rawTerms = Array.isArray(card?.professionTerms)
-            ? card.professionTerms
-            : String(card?.professionTerms || "").split(",");
-        const professionTerms = [...new Set(rawTerms
-            .map((term) => cleanText(term, 40).toLocaleLowerCase("ru"))
-            .filter(Boolean))].slice(0, 12);
-        const survivalBonus = Math.min(30, cleanScore(card?.survivalBonus, 8));
-        if (!id || !name || !description || !professionTerms.length || usedSpecialCardIds.has(id)) return null;
+        const effect = card?.effect === "swap_trait" ? "swap_trait" : "";
+        const trait = cleanCategoryId(card?.trait);
+        if (!id || !name || !description || !effect || !trait || usedSpecialCardIds.has(id)) return null;
         usedSpecialCardIds.add(id);
-        return { id, name, description, professionTerms, survivalBonus };
+        return { id, name, description, effect, trait };
     }).filter(Boolean).slice(0, 20);
 
     const hiddenAvatars = [...new Set(
@@ -522,6 +534,14 @@ function assignBunkerTraits(traits) {
     }));
 }
 
+function assignSpecialCards(players, specialCards) {
+    if (!specialCards?.length) return {};
+    return Object.fromEntries(players.map((player) => [
+        player.id,
+        { ...clone(randomItem(specialCards)), used: false }
+    ]));
+}
+
 function roomFor(socket) {
     return Object.values(rooms).find((room) => room.players.some((player) => player.id === socket.id && !player.left));
 }
@@ -572,7 +592,7 @@ function movePlayerToSocket(room, player, socketId) {
     room.turnOrder = (room.turnOrder || []).map((id) => id === previousId ? socketId : id);
     room.eliminated = (room.eliminated || []).map((id) => id === previousId ? socketId : id);
 
-    for (const record of [room.cards, room.revealed, room.revealedThisRound]) {
+    for (const record of [room.cards, room.revealed, room.revealedThisRound, room.playerSpecialCards, room.playerProfessionItems]) {
         if (!record || !Object.prototype.hasOwnProperty.call(record, previousId)) continue;
         record[socketId] = record[previousId];
         delete record[previousId];
@@ -594,24 +614,36 @@ function scoreRevealedCard(room, trait, value) {
     return (score - 50) / 50;
 }
 
-function specialCardState(room) {
-    if (!room.specialCard) return null;
-    return {
-        ...room.specialCard,
-        resolved: Boolean(room.specialCardResolvedBy),
-        helperNickname: room.specialCardResolvedBy?.nickname || null
-    };
+function giveProfessionItem(room, playerId) {
+    const profession = professionBase(room.revealed[playerId]?.profession || "").toLocaleLowerCase("ru");
+    const item = room.professionItemsByProfession?.[profession];
+    if (!item) return null;
+    room.playerProfessionItems[playerId] = item;
+    return item;
 }
 
-function tryResolveSpecialCard(room) {
-    if (!room.specialCard || room.specialCardResolvedBy) return null;
-    const helper = activePlayers(room).find((player) => {
-        const profession = String(room.revealed[player.id]?.profession || "").toLocaleLowerCase("ru");
-        return profession && room.specialCard.professionTerms.some((term) => profession.includes(term));
-    });
-    if (!helper) return null;
-    room.specialCardResolvedBy = { id: helper.id, nickname: helper.nickname };
-    return room.specialCardResolvedBy;
+function useSpecialCard(room, playerId, targetId) {
+    const specialCard = room.playerSpecialCards?.[playerId];
+    if (!specialCard || specialCard.used) return { error: "Эта спецкарта уже использована." };
+    if (specialCard.effect !== "swap_trait") return { error: "Неизвестный эффект спецкарты." };
+    if (!room.traitOrder.includes(specialCard.trait)) return { error: "Для этой спецкарты в игре нет нужной категории." };
+    if (!room.cards[playerId] || !room.cards[targetId]) return { error: "Не удалось найти карточки игроков." };
+
+    const myValue = room.cards[playerId][specialCard.trait];
+    const targetValue = room.cards[targetId][specialCard.trait];
+    if (myValue === undefined || targetValue === undefined) return { error: "Этой характеристики нет у выбранного игрока." };
+
+    room.cards[playerId][specialCard.trait] = targetValue;
+    room.cards[targetId][specialCard.trait] = myValue;
+    if (Object.prototype.hasOwnProperty.call(room.revealed[playerId] || {}, specialCard.trait)) {
+        room.revealed[playerId][specialCard.trait] = targetValue;
+    }
+    if (Object.prototype.hasOwnProperty.call(room.revealed[targetId] || {}, specialCard.trait)) {
+        room.revealed[targetId][specialCard.trait] = myValue;
+    }
+    specialCard.used = true;
+    specialCard.targetId = targetId;
+    return { card: specialCard, trait: specialCard.trait };
 }
 
 function calculateBunkerSurvivalChance(room) {
@@ -629,8 +661,7 @@ function calculateBunkerSurvivalChance(room) {
     const averageScore = revealedCards ? totalScore / revealedCards : 0;
     const informationBonus = (revealedCards / maxCards) * 7;
     const professionBonus = new Set(players.map((player) => professionRating(room.revealed[player.id]?.profession).role).filter(Boolean)).size * 2;
-    const specialBonus = specialCardState(room)?.resolved ? room.specialCard.survivalBonus : 0;
-    return Math.max(20, Math.min(95, Math.round(55 + averageScore * 31 + informationBonus + Math.min(8, professionBonus) + specialBonus)));
+    return Math.max(20, Math.min(95, Math.round(55 + averageScore * 31 + informationBonus + Math.min(8, professionBonus))));
 }
 
 function publicState(room) {
@@ -654,7 +685,6 @@ function publicState(room) {
         revealedThisRound: room.revealedThisRound || {},
         capacity: room.capacity,
         bunkerTraits: room.bunkerTraits || [],
-        specialCard: specialCardState(room),
         actionSeconds: ACTION_DURATION_MS / 1000,
         turnPlayerId: currentTurnPlayerId(room),
         turnDeadline: room.turnDeadline || null,
@@ -670,7 +700,11 @@ function publicState(room) {
             isBot: Boolean(player.isBot),
             left: Boolean(player.left),
             eliminated: room.eliminated.includes(player.id),
-            revealed: room.revealed[player.id] || {}
+            revealed: room.revealed[player.id] || {},
+            professionItem: room.playerProfessionItems?.[player.id] || null,
+            usedSpecialCard: room.playerSpecialCards?.[player.id]?.used
+                ? { name: room.playerSpecialCards[player.id].name }
+                : null
         }))
     };
 }
@@ -680,6 +714,7 @@ function emitRoom(room) {
     for (const player of room.players) {
         if (player.left) continue;
         io.to(player.id).emit("yourCards", room.cards[player.id] || {});
+        io.to(player.id).emit("yourSpecialCard", room.playerSpecialCards?.[player.id] || null);
     }
 }
 
@@ -815,17 +850,18 @@ function revealTraitForPlayer(room, playerId, requestedTrait) {
     if (!room.traitOrder.includes(trait) || room.revealedThisRound[playerId] || room.revealed[playerId]?.[trait]) return false;
     room.revealed[playerId][trait] = room.cards[playerId][trait];
     room.revealedThisRound[playerId] = trait;
-    const specialResolution = trait === "profession" ? tryResolveSpecialCard(room) : null;
+    const professionItem = trait === "profession" ? giveProfessionItem(room, playerId) : null;
     emitRoom(room);
     io.to(room.code).emit("cardRevealed", {
         playerId,
         nickname: room.players.find((player) => player.id === playerId)?.nickname,
         trait
     });
-    if (specialResolution) {
-        io.to(room.code).emit("specialCardResolved", {
-            nickname: specialResolution.nickname,
-            cardName: room.specialCard.name
+    if (professionItem) {
+        io.to(room.code).emit("professionItemReceived", {
+            playerId,
+            nickname: room.players.find((player) => player.id === playerId)?.nickname,
+            item: professionItem
         });
     }
     setTimeout(() => {
@@ -969,8 +1005,9 @@ io.on("connection", (socket) => {
             round: 0,
             disaster: null,
             bunkerTraits: [],
-            specialCard: null,
-            specialCardResolvedBy: null,
+            playerSpecialCards: {},
+            playerProfessionItems: {},
+            professionItemsByProfession: {},
             cards: {},
             revealed: {},
             revealedThisRound: {},
@@ -1060,9 +1097,13 @@ io.on("connection", (socket) => {
         ]));
         room.disaster = randomItem(gameConfig.disasters);
         room.bunkerTraits = assignBunkerTraits(gameConfig.bunkerTraits || []);
-        room.specialCard = gameConfig.specialCards?.length ? clone(randomItem(gameConfig.specialCards)) : null;
-        room.specialCardResolvedBy = null;
         room.cards = assignCards(activePlayers(room), gameConfig.categories);
+        room.playerSpecialCards = assignSpecialCards(activePlayers(room), gameConfig.specialCards || []);
+        room.playerProfessionItems = {};
+        room.professionItemsByProfession = Object.fromEntries((gameConfig.categories.find((category) => category.id === "profession")?.options || []).map((option) => [
+            String(option.value || "").toLocaleLowerCase("ru"),
+            option.passiveItem || ""
+        ]));
         room.revealed = Object.fromEntries(activePlayers(room).map((player) => [player.id, {}]));
         room.revealedThisRound = {};
         room.eliminated = [];
@@ -1103,6 +1144,27 @@ io.on("connection", (socket) => {
         if (!revealTraitForPlayer(room, socket.id, requestedTrait)) {
             return emitError(socket, "Эту карту сейчас нельзя раскрыть.");
         }
+    });
+
+    socket.on("useSpecialCard", (targetId) => {
+        const room = roomFor(socket);
+        if (!room || !["reveal", "voting"].includes(room.phase) || room.eliminated.includes(socket.id)) {
+            return emitError(socket, "Спецкарту можно применить только во время игры.");
+        }
+        if (targetId === socket.id || !activePlayers(room).some((player) => player.id === targetId)) {
+            return emitError(socket, "Выберите другого игрока, который ещё в игре.");
+        }
+        const result = useSpecialCard(room, socket.id, targetId);
+        if (result.error) return emitError(socket, result.error);
+        const player = room.players.find((candidate) => candidate.id === socket.id);
+        const target = room.players.find((candidate) => candidate.id === targetId);
+        emitRoom(room);
+        io.to(room.code).emit("specialCardUsed", {
+            nickname: player?.nickname,
+            targetNickname: target?.nickname,
+            cardName: result.card.name,
+            trait: result.trait
+        });
     });
 
     socket.on("castVote", (targetId) => {

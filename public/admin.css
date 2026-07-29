@@ -47,11 +47,15 @@ input:focus,textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px rg
 .option-score,.option-chance { margin:0!important; }
 .option-score span,.option-chance span { display:block; margin:0 0 4px; color:var(--muted); font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
 .option-score input,.option-chance input { padding:9px 10px; }
+.option-passive-item { grid-column:1 / -1; margin:0!important; }
+.option-passive-item span { display:block; margin:0 0 4px; color:#d6b98f; font-size:10px; font-weight:750; letter-spacing:.04em; text-transform:uppercase; }
+.option-passive-item input { padding:9px 10px; }
 .bunker-option-row { grid-template-columns:minmax(0,1fr) 115px 34px; }
 .special-card-description { min-height:96px; margin-top:0; }
 .special-card-fields { display:grid; grid-template-columns:minmax(0,1fr) 155px; gap:10px; }
 .special-card-fields label { margin:14px 0 0; }
-.special-card-fields input { margin-top:6px; padding:9px 10px; }
+.special-card-fields input,.special-card-fields select { width:100%; margin-top:6px; border:1px solid transparent; border-radius:9px; padding:9px 10px; color:var(--ink); background:#191413; outline:none; }
+.special-card-fields select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.14); }
 .distribution-actions { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:9px; }
 .distribution-total { margin:0; color:#ffc77e; font-size:12px; font-weight:750; }
 .distribution-total.invalid { color:#ffaaa1; }

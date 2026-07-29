@@ -37,7 +37,8 @@ const TRAIT_NAMES = {
     body: "Телосложение",
     parents: "Родители",
     backpack: "Рюкзак",
-    specialAbility: "Спецвозможность"
+    specialAbility: "Спецвозможность",
+    professionItem: "Багаж от профессии"
 };
 
 let room = null;
@@ -60,6 +61,8 @@ let soundsEnabled = localStorage.getItem("bunker-sounds") !== "off";
 let lastTurnSoundKey = "";
 let pendingRevealAnimation = null;
 let renderedRevealAnimation = null;
+let mySpecialCard = null;
+let specialTargetMode = false;
 
 function show(screen) {
     ["#menu", "#lobby", "#game"].forEach((id) => $(id).classList.toggle("hidden", id !== screen));
@@ -211,6 +214,8 @@ function updateGame() {
     const turnPlayer = room.players.find((player) => player.id === room.turnPlayerId);
     const isMyTurn = room.turnPlayerId === socket.id;
     const hasVoted = room.votedPlayerIds?.includes(socket.id);
+    const canUseSpecialCard = Boolean(mySpecialCard && !mySpecialCard.used && me && !me.eliminated && ["reveal", "voting"].includes(room.phase));
+    if (!canUseSpecialCard) specialTargetMode = false;
 
     $("#gameCode").textContent = room.code;
     $("#phaseTitle").textContent = isFinished ? "Игра завершена" : isStory ? "История катастрофы" : isVoting ? "Голосование" : "Раскрытие карт";
@@ -236,16 +241,17 @@ function updateGame() {
         '<strong>' + escaped(trait.value) + '</strong>',
         '</article>'
     ].join("")).join("");
-    const specialCard = room.specialCard;
-    $("#specialCardPanel").classList.toggle("hidden", !specialCard);
-    $("#specialCard").innerHTML = specialCard ? [
-        '<article class="special-card-game-inner ' + (specialCard.resolved ? 'is-resolved' : '') + '">',
-        '<div class="special-card-copy"><span class="eyebrow">СИТУАЦИЯ</span><h3>' + escaped(specialCard.name) + '</h3><p>' + escaped(specialCard.description) + '</p></div>',
-        '<div class="special-card-status"><span class="' + (specialCard.resolved ? 'special-resolved' : 'special-needed') + '">' + (
-            specialCard.resolved
-                ? 'Решено: ' + escaped(specialCard.helperNickname) + ' · +' + Number(specialCard.survivalBonus || 0) + '%'
-                : 'Нужен: ' + escaped((specialCard.professionTerms || []).join(' / '))
-        ) + '</span></div>',
+    $("#specialCardPanel").classList.toggle("hidden", !mySpecialCard);
+    $("#specialCard").innerHTML = mySpecialCard ? [
+        '<article class="special-card-game-inner ' + (mySpecialCard.used ? 'is-used' : '') + '">',
+        '<div class="special-card-copy"><span class="eyebrow">ЛИЧНАЯ СПОСОБНОСТЬ</span><h3>' + escaped(mySpecialCard.name) + '</h3><p>' + escaped(mySpecialCard.description) + '</p></div>',
+        '<div class="special-card-status"><span class="special-needed">Обмен: ' + escaped(traitName(mySpecialCard.trait)) + '</span>' + (
+            mySpecialCard.used
+                ? '<span class="special-used">использована</span>'
+                : canUseSpecialCard
+                    ? '<button class="button special-card-use" type="button" data-use-special>' + (specialTargetMode ? 'Отмена' : 'Выбрать игрока') + '</button>'
+                    : '<span class="special-wait">Доступна во время раунда или голосования</span>'
+        ) + '</div>',
         '</article>'
     ].join("") : "";
     $("#survivorCount").textContent = `${active.length} в игре`;
@@ -266,19 +272,30 @@ function updateGame() {
     $("#revealButton").classList.toggle("hidden", !canRevealProfession);
     $("#revealButton").textContent = canRevealProfession ? `Раскрыть: ${traitName(trait)}` : "";
     $("#skipVoteButton").classList.toggle("hidden", !canSkipVote);
-    $("#actionHint").textContent = isFinished ? "Игра завершена." : isStory ? (isHost() ? "Подтвердите начало, когда все прочитали историю." : "Ждём подтверждения ведущего.") : me?.eliminated ? "Вы исключены, но можете наблюдать за игрой." : isVoting && hasVoted ? "Ваш голос принят. Ждём остальных." : isVoting ? "Голосуйте до окончания таймера." : hasRevealedThisRound ? "Карта раскрыта. Ждём остальных." : isMyTurn && canChooseTrait ? "Ваш ход: нажмите на любую ещё нераскрытую карточку." : isMyTurn ? "Ваш ход: раскройте профессию." : turnPlayer ? `Сейчас ходит ${turnPlayer.nickname}.` : "";
+    $("#actionHint").textContent = isFinished ? "Игра завершена." : isStory ? (isHost() ? "Подтвердите начало, когда все прочитали историю." : "Ждём подтверждения ведущего.") : me?.eliminated ? "Вы исключены, но можете наблюдать за игрой." : specialTargetMode ? `Выберите игрока для обмена карточкой «${traitName(mySpecialCard.trait)}».` : isVoting && hasVoted ? "Ваш голос принят. Ждём остальных." : isVoting ? "Голосуйте до окончания таймера." : hasRevealedThisRound ? "Карта раскрыта. Ждём остальных." : isMyTurn && canChooseTrait ? "Ваш ход: нажмите на любую ещё нераскрытую карточку." : isMyTurn ? "Ваш ход: раскройте профессию." : turnPlayer ? `Сейчас ходит ${turnPlayer.nickname}.` : "";
 
     const cardOrder = room.categoryOrder?.length ? room.categoryOrder : Object.keys(myCards);
-    $("#myCards").innerHTML = cardOrder.filter((name) => name in myCards).map((name) => cardMarkup(
+    const personalCards = cardOrder.filter((name) => name in myCards).map((name) => cardMarkup(
         name,
         myCards[name],
         Boolean(myRevealed[name]),
         canChooseTrait && !myRevealed[name],
         isNewReveal(socket.id, name)
     )).join("");
+    const professionBaggage = me?.professionItem
+        ? '<article class="my-card is-revealed profession-item-card"><span>Багаж от профессии</span><strong>' + escaped(me.professionItem) + '</strong><em>получен</em></article>'
+        : "";
+    $("#myCards").innerHTML = personalCards + professionBaggage;
     $("#gamePlayers").innerHTML = room.players.map((player) => {
-        const playerCards = Object.entries(player.revealed || {}).map(([name, value]) => `<span class="public-card ${isNewReveal(player.id, name) ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> ${escaped(value)}</span>`).join("");
+        const playerCards = Object.entries(player.revealed || {}).map(([name, value]) => `<span class="public-card ${isNewReveal(player.id, name) ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> ${escaped(value)}</span>`).join("")
+            + (player.professionItem ? `<span class="public-card profession-item"><b>Багаж:</b> ${escaped(player.professionItem)}</span>` : "")
+            + (player.usedSpecialCard ? `<span class="public-card special-card-used"><b>Спецкарта:</b> ${escaped(player.usedSpecialCard.name)}</span>` : "");
         const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== socket.id;
+        const canSelectSpecialTarget = specialTargetMode && !player.left && !player.eliminated && player.id !== socket.id;
+        const playerActions = [
+            canSelectSpecialTarget ? `<button class="special-target-button" data-special-target="${player.id}">Обменяться: ${escaped(traitName(mySpecialCard.trait))}</button>` : "",
+            canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : ""
+        ].filter(Boolean).join("");
         const voters = (room.voteMarkers?.[player.id] || [])
             .map((voterId) => room.players.find((candidate) => candidate.id === voterId))
             .filter(Boolean);
@@ -293,7 +310,7 @@ function updateGame() {
         return `<article class="game-player ${playerState}${voters.length ? " has-votes" : ""}">
             <div class="player-name">${avatarMarkup(player)}<div><strong>${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></div></div>
             <div class="public-cards">${voteMarkerMarkup}${playerCards || '<span class="muted">карты ещё не раскрыты</span>'}</div>
-            ${canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : ""}
+            ${playerActions ? `<div class="player-actions">${playerActions}</div>` : ""}
             ${player.id === room.hostId ? '<span class="host-star" aria-label="Ведущий" title="Ведущий">★</span>' : ""}
         </article>`;
     }).join("");
@@ -361,8 +378,20 @@ $("#copyCode").addEventListener("click", async () => {
     }
 });
 $("#gamePlayers").addEventListener("click", (event) => {
+    const specialTarget = event.target.closest("[data-special-target]");
+    if (specialTarget) {
+        specialTargetMode = false;
+        socket.emit("useSpecialCard", specialTarget.dataset.specialTarget);
+        playSound("accepted");
+        return;
+    }
     const button = event.target.closest("[data-vote]");
     if (button) socket.emit("castVote", button.dataset.vote);
+});
+$("#specialCard").addEventListener("click", (event) => {
+    if (!event.target.closest("[data-use-special]")) return;
+    specialTargetMode = !specialTargetMode;
+    updateGame();
 });
 $("#myCards").addEventListener("click", (event) => {
     const card = event.target.closest("[data-reveal-trait]");
@@ -387,6 +416,8 @@ socket.on("roomState", (state) => {
 socket.on("leftRoom", () => {
     room = null;
     myCards = {};
+    mySpecialCard = null;
+    specialTargetMode = false;
     currentCode = "";
     clearSavedSession();
     $("#roomCode").value = "";
@@ -399,6 +430,10 @@ socket.on("resumeFailed", () => {
     show("#menu");
 });
 socket.on("yourCards", (cards) => { myCards = cards; if (room?.phase !== "lobby") updateGame(); });
+socket.on("yourSpecialCard", (card) => {
+    mySpecialCard = card || null;
+    if (room?.phase !== "lobby") updateGame();
+});
 socket.on("gameStarted", () => { toast("Катастрофа выбрана. Прочитайте историю перед началом."); playSound("story"); });
 socket.on("roundStarted", ({ initial } = {}) => { toast(initial ? "История прочитана. Первый раунд начинается." : "Новый раунд: выберите карту, которую хотите раскрыть."); playSound("round"); });
 socket.on("cardRevealed", ({ playerId, trait }) => {
@@ -406,8 +441,12 @@ socket.on("cardRevealed", ({ playerId, trait }) => {
     if (room?.phase !== "lobby") updateGame();
     if (playerId !== socket.id) playSound("reveal");
 });
-socket.on("specialCardResolved", ({ nickname: name, cardName }) => {
-    toast(name + " решает событие «" + cardName + "».");
+socket.on("professionItemReceived", ({ playerId, nickname: name, item }) => {
+    toast(playerId === socket.id ? "В багаж добавлено: " + item + "." : name + " получает в багаж: " + item + ".");
+    playSound("accepted");
+});
+socket.on("specialCardUsed", ({ nickname: name, targetNickname, cardName, trait }) => {
+    toast(name + " применяет «" + cardName + "»: обмен «" + traitName(trait) + "» с " + targetNickname + ".");
     playSound("accepted");
 });
 socket.on("votingStarted", () => { toast("Все раскрылись. Пора голосовать."); playSound("vote"); });
