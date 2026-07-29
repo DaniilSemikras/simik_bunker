@@ -91,11 +91,13 @@ const adminSessions = new Map();
 const ADMIN_ROOM = "admin-editors";
 const BUNKER_TRAITS_SEED_VERSION = 1;
 const BACKPACK_WEAPON_SEED_VERSION = 1;
+const WATER_TRAIT_LABEL_SEED_VERSION = 1;
+const DISASTER_DURATION_SEED_VERSION = 1;
 const WEAPON_BACKPACK_OPTION = { value: "Оружие", score: 70, chance: 10 };
 const DEFAULT_BUNKER_TRAITS = [
     {
         id: "water",
-        name: "Вода",
+        name: "Наличие воды",
         options: [
             { value: "Воды нет", chance: 15 },
             { value: "Запас воды на 3 дня", chance: 35 },
@@ -170,6 +172,8 @@ const DEFAULT_GAME_CONFIG = {
     bunkerTraits: DEFAULT_BUNKER_TRAITS,
     bunkerTraitsSeedVersion: BUNKER_TRAITS_SEED_VERSION,
     backpackWeaponSeedVersion: BACKPACK_WEAPON_SEED_VERSION,
+    waterTraitLabelSeedVersion: WATER_TRAIT_LABEL_SEED_VERSION,
+    disasterDurationSeedVersion: DISASTER_DURATION_SEED_VERSION,
     specialCards: [
         {
             id: "swap_random_trait",
@@ -264,7 +268,7 @@ function defaultProfessionItem(value) {
 function bunkerTraitMatchesDefault(trait, defaultTrait) {
     const text = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
     const aliases = {
-        water: ["water", "вод"],
+        water: ["water", "вод", "вокд"],
         food: ["food", "ед", "пищ"],
         electricity: ["electric", "электр", "свет"],
         ventilation: ["ventilat", "вентил"],
@@ -285,6 +289,69 @@ function seedDefaultBunkerTraits(rawConfig) {
             ...source,
             bunkerTraits: [...existing, ...clone(missing)],
             bunkerTraitsSeedVersion: BUNKER_TRAITS_SEED_VERSION
+        },
+        changed: true
+    };
+}
+
+function seedWaterTraitLabel(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.waterTraitLabelSeedVersion) >= WATER_TRAIT_LABEL_SEED_VERSION) {
+        return { config: source, changed: false };
+    }
+    const bunkerTraits = (Array.isArray(source.bunkerTraits) ? source.bunkerTraits : []).map((trait) => {
+        const hint = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
+        return /(^|\s)water($|\s)|вод|вокд/.test(hint)
+            ? { ...trait, name: "Наличие воды" }
+            : trait;
+    });
+    return {
+        config: {
+            ...source,
+            bunkerTraits,
+            waterTraitLabelSeedVersion: WATER_TRAIT_LABEL_SEED_VERSION
+        },
+        changed: true
+    };
+}
+
+function inferBunkerStayDuration(text) {
+    const hint = String(text || "").toLocaleLowerCase("ru");
+    const explicitDuration = hint.match(/\b(\d+)\s*(дн(?:я|ей|ь)?|месяц(?:а|ев)?|год(?:а)?|лет)\b/);
+    if (explicitDuration) return explicitDuration[1] + " " + explicitDuration[2];
+    if (/\b(?:на|через) год\b/.test(hint)) return "12 месяцев";
+    if (/ядерн.*зим|радиаци/.test(hint)) return "18 месяцев";
+    if (/токсич|туман/.test(hint)) return "14 месяцев";
+    if (/вирус|эпидем|карантин/.test(hint)) return "12 месяцев";
+    if (/солнечн.*вспыш/.test(hint)) return "12 месяцев";
+    if (/метеорит|падени.*астероид/.test(hint)) return "12 месяцев";
+    return "Бессрочно";
+}
+
+function disasterText(disaster) {
+    return String(typeof disaster === "string" ? disaster : disaster?.text ?? disaster?.description ?? "").trim().replace(/\s+/g, " ");
+}
+
+function disasterDuration(disaster) {
+    const text = disasterText(disaster);
+    const configured = typeof disaster === "object" ? disaster?.shelterDuration ?? disaster?.duration : "";
+    return cleanText(configured, 60) || inferBunkerStayDuration(text);
+}
+
+function seedDisasterDurations(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.disasterDurationSeedVersion) >= DISASTER_DURATION_SEED_VERSION) {
+        return { config: source, changed: false };
+    }
+    const disasters = (Array.isArray(source.disasters) ? source.disasters : []).map((disaster) => ({
+        text: disasterText(disaster),
+        shelterDuration: disasterDuration(disaster)
+    })).filter((disaster) => disaster.text);
+    return {
+        config: {
+            ...source,
+            disasters,
+            disasterDurationSeedVersion: DISASTER_DURATION_SEED_VERSION
         },
         changed: true
     };
@@ -353,8 +420,13 @@ function seedBackpackWeapon(rawConfig) {
 
 function seedGameConfig(rawConfig) {
     const bunkerSeed = seedDefaultBunkerTraits(rawConfig);
-    const backpackSeed = seedBackpackWeapon(bunkerSeed.config);
-    return { config: backpackSeed.config, changed: bunkerSeed.changed || backpackSeed.changed };
+    const waterLabelSeed = seedWaterTraitLabel(bunkerSeed.config);
+    const backpackSeed = seedBackpackWeapon(waterLabelSeed.config);
+    const disasterSeed = seedDisasterDurations(backpackSeed.config);
+    return {
+        config: disasterSeed.config,
+        changed: bunkerSeed.changed || waterLabelSeed.changed || backpackSeed.changed || disasterSeed.changed
+    };
 }
 
 function normalizeGameConfig(rawConfig) {
@@ -400,7 +472,11 @@ function normalizeGameConfig(rawConfig) {
         otherCategories.unshift(profession);
     }
     const disasters = Array.isArray(rawConfig?.disasters)
-        ? rawConfig.disasters.map((item) => String(item || "").trim().replace(/\s+/g, " ")).filter(Boolean).slice(0, 30)
+        ? rawConfig.disasters.map((item) => {
+            const text = disasterText(item);
+            if (!text) return null;
+            return { text, shelterDuration: disasterDuration(item) };
+        }).filter(Boolean).slice(0, 30)
         : [];
     if (!disasters.length) throw new Error("Добавьте хотя бы один сценарий катастрофы.");
 
@@ -472,7 +548,13 @@ function normalizeGameConfig(rawConfig) {
     const backpackWeaponSeedVersion = Number(rawConfig?.backpackWeaponSeedVersion) >= BACKPACK_WEAPON_SEED_VERSION
         ? BACKPACK_WEAPON_SEED_VERSION
         : 0;
-    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, specialCards, hiddenAvatars, revision };
+    const waterTraitLabelSeedVersion = Number(rawConfig?.waterTraitLabelSeedVersion) >= WATER_TRAIT_LABEL_SEED_VERSION
+        ? WATER_TRAIT_LABEL_SEED_VERSION
+        : 0;
+    const disasterDurationSeedVersion = Number(rawConfig?.disasterDurationSeedVersion) >= DISASTER_DURATION_SEED_VERSION
+        ? DISASTER_DURATION_SEED_VERSION
+        : 0;
+    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, disasterDurationSeedVersion, specialCards, hiddenAvatars, revision };
 }
 
 function loadGameConfig() {
@@ -483,7 +565,7 @@ function loadGameConfig() {
     } catch (error) {
         console.warn("Не удалось загрузить настройки игры, используются стандартные.", error.message);
     }
-    return clone(DEFAULT_GAME_CONFIG);
+    return normalizeGameConfig(seedGameConfig(DEFAULT_GAME_CONFIG).config);
 }
 
 function saveGameConfigFile(config) {
@@ -1065,6 +1147,7 @@ function publicState(room) {
         hostId: room.host,
         phase: room.phase,
         disaster: room.disaster,
+        disasterDuration: room.disasterDuration || null,
         round: room.round + 1,
         revealRounds: room.revealRounds || Math.max(1, room.traitOrder?.length || 1),
         currentTrait,
@@ -1422,6 +1505,7 @@ io.on("connection", (socket) => {
             capacity: 0,
             round: 0,
             disaster: null,
+            disasterDuration: null,
             bunkerTraits: [],
             playerSpecialCards: {},
             playerProfessionItems: {},
@@ -1521,7 +1605,9 @@ io.on("connection", (socket) => {
             Object.fromEntries(category.options.map((option) => [option.value, option.score]))
         ]));
         room.cardOptionsByTrait = Object.fromEntries(gameConfig.categories.map((category) => [category.id, clone(category.options)]));
-        room.disaster = randomItem(gameConfig.disasters);
+        const selectedDisaster = randomItem(gameConfig.disasters);
+        room.disaster = disasterText(selectedDisaster);
+        room.disasterDuration = disasterDuration(selectedDisaster);
         room.bunkerTraits = assignBunkerTraits(gameConfig.bunkerTraits || []);
         room.bunkerOccupiedSlots = room.bunkerTraits.reduce((total, trait) => total + cleanOccupiedSlots(trait.occupiedSlots), 0);
         room.capacity = Math.max(1, room.bunkerBaseCapacity - room.bunkerOccupiedSlots);

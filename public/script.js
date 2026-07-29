@@ -147,6 +147,20 @@ function traitName(trait) {
     return room?.categoryNames?.[trait] || TRAIT_NAMES[trait] || trait;
 }
 
+function waterFillPercentage(trait) {
+    const traitHint = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
+    if (!/water|вод/.test(traitHint)) return null;
+    const value = String(trait?.value || "").toLocaleLowerCase("ru");
+    if (/нет|отсутств|пуст/.test(value)) return 0;
+    const hasTwoYears = /(?:2|два|две)\s*(?:год|лет)/.test(value);
+    const hasYear = /год|лет/.test(value);
+    const hasMonths = /месяц/.test(value);
+    const hasDays = /дн(?:я|ей|ь)?/.test(value);
+    const number = Number((value.match(/\d+(?:[.,]\d+)?/) || [])[0]?.replace(",", ".")) || 1;
+    const months = hasTwoYears ? 24 : hasYear ? number * 12 : hasMonths ? number : hasDays ? number / 30 : 3;
+    return Math.max(0, Math.min(100, Math.round((months / 24) * 100)));
+}
+
 function updateActionTimer() {
     const timer = $("#actionTimer");
     const deadline = room?.phase === "finished"
@@ -301,21 +315,28 @@ function updateGame() {
         : "";
     const capacityLabel = `Мест для игроков: ${room.capacity}${occupiedSlotsLabel}`;
     const disasterText = escaped(room.disaster || "");
+    const shelterDuration = room.disasterDuration
+        ? '<span class="shelter-duration">В бункере: <strong>' + escaped(room.disasterDuration) + '</strong></span>'
+        : "";
     const disasterContent = isStory
-        ? `<span class="eyebrow">КАТАСТРОФА</span><p class="story-text">${disasterText}</p><div class="disaster-meta"><span class="capacity">${capacityLabel}</span>${isHost() ? '<button class="button primary story-ready" type="button" data-acknowledge-story>Все прочитали историю — начать раунд</button>' : '<span class="story-wait">Ждём, пока ведущий начнёт раунд.</span>'}</div>`
-        : `<details class="disaster-accordion"><summary><span class="eyebrow">КАТАСТРОФА · ОТКРЫТЬ ИСТОРИЮ</span><span class="accordion-icon" aria-hidden="true">⌄</span></summary><p>${disasterText}</p></details><div class="disaster-meta"><span class="capacity">${capacityLabel}</span>${bunkerChance}</div>`;
+        ? `<span class="eyebrow">КАТАСТРОФА</span><p class="story-text">${disasterText}</p><div class="disaster-meta"><span class="capacity">${capacityLabel}</span>${shelterDuration}${isHost() ? '<button class="button primary story-ready" type="button" data-acknowledge-story>Все прочитали историю — начать раунд</button>' : '<span class="story-wait">Ждём, пока ведущий начнёт раунд.</span>'}</div>`
+        : `<details class="disaster-accordion"><summary><span class="eyebrow">КАТАСТРОФА · ОТКРЫТЬ ИСТОРИЮ</span><span class="accordion-icon" aria-hidden="true">⌄</span></summary><p>${disasterText}</p></details><div class="disaster-meta"><span class="capacity">${capacityLabel}</span>${shelterDuration}${bunkerChance}</div>`;
     $("#disasterCard").classList.toggle("story-mode", isStory);
     $("#disasterCard").innerHTML = disasterContent;
     const bunkerTraits = Array.isArray(room.bunkerTraits) ? room.bunkerTraits : [];
     $("#bunkerTraitsPanel").classList.toggle("hidden", !bunkerTraits.length);
-    $("#bunkerTraits").innerHTML = bunkerTraits.map((trait) => [
-        '<article class="bunker-trait-card">',
+    $("#bunkerTraits").innerHTML = bunkerTraits.map((trait) => {
+        const waterLevel = waterFillPercentage(trait);
+        return [
+        '<article class="bunker-trait-card' + (waterLevel === null ? '' : ' is-water-reserve') + '"' + (waterLevel === null ? '' : ' style="--water-fill:' + waterLevel + '%"') + '>',
         '<span>' + escaped(trait.name) + '</span>',
         '<strong>' + escaped(trait.value) + '</strong>',
+        waterLevel === null ? '' : '<small class="water-level">запас воды: ' + waterLevel + '%</small>',
         trait.occupiedSlots ? '<small>занято мест: ' + escaped(trait.occupiedSlots) + '</small>' : '',
         trait.evictedResidents ? '<small>выгнано жителей: ' + escaped(trait.evictedResidents) + '</small>' : '',
         '</article>'
-    ].join("")).join("");
+        ].join("");
+    }).join("");
     $("#survivorCount").textContent = `${active.length} в игре`;
     const categoryCount = room.categoryOrder?.length || Object.keys(myCards).length;
     const revealRoundCount = room.revealRounds || categoryCount;

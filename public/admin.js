@@ -145,12 +145,17 @@ function updateDistributionTotals() {
 }
 
 function renderDisasters() {
-    $("#disasterOptions").innerHTML = config.disasters.map((disaster, index) => `
+    $("#disasterOptions").innerHTML = config.disasters.map((disaster, index) => {
+        const text = typeof disaster === "string" ? disaster : disaster.text || "";
+        const shelterDuration = typeof disaster === "string" ? "Бессрочно" : disaster.shelterDuration || disaster.duration || "Бессрочно";
+        return `
         <div class="disaster-row">
-            <textarea class="disaster-value" rows="3" aria-label="Сценарий катастрофы">${escapeHtml(disaster)}</textarea>
+            <textarea class="disaster-value" rows="3" aria-label="Сценарий катастрофы">${escapeHtml(text)}</textarea>
+            <label class="disaster-duration"><span>Сколько нужно провести в бункере</span><input class="disaster-duration-value" value="${escapeHtml(shelterDuration)}" maxlength="60" aria-label="Сколько нужно провести в бункере"></label>
             <button class="remove-option remove-disaster" type="button" data-disaster-index="${index}" aria-label="Удалить катастрофу">×</button>
         </div>
-    `).join("");
+    `;
+    }).join("");
 }
 
 function renderAvatarLibrary() {
@@ -237,8 +242,11 @@ function collectConfig() {
         description: card.querySelector(".special-card-description").value,
         effect: card.querySelector(".special-card-effect").value
     }));
-    const disasters = [...document.querySelectorAll(".disaster-value")].map((input) => input.value);
-    return { categories, disasters, bunkerTraits, bunkerTraitsSeedVersion: config.bunkerTraitsSeedVersion, backpackWeaponSeedVersion: config.backpackWeaponSeedVersion, specialCards, hiddenAvatars, revision: config.revision };
+    const disasters = [...document.querySelectorAll(".disaster-row")].map((row) => ({
+        text: row.querySelector(".disaster-value").value,
+        shelterDuration: row.querySelector(".disaster-duration-value").value
+    }));
+    return { categories, disasters, bunkerTraits, bunkerTraitsSeedVersion: config.bunkerTraitsSeedVersion, backpackWeaponSeedVersion: config.backpackWeaponSeedVersion, waterTraitLabelSeedVersion: config.waterTraitLabelSeedVersion, disasterDurationSeedVersion: config.disasterDurationSeedVersion, specialCards, hiddenAvatars, revision: config.revision };
 }
 
 async function loadEditor() {
@@ -296,7 +304,7 @@ $("#addCategory").addEventListener("click", makeCategory);
 $("#addBunkerTrait").addEventListener("click", makeBunkerTrait);
 $("#addSpecialCard").addEventListener("click", makeSpecialCard);
 $("#addDisaster").addEventListener("click", () => {
-    config.disasters.push("Новый сценарий катастрофы.");
+    config.disasters.push({ text: "Новый сценарий катастрофы.", shelterDuration: "Бессрочно" });
     markDirty();
     renderDisasters();
 });
