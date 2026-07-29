@@ -1285,7 +1285,7 @@ function movePlayerToSocket(room, player, socketId) {
     room.turnOrder = (room.turnOrder || []).map((id) => id === previousId ? socketId : id);
     room.eliminated = (room.eliminated || []).map((id) => id === previousId ? socketId : id);
 
-    for (const record of [room.cards, room.revealed, room.revealedThisRound, room.playerSpecialCards, room.playerProfessionItems, room.playerExtraBaggage, room.playerResidentEvictions]) {
+    for (const record of [room.cards, room.revealed, room.revealedThisRound, room.revealedAtFinish, room.playerSpecialCards, room.playerProfessionItems, room.playerExtraBaggage, room.playerResidentEvictions]) {
         if (!record || !Object.prototype.hasOwnProperty.call(record, previousId)) continue;
         record[socketId] = record[previousId];
         delete record[previousId];
@@ -1432,6 +1432,16 @@ function calculateBunkerSurvivalChance(room) {
     return revealedCards ? Math.round(totalScore / revealedCards) : null;
 }
 
+function synchronizedBunkerTraits(room) {
+    return (room.bunkerTraits || []).map((trait) => {
+        const hint = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
+        if (!/water|вод/.test(hint)) return trait;
+        const percentage = Number((String(trait?.value || "").match(/(\d{1,3})\s*%/) || [])[1]);
+        if (!Number.isFinite(percentage)) return trait;
+        return { ...trait, fillPercent: Math.max(0, Math.min(100, percentage)) };
+    });
+}
+
 function publicState(room) {
     const currentTrait = room.phase === "reveal" && room.round === 0 ? room.traitOrder?.[0] || null : null;
     const voteMarkers = Object.entries(room.votes || {}).reduce((markers, [voterId, targetId]) => {
@@ -1455,7 +1465,7 @@ function publicState(room) {
         capacity: room.capacity,
         bunkerBaseCapacity: room.bunkerBaseCapacity || room.capacity,
         bunkerOccupiedSlots: room.bunkerOccupiedSlots || 0,
-        bunkerTraits: room.bunkerTraits || [],
+        bunkerTraits: synchronizedBunkerTraits(room),
         actionSeconds: ACTION_DURATION_MS / 1000,
         turnPlayerId: currentTurnPlayerId(room),
         turnDeadline: room.turnDeadline || null,
@@ -1477,6 +1487,7 @@ function publicState(room) {
             left: Boolean(player.left),
             eliminated: room.eliminated.includes(player.id),
             revealed: room.revealed[player.id] || {},
+            finishRevealedTraits: room.revealedAtFinish?.[player.id] || [],
             professionItem: room.playerProfessionItems?.[player.id] || null,
             extraBaggage: room.playerExtraBaggage?.[player.id] || [],
             residentEviction: room.playerResidentEvictions?.[player.id] || null,
@@ -1525,6 +1536,10 @@ function scheduleBotAction(room, callback, delay) {
 function endGame(room) {
     if (room.phase === "finished") return;
     clearActionTimer(room);
+    room.revealedAtFinish = Object.fromEntries(activePlayers(room).map((player) => [
+        player.id,
+        Object.keys(room.cards[player.id] || {}).filter((trait) => !Object.prototype.hasOwnProperty.call(room.revealed[player.id] || {}, trait))
+    ]));
     for (const player of room.players) {
         if (!room.cards[player.id]) continue;
         room.revealed[player.id] = { ...room.cards[player.id] };
@@ -1816,6 +1831,7 @@ io.on("connection", (socket) => {
             cardOptionsByTrait: {},
             cards: {},
             revealed: {},
+            revealedAtFinish: {},
             revealedThisRound: {},
             traitOrder: [],
             categoryNames: {},
@@ -1922,6 +1938,7 @@ io.on("connection", (socket) => {
             option.passiveItem || ""
         ]));
         room.revealed = Object.fromEntries(activePlayers(room).map((player) => [player.id, {}]));
+        room.revealedAtFinish = {};
         room.revealedThisRound = {};
         room.eliminated = [];
         room.votes = {};

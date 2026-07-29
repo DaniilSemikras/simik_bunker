@@ -221,10 +221,10 @@ function updateLobby() {
         : isHost() ? "После старта половина игроков сможет остаться в бункере." : "";
 }
 
-function cardMarkup(trait, value, revealed, canChoose, isRevealing = false) {
-    const status = canChoose ? "раскрыть" : revealed ? "раскрыта" : "не раскрыта";
+function cardMarkup(trait, value, revealed, canChoose, isRevealing = false, isFinishReveal = false) {
+    const status = canChoose ? "раскрыть" : isFinishReveal ? "раскрыта в финале" : revealed ? "раскрыта" : "не раскрыта";
     const content = `<span>${escaped(traitName(trait))}</span><strong>${escaped(value)}</strong><em>${status}</em>`;
-    const classes = `my-card ${revealed ? "is-revealed" : ""} ${canChoose ? "is-choice" : ""} ${isRevealing ? "is-revealing" : ""}`;
+    const classes = `my-card ${revealed ? "is-revealed" : ""} ${isFinishReveal ? "is-finish-reveal" : ""} ${canChoose ? "is-choice" : ""} ${isRevealing ? "is-revealing" : ""}`;
     return canChoose
         ? `<button type="button" class="${classes}" data-reveal-trait="${trait}">${content}</button>`
         : `<article class="${classes}">${content}</article>`;
@@ -245,9 +245,10 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, trait);
             const isMe = player.id === ownPlayerId();
             const hasOwnValue = isMe && Object.prototype.hasOwnProperty.call(myCards, trait);
+            const isFinishReveal = isFinished && !player.left && !player.eliminated && Array.isArray(player.finishRevealedTraits) && player.finishRevealedTraits.includes(trait);
             const value = hasOwnValue ? myCards[trait] : isRevealed ? player.revealed[trait] : "скрыто";
             const canRevealHere = isMe && !isRevealed && (canChooseTrait || (canRevealProfession && trait === room.currentTrait));
-            const visibilityClass = isRevealed ? "is-revealed-value" : hasOwnValue ? "is-private-value" : "is-hidden-value";
+            const visibilityClass = isFinishReveal ? "is-finish-reveal-value" : isRevealed ? "is-revealed-value" : hasOwnValue ? "is-private-value" : "is-hidden-value";
             return `<td class="${visibilityClass} ${playerState(player)}"><div class="table-cell-content ${canRevealHere ? "has-reveal-control" : ""}"><span class="table-cell-value" title="${escaped(value)}">${escaped(value)}</span>${canRevealHere ? `<button class="table-reveal-button" type="button" data-reveal-trait="${trait}" title="Раскрыть: ${escaped(traitName(trait))}" aria-label="Раскрыть: ${escaped(traitName(trait))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.8"></circle></svg></button>` : ""}</div></td>`;
         }).join("")
     )).join("");
@@ -353,6 +354,7 @@ function updateGame() {
     $("#playerViewToggle").textContent = playersView === "table" ? "▤ Карточки" : "▦ Таблица";
     $("#playerViewToggle").setAttribute("aria-pressed", String(playersView === "table"));
     $(".round-panel").classList.toggle("hidden", isStory);
+    $(".round-panel").classList.toggle("is-finished", isFinished);
     $("#roundLabel").textContent = isFinished ? "ИГРА ЗАВЕРШЕНА" : isStory ? "ИСТОРИЯ КАТАСТРОФЫ" : isVoting ? "ГОЛОСОВАНИЕ" : `РАУНД ${room.round} ИЗ ${revealRoundCount}`;
     $("#roundTitle").textContent = isFinished ? "Бункер определил выживших" : isStory ? "Прочитайте историю" : isVoting ? "Кого не берём в бункер?" : trait ? `Первый ход: ${traitName(trait)}` : "Выберите карту для раскрытия";
     $("#roundDescription").textContent = isFinished ? "Поздравьте тех, кому удалось попасть внутрь." : isStory ? "Игра начнётся, когда ведущий подтвердит, что все успели прочитать историю." : isVoting ? "Выберите одного игрока. Голос нельзя изменить." : trait ? "В первом раунде все обязаны раскрыть эту категорию." : "Теперь каждый сам выбирает одну ещё скрытую карту.";
@@ -375,7 +377,8 @@ function updateGame() {
         myCards[name],
         Boolean(myRevealed[name]),
         canChooseTrait && !myRevealed[name],
-        isNewReveal(ownPlayerId(), name)
+        isNewReveal(ownPlayerId(), name),
+        isFinished && Array.isArray(me?.finishRevealedTraits) && me.finishRevealedTraits.includes(name)
     )).join("");
     const professionBaggage = me?.professionItem
         ? '<article class="my-card is-revealed profession-item-card"><span>Багаж от профессии</span><strong>' + escaped(me.professionItem) + '</strong><em>получен</em></article>'
@@ -395,9 +398,10 @@ function updateGame() {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, name);
             const isMe = player.id === ownPlayerId();
             const hasOwnValue = isMe && Object.prototype.hasOwnProperty.call(myCards, name);
+            const isFinishReveal = isFinished && !player.left && !player.eliminated && Array.isArray(player.finishRevealedTraits) && player.finishRevealedTraits.includes(name);
             const value = hasOwnValue ? myCards[name] : isRevealed ? player.revealed[name] : "скрыто";
             const canRevealHere = isMe && !isRevealed && (canChooseTrait || (canRevealProfession && name === room.currentTrait));
-            const visibilityClass = isRevealed ? "" : hasOwnValue ? "is-private-card" : "is-hidden-card";
+            const visibilityClass = isFinishReveal ? "is-finish-reveal-card" : isRevealed ? "" : hasOwnValue ? "is-private-card" : "is-hidden-card";
             const revealControl = canRevealHere
                 ? `<button class="card-reveal-eye" type="button" data-reveal-trait="${name}" title="Раскрыть: ${escaped(traitName(name))}" aria-label="Раскрыть: ${escaped(traitName(name))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.8"></circle></svg></button>`
                 : "";

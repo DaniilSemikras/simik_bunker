@@ -109,7 +109,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .bunker-trait-card small + small { margin-left:4px; }
 .bunker-trait-card small.water-level { color:#d9f4ff; background:rgba(15,79,122,.44); }
 .round-panel, .cards-panel, .players-panel { padding:22px; }
-.round-panel { display:grid; grid-template-columns:184px minmax(360px,650px) max-content; align-items:center; justify-content:start; column-gap:22px; position:sticky; top:12px; z-index:4; padding:15px 22px; box-shadow:0 14px 38px rgba(0,0,0,.28); }
+.round-panel { display:grid; grid-template-columns:184px minmax(360px,1fr) max-content; align-items:center; justify-content:stretch; column-gap:22px; position:sticky; top:12px; z-index:4; padding:15px 22px; box-shadow:0 14px 38px rgba(0,0,0,.28); }
 .round-panel #roundLabel { grid-column:1; grid-row:1; }
 .round-panel .action-timer { grid-column:1; grid-row:2; margin:0; padding:5px 9px; font-size:14px; }
 .round-copy { display:grid; gap:5px; min-width:0; }
@@ -119,6 +119,15 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .round-copy #actionHint { color:#c8b9af; font-size:12px; }
 .round-panel #revealButton { grid-column:3; grid-row:1; width:auto; min-width:205px; margin:0; padding:11px 16px; }
 .round-panel #skipVoteButton { grid-column:3; grid-row:1; width:auto; min-width:205px; margin:0; padding:11px 16px; }
+.round-panel.is-finished { isolation:isolate; grid-template-columns:188px minmax(0,1fr); grid-template-rows:auto auto; min-height:132px; overflow:hidden; padding:18px 26px; border-color:rgba(255,208,116,.42); background:linear-gradient(108deg,rgba(76,52,25,.91),rgba(38,49,30,.94) 62%,rgba(27,47,31,.96)); box-shadow:inset 0 1px rgba(255,239,190,.13),0 16px 38px rgba(38,29,11,.35); }
+.round-panel.is-finished::before { content:""; position:absolute; z-index:0; top:-94px; right:8%; width:280px; height:280px; border:1px solid rgba(255,213,131,.16); border-radius:50%; box-shadow:0 0 0 30px rgba(255,204,102,.025),0 0 0 70px rgba(255,204,102,.018); }
+.round-panel.is-finished > * { position:relative; z-index:1; }
+.round-panel.is-finished #roundLabel { align-self:end; color:#ffd58e; }
+.round-panel.is-finished .action-timer { align-self:start; border-color:rgba(255,202,106,.62); color:#fff0cb; background:rgba(105,65,24,.43); box-shadow:0 5px 13px rgba(21,13,5,.18); }
+.round-panel.is-finished .round-copy { grid-column:2; grid-row:1 / span 2; align-self:center; min-height:74px; padding:7px 100px 7px 27px; border-left:1px solid rgba(255,224,163,.22); }
+.round-panel.is-finished .round-copy h3 { color:#fff4dc; font-size:25px; }
+.round-panel.is-finished .round-copy #roundDescription { color:#e4d1b6; font-size:14px; }
+.round-panel.is-finished .round-copy #actionHint { display:none; }
 .action-timer { display:inline-flex; margin:10px 0 2px; border:1px solid rgba(241,168,78,.5); border-radius:100px; padding:7px 11px; color:#ffe2b8; background:rgba(117,67,31,.25); font-size:16px; font-weight:850; letter-spacing:.04em; font-variant-numeric:tabular-nums; }
 .skip-vote { border:1px solid rgba(122,221,145,.58); color:#d6ffe0; background:rgba(53,126,70,.28); font-size:13px; }
 .action-timer.urgent { border-color:rgba(230,138,128,.8); color:#ffe0dc; background:rgba(143,56,49,.35); animation:timer-pulse .8s ease-in-out infinite alternate; }
@@ -134,6 +143,9 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .is-revealed { border-color:rgba(113,218,139,.78); background:linear-gradient(145deg,rgba(46,110,62,.47),rgba(22,39,28,.98)); box-shadow:inset 0 1px rgba(213,255,220,.13),0 10px 22px rgba(20,83,38,.24); }
 .my-card.is-revealed::after { background:rgba(129,234,151,.74); }
 .my-card.is-revealed em { color:#c7ffd1; background:rgba(104,216,129,.15); }
+.my-card.is-finish-reveal { border-color:rgba(255,205,101,.85); background:linear-gradient(145deg,rgba(119,85,28,.67),rgba(62,43,19,.98)); box-shadow:inset 0 1px rgba(255,246,200,.19),0 10px 22px rgba(105,72,14,.27); }
+.my-card.is-finish-reveal::after { background:rgba(255,213,116,.88); }
+.my-card.is-finish-reveal em { color:#fff0bd; background:rgba(255,207,94,.2); }
 .my-card.profession-item-card { border-color:rgba(128,174,255,.62); background:linear-gradient(145deg,rgba(48,77,138,.54),rgba(20,29,52,.98)); box-shadow:inset 0 1px rgba(220,231,255,.14),0 10px 22px rgba(26,53,117,.24); }
 .my-card.profession-item-card::after { background:rgba(151,184,255,.78); }
 .my-card.profession-item-card em { color:#dbe7ff; background:rgba(132,165,255,.17); }
@@ -175,6 +187,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .players-table tbody tr.eliminated,.players-table tbody tr.left-player { color:#978a84; background:rgba(52,38,36,.32); }
 .players-table .is-hidden-value { color:#938981; font-style:italic; }
 .players-table td.is-revealed-value { background:linear-gradient(135deg,rgba(49,113,65,.48),rgba(26,62,36,.38)); box-shadow:inset 0 1px rgba(194,255,205,.12); }
+.players-table td.is-finish-reveal-value { color:#fff2c7; background:linear-gradient(135deg,rgba(125,91,29,.65),rgba(75,53,18,.48)); box-shadow:inset 0 1px rgba(255,242,186,.17); }
 .players-table td.is-private-value { background:linear-gradient(135deg,rgba(77,55,122,.42),rgba(40,30,73,.34)); box-shadow:inset 0 1px rgba(226,203,255,.12); }
 .players-table td.eliminated,.players-table td.left-player { color:#9a918c; background:rgba(72,66,62,.42); }
 .players-table td.eliminated .table-cell-value,.players-table td.left-player .table-cell-value { color:#a39a94; }
@@ -261,6 +274,8 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .card-reveal-eye svg { width:14px; height:14px; fill:none; stroke:currentColor; stroke-linecap:round; stroke-linejoin:round; stroke-width:1.9; }
 .public-card.is-hidden-card { border-style:dashed; border-color:rgba(190,177,166,.2); color:#938981; background:rgba(9,8,8,.16); }
 .public-card.is-hidden-card b { color:#b6a89d; }
+.public-card.is-finish-reveal-card { border-color:rgba(255,207,100,.78); color:#fff0c2; background:linear-gradient(100deg,rgba(124,89,27,.6),rgba(65,47,17,.49)); box-shadow:inset 0 1px rgba(255,244,193,.17); }
+.public-card.is-finish-reveal-card b { color:#ffd67d; }
 .public-card.profession-item { border-color:rgba(128,174,255,.42); color:#e1e9ff; background:rgba(57,80,142,.24); }
 .public-card.profession-item b { color:#bcd0ff; }
 .public-card.special-card-used { border-color:rgba(184,151,255,.4); color:#eadfff; background:rgba(91,61,142,.24); }
@@ -279,6 +294,6 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 @media (hover:hover) and (pointer:fine) { .my-card.is-choice { animation:playable-card-float 2.2s ease-in-out infinite; } .my-card.is-choice:hover { animation-play-state:paused; } }
 @media (prefers-reduced-motion:reduce) { .cursor-aura { display:none; } .bunker-backdrop { transform:none; } .my-card.is-revealing,.public-card.is-revealing,.my-card.is-choice { animation:none; } }
 @media (max-width:900px) and (min-width:721px) { .round-panel { grid-template-columns:160px minmax(0,1fr); } .round-copy { grid-column:2; } .round-panel #revealButton,.round-panel #skipVoteButton { grid-column:2; grid-row:auto; justify-self:start; margin-top:10px; } }
-@media (max-width:720px) { .bunker-backdrop { background-position:62% center; } .app-shell { padding:20px 14px 36px; } .brand { margin-bottom:20px; } .menu-panel, #lobby { margin-top:2vh; padding:24px 20px; } .game-players { grid-template-columns:1fr; } .game-player { grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); grid-template-areas:"identity" "cards"; } .game-player.has-actions { grid-template-rows:auto minmax(0,1fr) 56px; grid-template-areas:"identity" "cards" "vote"; } .player-name { padding:13px 16px 13px 20px; } .game-player .avatar { flex-basis:48px; width:48px; height:48px; font-size:18px; } .public-cards { min-height:54px; padding:10px 14px 12px 20px; } .players-table { min-width:0; font-size:10px; } .players-table th:first-child { width:96px; } .players-table th,.players-table td { padding:7px 5px; } .players-table thead th { font-size:8px; } .table-cell-value,.table-header-value { font-size:9px; line-height:1.35; } .round-panel { grid-template-columns:1fr; gap:7px; top:8px; padding:14px; } .round-panel #roundLabel, .round-panel .action-timer, .round-panel h3, .round-panel #roundDescription, .round-panel #revealButton, .round-panel #skipVoteButton, .round-panel #actionHint { grid-column:1; grid-row:auto; } .round-panel #revealButton, .round-panel #skipVoteButton { width:100%; min-width:0; } .my-cards { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; } .my-card { min-height:82px; } .game-header { align-items:flex-start; } .game-actions { flex-direction:column; align-items:flex-end; gap:8px; } .disaster-card p { font-size:15px; } .disaster-card.story-mode { padding:23px 21px; } .story-ready { width:100%; margin:0; } .story-wait { width:100%; } .disaster-accordion p { padding-right:0; } }
+@media (max-width:720px) { .bunker-backdrop { background-position:62% center; } .app-shell { padding:20px 14px 36px; } .brand { margin-bottom:20px; } .menu-panel, #lobby { margin-top:2vh; padding:24px 20px; } .game-players { grid-template-columns:1fr; } .game-player { grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); grid-template-areas:"identity" "cards"; } .game-player.has-actions { grid-template-rows:auto minmax(0,1fr) 56px; grid-template-areas:"identity" "cards" "vote"; } .player-name { padding:13px 16px 13px 20px; } .game-player .avatar { flex-basis:48px; width:48px; height:48px; font-size:18px; } .public-cards { min-height:54px; padding:10px 14px 12px 20px; } .players-table { min-width:0; font-size:10px; } .players-table th:first-child { width:96px; } .players-table th,.players-table td { padding:7px 5px; } .players-table thead th { font-size:8px; } .table-cell-value,.table-header-value { font-size:9px; line-height:1.35; } .round-panel { grid-template-columns:1fr; gap:7px; top:8px; padding:14px; } .round-panel #roundLabel, .round-panel .action-timer, .round-panel h3, .round-panel #roundDescription, .round-panel #revealButton, .round-panel #skipVoteButton, .round-panel #actionHint { grid-column:1; grid-row:auto; } .round-panel #revealButton, .round-panel #skipVoteButton { width:100%; min-width:0; } .round-panel.is-finished { grid-template-columns:1fr; grid-template-rows:auto; min-height:0; padding:16px; } .round-panel.is-finished .round-copy { grid-column:1; grid-row:auto; min-height:0; padding:11px 0 0; border-top:1px solid rgba(255,224,163,.2); border-left:0; } .round-panel.is-finished .round-copy h3 { font-size:21px; } .my-cards { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; } .my-card { min-height:82px; } .game-header { align-items:flex-start; } .game-actions { flex-direction:column; align-items:flex-end; gap:8px; } .disaster-card p { font-size:15px; } .disaster-card.story-mode { padding:23px 21px; } .story-ready { width:100%; margin:0; } .story-wait { width:100%; } .disaster-accordion p { padding-right:0; } }
 @media (max-width:720px) { .results-banner { padding:16px 14px 18px; } .winner-list { gap:11px 14px; } .winner-chip .avatar { flex-basis:48px; width:48px; height:48px; } }
 @media (max-width:720px) { .round-panel .round-copy { grid-column:1; grid-row:auto; } }
