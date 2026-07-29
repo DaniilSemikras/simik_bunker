@@ -92,14 +92,16 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .bunker-trait-card span { margin-bottom:8px; color:#ffc77e; font-size:10px; font-weight:850; letter-spacing:.08em; text-transform:uppercase; }
 .bunker-trait-card strong { font-size:15px; line-height:1.28; }
 .round-panel, .cards-panel, .players-panel { padding:22px; }
-.round-panel { display:grid; grid-template-columns:max-content minmax(0, 1fr) max-content; align-items:center; column-gap:18px; row-gap:3px; position:sticky; top:12px; z-index:4; padding:14px 18px; box-shadow:0 14px 38px rgba(0,0,0,.28); }
+.round-panel { display:grid; grid-template-columns:184px minmax(360px,650px) max-content; align-items:center; justify-content:start; column-gap:22px; position:sticky; top:12px; z-index:4; padding:15px 22px; box-shadow:0 14px 38px rgba(0,0,0,.28); }
 .round-panel #roundLabel { grid-column:1; grid-row:1; }
 .round-panel .action-timer { grid-column:1; grid-row:2; margin:0; padding:5px 9px; font-size:14px; }
-.round-panel h3 { grid-column:2; grid-row:1; margin:0; font-size:21px; letter-spacing:-.04em; }
-.round-panel #roundDescription { grid-column:2; grid-row:2; margin:0; }
-.round-panel #revealButton { grid-column:3; grid-row:1 / span 2; width:auto; min-width:205px; margin:0; padding:11px 16px; }
-.round-panel #skipVoteButton { grid-column:3; grid-row:1 / span 2; width:auto; min-width:205px; margin:0; padding:11px 16px; }
-.round-panel #actionHint { grid-column:1 / -1; margin:4px 0 0; }
+.round-copy { display:grid; gap:5px; min-width:0; }
+.round-copy { grid-column:2; }
+.round-copy h3 { margin:0; font-size:21px; letter-spacing:-.04em; }
+.round-copy #roundDescription,.round-copy #actionHint { margin:0; }
+.round-copy #actionHint { color:#c8b9af; font-size:12px; }
+.round-panel #revealButton { grid-column:3; grid-row:1; width:auto; min-width:205px; margin:0; padding:11px 16px; }
+.round-panel #skipVoteButton { grid-column:3; grid-row:1; width:auto; min-width:205px; margin:0; padding:11px 16px; }
 .action-timer { display:inline-flex; margin:10px 0 2px; border:1px solid rgba(241,168,78,.5); border-radius:100px; padding:7px 11px; color:#ffe2b8; background:rgba(117,67,31,.25); font-size:16px; font-weight:850; letter-spacing:.04em; font-variant-numeric:tabular-nums; }
 .skip-vote { border:1px solid rgba(122,221,145,.58); color:#d6ffe0; background:rgba(53,126,70,.28); font-size:13px; }
 .action-timer.urgent { border-color:rgba(230,138,128,.8); color:#ffe0dc; background:rgba(143,56,49,.35); animation:timer-pulse .8s ease-in-out infinite alternate; }
@@ -250,5 +252,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 @keyframes playable-card-float { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-4px); } }
 @media (hover:hover) and (pointer:fine) { .my-card.is-choice { animation:playable-card-float 2.2s ease-in-out infinite; } .my-card.is-choice:hover { animation-play-state:paused; } }
 @media (prefers-reduced-motion:reduce) { .cursor-aura { display:none; } .bunker-backdrop { transform:none; } .my-card.is-revealing,.public-card.is-revealing,.my-card.is-choice { animation:none; } }
+@media (max-width:900px) and (min-width:721px) { .round-panel { grid-template-columns:160px minmax(0,1fr); } .round-copy { grid-column:2; } .round-panel #revealButton,.round-panel #skipVoteButton { grid-column:2; grid-row:auto; justify-self:start; margin-top:10px; } }
 @media (max-width:720px) { .bunker-backdrop { background-position:62% center; } .app-shell { padding:20px 14px 36px; } .brand { margin-bottom:20px; } .menu-panel, #lobby { margin-top:2vh; padding:24px 20px; } .game-players { grid-template-columns:1fr; } .game-player { grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); grid-template-areas:"identity" "cards"; } .game-player.has-actions { grid-template-rows:auto minmax(0,1fr) 56px; grid-template-areas:"identity" "cards" "vote"; } .player-name { padding:13px 16px 13px 20px; } .game-player .avatar { flex-basis:48px; width:48px; height:48px; font-size:18px; } .public-cards { min-height:54px; padding:10px 14px 12px 20px; } .players-table { min-width:0; font-size:10px; } .players-table th:first-child { width:96px; } .players-table th,.players-table td { padding:7px 5px; } .players-table thead th { font-size:8px; } .table-cell-value,.table-header-value { font-size:9px; line-height:1.35; } .round-panel { grid-template-columns:1fr; gap:7px; top:8px; padding:14px; } .round-panel #roundLabel, .round-panel .action-timer, .round-panel h3, .round-panel #roundDescription, .round-panel #revealButton, .round-panel #skipVoteButton, .round-panel #actionHint { grid-column:1; grid-row:auto; } .round-panel #revealButton, .round-panel #skipVoteButton { width:100%; min-width:0; } .my-cards { grid-template-columns:repeat(2, minmax(0, 1fr)); } .game-header { align-items:flex-start; } .game-actions { flex-direction:column; align-items:flex-end; gap:8px; } .disaster-card p { font-size:15px; } .disaster-card.story-mode { padding:23px 21px; } .story-ready { width:100%; margin:0; } .story-wait { width:100%; } .disaster-accordion p { padding-right:0; } }
 @media (max-width:720px) { .results-banner { padding:16px 14px 18px; } .winner-list { gap:11px 14px; } .winner-chip .avatar { flex-basis:48px; width:48px; height:48px; } }
+@media (max-width:720px) { .round-panel .round-copy { grid-column:1; grid-row:auto; } }
