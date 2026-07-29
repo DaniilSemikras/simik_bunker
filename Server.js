@@ -614,6 +614,7 @@ function publicState(room) {
         turnDeadline: room.turnDeadline || null,
         voteDeadline: room.voteDeadline || null,
         votedPlayerIds: Object.keys(room.votes || {}),
+        voteCanBeSkipped: voteCanBeSkipped(room),
         bunkerSurvivalChance: room.phase === "finished" ? calculateBunkerSurvivalChance(room) : null,
         players: room.players.map((player) => ({
             id: player.id,
@@ -692,6 +693,14 @@ function openVoting(room) {
 function playerHasAvailableCard(room, playerId) {
     if (room.round === 0) return !room.revealed[playerId]?.[room.traitOrder[0]];
     return room.traitOrder.some((trait) => !room.revealed[playerId]?.[trait]);
+}
+
+function hasAnotherRevealRound(room) {
+    return room.round < room.traitOrder.length - 1;
+}
+
+function voteCanBeSkipped(room) {
+    return activePlayers(room).length <= room.capacity || hasAnotherRevealRound(room);
 }
 
 function activateNextTurn(room) {
@@ -785,10 +794,12 @@ function startNextRound(room) {
 }
 
 function continueWithoutElimination(room) {
-    if (activePlayers(room).length <= room.capacity || room.round >= room.revealRounds - 1) {
-        return endGame(room);
+    if (activePlayers(room).length <= room.capacity) return endGame(room);
+    if (room.round >= room.revealRounds - 1 && hasAnotherRevealRound(room)) {
+        room.revealRounds = Math.min(room.traitOrder.length, room.revealRounds + 1);
     }
-    startNextRound(room);
+    if (hasAnotherRevealRound(room)) return startNextRound(room);
+    openVoting(room);
 }
 
 function canOpenAnotherDeadlockRound(room) {
@@ -796,7 +807,7 @@ function canOpenAnotherDeadlockRound(room) {
 }
 
 function continueAfterDeadlock(room) {
-    if (!canOpenAnotherDeadlockRound(room)) return endGame(room);
+    if (!canOpenAnotherDeadlockRound(room)) return openVoting(room);
     if (room.round >= room.revealRounds - 1) {
         room.revealRounds = Math.min(room.traitOrder.length, room.revealRounds + 1);
     }
@@ -1041,6 +1052,7 @@ io.on("connection", (socket) => {
     socket.on("skipVote", () => {
         const room = roomFor(socket);
         if (!room || room.phase !== "voting" || room.eliminated.includes(socket.id)) return;
+        if (!voteCanBeSkipped(room)) return emitError(socket, "Все доступные карты уже раскрыты — нужно выбрать, кого исключить.");
         if (room.votes[socket.id]) return emitError(socket, "Ваш голос уже принят.");
         room.votes[socket.id] = SKIP_VOTE;
         socket.emit("voteAccepted");

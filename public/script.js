@@ -244,7 +244,7 @@ function updateGame() {
 
     const canRevealProfession = room.phase === "reveal" && trait && me && !me.eliminated && isMyTurn && !hasRevealedThisRound;
     const canChooseTrait = isChoiceRound && me && !me.eliminated && isMyTurn && !hasRevealedThisRound;
-    const canSkipVote = isVoting && me && !me.eliminated && !hasVoted;
+    const canSkipVote = isVoting && room.voteCanBeSkipped !== false && me && !me.eliminated && !hasVoted;
     $("#revealButton").classList.toggle("hidden", !canRevealProfession);
     $("#revealButton").textContent = canRevealProfession ? `Раскрыть: ${traitName(trait)}` : "";
     $("#skipVoteButton").classList.toggle("hidden", !canSkipVote);
