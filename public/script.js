@@ -208,7 +208,9 @@ function cardMarkup(trait, value, revealed, canChoose, isRevealing = false) {
 
 function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specialTargetAction) {
     const players = room.players;
-    const hasProfessionItems = players.some((player) => player.professionItem);
+    const baggageFor = (player) => [player.professionItem, ...(Array.isArray(player.extraBaggage) ? player.extraBaggage : [])].filter(Boolean);
+    const baggageText = (player) => baggageFor(player).join(" · ");
+    const hasBaggageItems = players.some((player) => baggageFor(player).length);
     const hasUsedSpecialCards = players.some((player) => player.usedSpecialCard);
     const playerStatus = (player) => player.left ? "вышел" : player.eliminated ? "исключён" : isFinished ? "победитель" : "в игре";
     const playerState = (player) => player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
@@ -222,7 +224,7 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
         }).join("")
     )).join("");
     const extraRows = [
-        hasProfessionItems ? traitRow("Багаж от профессии", players.map((player) => `<td class="table-extra ${player.professionItem ? "is-revealed-value" : ""} ${playerState(player)}"><span class="table-cell-value" title="${escaped(player.professionItem || "—")}">${player.professionItem ? escaped(player.professionItem) : "—"}</span></td>`).join("")) : "",
+        hasBaggageItems ? traitRow("Багаж", players.map((player) => `<td class="table-extra ${baggageFor(player).length ? "is-revealed-value" : ""} ${playerState(player)}"><span class="table-cell-value" title="${escaped(baggageText(player) || "—")}">${baggageText(player) ? escaped(baggageText(player)) : "—"}</span></td>`).join("")) : "",
         hasUsedSpecialCards ? traitRow("Спецкарта", players.map((player) => `<td class="table-extra ${player.usedSpecialCard ? "is-revealed-value" : ""} ${playerState(player)}"><span class="table-cell-value" title="${escaped(player.usedSpecialCard?.name || "—")}">${player.usedSpecialCard ? escaped(player.usedSpecialCard.name) : "—"}</span></td>`).join("")) : ""
     ].join("");
     const showVotes = isVoting || players.some((player) => (room.voteMarkers?.[player.id] || []).length);
@@ -262,8 +264,13 @@ function updateGame() {
     const isMyTurn = room.turnPlayerId === socket.id;
     const hasVoted = room.votedPlayerIds?.includes(socket.id);
     const canUseSpecialCard = Boolean(mySpecialCard && !mySpecialCard.used && me && !me.eliminated && room.phase === "reveal" && isMyTurn);
-    const specialTraitLabel = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать: Рюкзак" : `Обмен: ${traitName(mySpecialCard.trait)}`;
-    const specialTargetAction = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать рюкзак" : `Обменяться: ${traitName(mySpecialCard.trait)}`;
+    const specialNeedsTarget = ["swap_random_trait", "take_backpack"].includes(mySpecialCard?.effect);
+    const specialTraitLabel = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать предмет из рюкзака"
+        : mySpecialCard.effect === "increase_capacity" ? "Добавить 1 место в бункере"
+            : mySpecialCard.effect === "decrease_capacity" ? "Убрать 1 место в бункере"
+                : mySpecialCard.effect === "reroll_own_trait" ? `Переролл: ${traitName(mySpecialCard.trait)}`
+                    : `Обмен: ${traitName(mySpecialCard.trait)}`;
+    const specialTargetAction = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать предмет" : `Обменяться: ${traitName(mySpecialCard.trait)}`;
     if (!canUseSpecialCard) specialTargetMode = false;
 
     $("#gameCode").textContent = room.code;
@@ -323,10 +330,13 @@ function updateGame() {
     const professionBaggage = me?.professionItem
         ? '<article class="my-card is-revealed profession-item-card"><span>Багаж от профессии</span><strong>' + escaped(me.professionItem) + '</strong><em>получен</em></article>'
         : "";
+    const extraBaggageCards = (Array.isArray(me?.extraBaggage) ? me.extraBaggage : []).map((item) => (
+        '<article class="my-card is-revealed profession-item-card"><span>Багаж</span><strong>' + escaped(item) + '</strong><em>добавлен</em></article>'
+    )).join("");
     const specialCardInHand = mySpecialCard
         ? '<' + (canUseSpecialCard ? 'button type="button" data-use-special' : 'article') + ' class="my-card special-card-hand ' + (mySpecialCard.used ? 'is-used' : '') + (canUseSpecialCard ? ' is-choice' : '') + '"><span>Специальная карта</span><strong>' + escaped(mySpecialCard.name) + '</strong><small>' + escaped(specialTraitLabel) + '</small><em>' + (mySpecialCard.used ? 'использована' : specialTargetMode ? 'выберите игрока' : canUseSpecialCard ? 'нажмите, чтобы применить' : 'доступна в ваш ход') + '</em></' + (canUseSpecialCard ? 'button' : 'article') + '>'
         : "";
-    $("#myCards").innerHTML = personalCards + professionBaggage + specialCardInHand;
+    $("#myCards").innerHTML = personalCards + professionBaggage + extraBaggageCards + specialCardInHand;
     const playerCardsMarkup = room.players.map((player) => {
         const playerCards = cardOrder.map((name) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, name);
@@ -334,6 +344,7 @@ function updateGame() {
             return `<span class="public-card ${isRevealed ? "" : "is-hidden-card"} ${isNewReveal(player.id, name) ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> ${escaped(value)}</span>`;
         }).join("")
             + (player.professionItem ? `<span class="public-card profession-item"><b>Багаж:</b> ${escaped(player.professionItem)}</span>` : "")
+            + (Array.isArray(player.extraBaggage) ? player.extraBaggage.map((item) => `<span class="public-card profession-item"><b>Багаж:</b> ${escaped(item)}</span>`).join("") : "")
             + (player.usedSpecialCard ? `<span class="public-card special-card-used"><b>Спецкарта:</b> ${escaped(player.usedSpecialCard.name)}</span>` : "");
         const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== socket.id;
         const canSelectSpecialTarget = specialTargetMode && !player.left && !player.eliminated && player.id !== socket.id;
@@ -448,8 +459,13 @@ $("#gamePlayers").addEventListener("click", (event) => {
 });
 $("#myCards").addEventListener("click", (event) => {
     if (event.target.closest("[data-use-special]")) {
-        specialTargetMode = !specialTargetMode;
-        updateGame();
+        if (["swap_random_trait", "take_backpack"].includes(mySpecialCard?.effect)) {
+            specialTargetMode = !specialTargetMode;
+            updateGame();
+        } else {
+            socket.emit("useSpecialCard");
+            playSound("accepted");
+        }
         return;
     }
     const card = event.target.closest("[data-reveal-trait]");
@@ -517,10 +533,17 @@ socket.on("professionItemReceived", ({ playerId, nickname: name, item }) => {
     toast(playerId === socket.id ? "В багаж добавлено: " + item + "." : name + " получает в багаж: " + item + ".");
     playSound("accepted");
 });
-socket.on("specialCardUsed", ({ nickname: name, targetNickname, cardName, trait, action }) => {
-    toast(action === "take_backpack"
-        ? name + " применяет «" + cardName + "» и забирает рюкзак у " + targetNickname + "."
-        : name + " применяет «" + cardName + "»: обмен «" + traitName(trait) + "» с " + targetNickname + ".");
+socket.on("specialCardUsed", ({ nickname: name, targetNickname, cardName, trait, action, item, capacity }) => {
+    const message = action === "take_backpack"
+        ? name + " применяет «" + cardName + "» и забирает «" + item + "» у " + targetNickname + " в багаж."
+        : action === "increase_capacity"
+            ? name + " применяет «" + cardName + "»: мест в бункере стало " + capacity + "."
+            : action === "decrease_capacity"
+                ? name + " применяет «" + cardName + "»: мест в бункере стало " + capacity + "."
+                : action === "reroll_own_trait"
+                    ? name + " применяет «" + cardName + "» и переролливает «" + traitName(trait) + "»."
+                    : name + " применяет «" + cardName + "»: обмен «" + traitName(trait) + "» с " + targetNickname + ".";
+    toast(message);
     playSound("accepted");
 });
 socket.on("votingStarted", () => { toast("Все раскрылись. Пора голосовать."); playSound("vote"); });

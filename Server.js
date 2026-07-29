@@ -113,8 +113,26 @@ const DEFAULT_GAME_CONFIG = {
         {
             id: "take_backpack",
             name: "Забрать карточку рюкзака",
-            description: "Один раз заберите карточку рюкзака у выбранного игрока.",
+            description: "Один раз заберите предмет из рюкзака выбранного игрока и добавьте его в свой багаж.",
             effect: "take_backpack"
+        },
+        {
+            id: "increase_capacity",
+            name: "Расширить бункер",
+            description: "Один раз добавьте одно место в бункере.",
+            effect: "increase_capacity"
+        },
+        {
+            id: "decrease_capacity",
+            name: "Сократить бункер",
+            description: "Один раз уберите одно место в бункере.",
+            effect: "decrease_capacity"
+        },
+        {
+            id: "reroll_own_trait",
+            name: "Переролл характеристики",
+            description: "Один раз случайно измените одну свою характеристику.",
+            effect: "reroll_own_trait"
         }
     ],
     hiddenAvatars: [],
@@ -239,11 +257,20 @@ function normalizeGameConfig(rawConfig) {
         const id = cleanCategoryId(card?.id);
         const name = cleanText(card?.name, 60);
         const description = cleanText(card?.description, 1200);
-        const effect = card?.effect === "take_backpack"
-            ? "take_backpack"
-            : card?.effect === "swap_random_trait" || card?.effect === "swap_trait"
-                ? "swap_random_trait"
-                : "";
+        const hint = `${id} ${name}`.toLocaleLowerCase("ru");
+        const effect = /увелич|добав.*(?:мест|слот)|расшир/.test(hint)
+            ? "increase_capacity"
+            : /уменьш|отнят|убрат.*(?:мест|слот)|сократ/.test(hint)
+                ? "decrease_capacity"
+                : /перерол|зарандом|рандом.*сво|измен.*сво.*характер/.test(hint)
+                    ? "reroll_own_trait"
+                    : card?.effect === "take_backpack"
+                        ? "take_backpack"
+                        : card?.effect === "increase_capacity" || card?.effect === "decrease_capacity" || card?.effect === "reroll_own_trait"
+                            ? card.effect
+                            : card?.effect === "swap_random_trait" || card?.effect === "swap_trait"
+                                ? "swap_random_trait"
+                                : "";
         if (!id || !name || !description || !effect || usedSpecialCardIds.has(id)) return null;
         usedSpecialCardIds.add(id);
         return { id, name, description, effect };
@@ -556,13 +583,19 @@ function assignBunkerTraits(traits) {
 
 function assignSpecialCards(players, specialCards, traitOrder) {
     const exchangeTraits = traitOrder.filter((trait) => !["profession", "backpack"].includes(trait));
+    const rerollTraits = traitOrder.filter((trait) => trait !== "profession");
     const usableCards = specialCards.filter((card) => (
-        card.effect === "swap_random_trait" ? exchangeTraits.length > 0 : traitOrder.includes("backpack")
+        card.effect === "swap_random_trait" ? exchangeTraits.length > 0
+            : card.effect === "take_backpack" ? traitOrder.includes("backpack")
+                : card.effect === "reroll_own_trait" ? rerollTraits.length > 0
+                    : ["increase_capacity", "decrease_capacity"].includes(card.effect)
     ));
     if (!usableCards.length) return {};
     return Object.fromEntries(players.map((player) => {
         const card = clone(randomItem(usableCards));
-        card.trait = card.effect === "swap_random_trait" ? randomItem(exchangeTraits) : "backpack";
+        card.trait = card.effect === "swap_random_trait" ? randomItem(exchangeTraits)
+            : card.effect === "reroll_own_trait" ? randomItem(rerollTraits)
+                : card.effect === "take_backpack" ? "backpack" : null;
         return [player.id, { ...card, used: false }];
     }));
 }
@@ -628,7 +661,7 @@ function movePlayerToSocket(room, player, socketId) {
     room.turnOrder = (room.turnOrder || []).map((id) => id === previousId ? socketId : id);
     room.eliminated = (room.eliminated || []).map((id) => id === previousId ? socketId : id);
 
-    for (const record of [room.cards, room.revealed, room.revealedThisRound, room.playerSpecialCards, room.playerProfessionItems]) {
+    for (const record of [room.cards, room.revealed, room.revealedThisRound, room.playerSpecialCards, room.playerProfessionItems, room.playerExtraBaggage]) {
         if (!record || !Object.prototype.hasOwnProperty.call(record, previousId)) continue;
         record[socketId] = record[previousId];
         delete record[previousId];
@@ -672,16 +705,62 @@ function giveProfessionItem(room, playerId) {
 function useSpecialCard(room, playerId, targetId) {
     const specialCard = room.playerSpecialCards?.[playerId];
     if (!specialCard || specialCard.used) return { error: "Эта спецкарта уже использована." };
-    if (!["swap_random_trait", "take_backpack"].includes(specialCard.effect)) return { error: "Неизвестный эффект спецкарты." };
-    if (!room.traitOrder.includes(specialCard.trait)) return { error: "Для этой спецкарты в игре нет нужной категории." };
-    if (!room.cards[playerId] || !room.cards[targetId]) return { error: "Не удалось найти карточки игроков." };
+    if (!["swap_random_trait", "take_backpack", "increase_capacity", "decrease_capacity", "reroll_own_trait"].includes(specialCard.effect)) return { error: "Неизвестный эффект спецкарты." };
+    if (!room.cards[playerId]) return { error: "Не удалось найти ваши карточки." };
+
+    if (specialCard.effect === "increase_capacity") {
+        const previousCapacity = room.capacity;
+        room.capacity = Math.min(activePlayers(room).length, room.capacity + 1);
+        if (room.capacity === previousCapacity) return { error: "В бункере уже достаточно мест для всех оставшихся игроков." };
+        specialCard.used = true;
+        return { card: specialCard, action: specialCard.effect, previousCapacity, capacity: room.capacity };
+    }
+
+    if (specialCard.effect === "decrease_capacity") {
+        const previousCapacity = room.capacity;
+        room.capacity = Math.max(1, room.capacity - 1);
+        if (room.capacity === previousCapacity) return { error: "Нельзя уменьшить бункер меньше чем до одного места." };
+        specialCard.used = true;
+        return { card: specialCard, action: specialCard.effect, previousCapacity, capacity: room.capacity };
+    }
+
+    if (specialCard.effect === "reroll_own_trait") {
+        if (!room.traitOrder.includes(specialCard.trait)) return { error: "Для этой спецкарты в игре нет нужной категории." };
+        const options = room.cardOptionsByTrait?.[specialCard.trait] || [];
+        const previousValue = room.cards[playerId][specialCard.trait];
+        const differentOptions = options.filter((option) => option.value !== previousValue);
+        const nextValue = pickWeightedOption(differentOptions.length ? differentOptions : options);
+        if (!nextValue) return { error: "Для этой характеристики не хватает вариантов." };
+        room.cards[playerId][specialCard.trait] = nextValue;
+        if (Object.prototype.hasOwnProperty.call(room.revealed[playerId] || {}, specialCard.trait)) {
+            room.revealed[playerId][specialCard.trait] = nextValue;
+        }
+        specialCard.used = true;
+        return { card: specialCard, trait: specialCard.trait, action: specialCard.effect, previousValue, value: nextValue };
+    }
+
+    if (!room.traitOrder.includes(specialCard.trait) || !room.cards[targetId]) return { error: "Не удалось найти карточки выбранного игрока." };
 
     const myValue = room.cards[playerId][specialCard.trait];
     const targetValue = room.cards[targetId][specialCard.trait];
     if (myValue === undefined || targetValue === undefined) return { error: "Этой характеристики нет у выбранного игрока." };
 
+    if (specialCard.effect === "take_backpack") {
+        if (targetValue === "рюкзак забран") return { error: "У этого игрока уже забрали предмет из рюкзака." };
+        room.playerExtraBaggage = room.playerExtraBaggage || {};
+        room.playerExtraBaggage[playerId] = [...(room.playerExtraBaggage[playerId] || []), targetValue];
+        room.cards[targetId][specialCard.trait] = "рюкзак забран";
+        if (Object.prototype.hasOwnProperty.call(room.revealed[targetId] || {}, specialCard.trait)) {
+            room.revealed[targetId][specialCard.trait] = room.cards[targetId][specialCard.trait];
+        }
+        specialCard.used = true;
+        specialCard.targetId = targetId;
+        specialCard.item = targetValue;
+        return { card: specialCard, trait: specialCard.trait, action: specialCard.effect, item: targetValue };
+    }
+
     room.cards[playerId][specialCard.trait] = targetValue;
-    room.cards[targetId][specialCard.trait] = specialCard.effect === "take_backpack" ? "рюкзак забран" : myValue;
+    room.cards[targetId][specialCard.trait] = myValue;
     if (Object.prototype.hasOwnProperty.call(room.revealed[playerId] || {}, specialCard.trait)) {
         room.revealed[playerId][specialCard.trait] = targetValue;
     }
@@ -751,6 +830,7 @@ function publicState(room) {
             eliminated: room.eliminated.includes(player.id),
             revealed: room.revealed[player.id] || {},
             professionItem: room.playerProfessionItems?.[player.id] || null,
+            extraBaggage: room.playerExtraBaggage?.[player.id] || [],
             usedSpecialCard: room.playerSpecialCards?.[player.id]?.used
                 ? { name: room.playerSpecialCards[player.id].name }
                 : null
@@ -1070,7 +1150,9 @@ io.on("connection", (socket) => {
             bunkerTraits: [],
             playerSpecialCards: {},
             playerProfessionItems: {},
+            playerExtraBaggage: {},
             professionItemsByProfession: {},
+            cardOptionsByTrait: {},
             cards: {},
             revealed: {},
             revealedThisRound: {},
@@ -1162,11 +1244,13 @@ io.on("connection", (socket) => {
             category.id,
             Object.fromEntries(category.options.map((option) => [option.value, option.score]))
         ]));
+        room.cardOptionsByTrait = Object.fromEntries(gameConfig.categories.map((category) => [category.id, clone(category.options)]));
         room.disaster = randomItem(gameConfig.disasters);
         room.bunkerTraits = assignBunkerTraits(gameConfig.bunkerTraits || []);
         room.cards = assignCards(activePlayers(room), gameConfig.categories);
         room.playerSpecialCards = assignSpecialCards(activePlayers(room), gameConfig.specialCards || [], room.traitOrder);
         room.playerProfessionItems = {};
+        room.playerExtraBaggage = {};
         room.professionItemsByProfession = Object.fromEntries((gameConfig.categories.find((category) => category.id === "profession")?.options || []).map((option) => [
             String(option.value || "").toLocaleLowerCase("ru"),
             option.passiveItem || ""
@@ -1222,23 +1306,36 @@ io.on("connection", (socket) => {
         if (!room || room.phase !== "reveal" || room.eliminated.includes(socket.id) || currentTurnPlayerId(room) !== socket.id) {
             return emitError(socket, "Спецкарту можно применить только в свой ход.");
         }
-        if (targetId === socket.id || !activePlayers(room).some((player) => player.id === targetId)) {
+        const specialCard = room.playerSpecialCards?.[socket.id];
+        const requiresTarget = ["swap_random_trait", "take_backpack"].includes(specialCard?.effect);
+        if (requiresTarget && (targetId === socket.id || !activePlayers(room).some((player) => player.id === targetId))) {
             return emitError(socket, "Выберите другого игрока, который ещё в игре.");
         }
-        const result = useSpecialCard(room, socket.id, targetId);
+        const result = useSpecialCard(room, socket.id, requiresTarget ? targetId : null);
         if (result.error) return emitError(socket, result.error);
         const player = room.players.find((candidate) => candidate.id === socket.id);
         const target = room.players.find((candidate) => candidate.id === targetId);
-        addActionLog(room, result.action === "take_backpack"
-            ? player?.nickname + " применяет «" + result.card.name + "» и забирает рюкзак у " + target?.nickname + "."
-            : player?.nickname + " применяет «" + result.card.name + "» и меняется «" + (room.categoryNames?.[result.trait] || result.trait) + "» с " + target?.nickname + ".", "special");
-        emitRoom(room);
+        const actionLog = result.action === "take_backpack"
+            ? player?.nickname + " применяет «" + result.card.name + "» и забирает «" + result.item + "» у " + target?.nickname + " в свой багаж."
+            : result.action === "increase_capacity"
+                ? player?.nickname + " применяет «" + result.card.name + "»: мест в бункере " + result.previousCapacity + " → " + result.capacity + "."
+                : result.action === "decrease_capacity"
+                    ? player?.nickname + " применяет «" + result.card.name + "»: мест в бункере " + result.previousCapacity + " → " + result.capacity + "."
+                    : result.action === "reroll_own_trait"
+                        ? player?.nickname + " применяет «" + result.card.name + "» и меняет «" + (room.categoryNames?.[result.trait] || result.trait) + "»."
+                        : player?.nickname + " применяет «" + result.card.name + "» и меняется «" + (room.categoryNames?.[result.trait] || result.trait) + "» с " + target?.nickname + ".";
+        addActionLog(room, actionLog, "special");
+        if (result.action === "increase_capacity" && activePlayers(room).length <= room.capacity) endGame(room);
+        else emitRoom(room);
         io.to(room.code).emit("specialCardUsed", {
             nickname: player?.nickname,
-            targetNickname: target?.nickname,
+            targetNickname: target?.nickname || null,
             cardName: result.card.name,
             trait: result.trait,
-            action: result.action
+            action: result.action,
+            item: result.item || null,
+            capacity: result.capacity || null,
+            previousCapacity: result.previousCapacity || null
         });
     });
 
