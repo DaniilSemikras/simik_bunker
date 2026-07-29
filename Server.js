@@ -988,7 +988,7 @@ io.on("connection", (socket) => {
     function launchGame(room, isSoloTest = false) {
         room.isSoloTest = isSoloTest;
         room.phase = "story";
-        room.capacity = isSoloTest ? 1 : Math.ceil(activePlayers(room).length / 2);
+        room.capacity = isSoloTest ? 1 : Math.floor(activePlayers(room).length / 2);
         room.traitOrder = gameConfig.categories.map((category) => category.id);
         room.revealRounds = isSoloTest
             ? room.traitOrder.length
