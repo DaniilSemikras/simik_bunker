@@ -165,6 +165,8 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .public-card { border:1px solid rgba(122,221,145,.28); border-radius:8px; padding:7px 9px; color:#ecdfd8; background:rgba(33,91,47,.22); box-shadow:inset 0 1px rgba(215,255,222,.045); font-size:11px; line-height:1.3; }
 .public-card.is-revealing { animation:public-card-reveal .62s cubic-bezier(.2,.82,.24,1) both; }
 .public-card b { color:var(--accent); font-weight:700; }
+.public-card.is-hidden-card { border-style:dashed; border-color:rgba(190,177,166,.2); color:#938981; background:rgba(9,8,8,.16); }
+.public-card.is-hidden-card b { color:#b6a89d; }
 .public-card.profession-item { border-color:rgba(128,174,255,.42); color:#e1e9ff; background:rgba(57,80,142,.24); }
 .public-card.profession-item b { color:#bcd0ff; }
 .public-card.special-card-used { border-color:rgba(184,151,255,.4); color:#eadfff; background:rgba(91,61,142,.24); }

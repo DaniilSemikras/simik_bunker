@@ -285,7 +285,11 @@ function updateGame() {
         : "";
     $("#myCards").innerHTML = personalCards + professionBaggage + specialCardInHand;
     $("#gamePlayers").innerHTML = room.players.map((player) => {
-        const playerCards = Object.entries(player.revealed || {}).map(([name, value]) => `<span class="public-card ${isNewReveal(player.id, name) ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> ${escaped(value)}</span>`).join("")
+        const playerCards = cardOrder.map((name) => {
+            const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, name);
+            const value = isRevealed ? player.revealed[name] : "скрыто";
+            return `<span class="public-card ${isRevealed ? "" : "is-hidden-card"} ${isNewReveal(player.id, name) ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> ${escaped(value)}</span>`;
+        }).join("")
             + (player.professionItem ? `<span class="public-card profession-item"><b>Багаж:</b> ${escaped(player.professionItem)}</span>` : "")
             + (player.usedSpecialCard ? `<span class="public-card special-card-used"><b>Спецкарта:</b> ${escaped(player.usedSpecialCard.name)}</span>` : "");
         const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== socket.id;
