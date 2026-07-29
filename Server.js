@@ -890,6 +890,10 @@ function scheduleBotAction(room, callback, delay) {
 function endGame(room) {
     if (room.phase === "finished") return;
     clearActionTimer(room);
+    for (const player of room.players) {
+        if (!room.cards[player.id]) continue;
+        room.revealed[player.id] = { ...room.cards[player.id] };
+    }
     room.phase = "finished";
     room.turnDeadline = null;
     room.voteDeadline = null;
@@ -897,6 +901,7 @@ function endGame(room) {
     room.roomCloseDeadline = Date.now() + FINISHED_ROOM_TTL_MS;
     room.closeTimer = setTimeout(() => closeRoom(room), FINISHED_ROOM_TTL_MS);
     const winners = activePlayers(room).map((player) => player.nickname);
+    addActionLog(room, "Игра окончена — все оставшиеся характеристики раскрыты.", "reveal");
     addActionLog(room, winners.length ? "Игра завершена. В бункере остались: " + winners.join(", ") + "." : "Игра завершена. Выживших не осталось.", "finish");
     emitRoom(room);
     io.to(room.code).emit("gameFinished", {
