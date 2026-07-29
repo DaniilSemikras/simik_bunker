@@ -14,7 +14,8 @@ if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         cursorAura.classList.add("is-visible");
         if (pointerFrame) return;
         pointerFrame = requestAnimationFrame(() => {
-            cursorAura.style.transform = `translate3d(${pointerX - 260}px, ${pointerY - 260}px, 0)`;
+            document.documentElement.style.setProperty("--flashlight-x", `${pointerX}px`);
+            document.documentElement.style.setProperty("--flashlight-y", `${pointerY}px`);
             const shiftX = (pointerX - window.innerWidth / 2) * -0.018;
             const shiftY = (pointerY - window.innerHeight / 2) * -0.014;
             document.documentElement.style.setProperty("--bunker-x", `${shiftX}px`);
