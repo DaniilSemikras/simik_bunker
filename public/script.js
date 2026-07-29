@@ -236,6 +236,18 @@ function updateGame() {
         '<strong>' + escaped(trait.value) + '</strong>',
         '</article>'
     ].join("")).join("");
+    const specialCard = room.specialCard;
+    $("#specialCardPanel").classList.toggle("hidden", !specialCard);
+    $("#specialCard").innerHTML = specialCard ? [
+        '<article class="special-card-game-inner ' + (specialCard.resolved ? 'is-resolved' : '') + '">',
+        '<div class="special-card-copy"><span class="eyebrow">СИТУАЦИЯ</span><h3>' + escaped(specialCard.name) + '</h3><p>' + escaped(specialCard.description) + '</p></div>',
+        '<div class="special-card-status"><span class="' + (specialCard.resolved ? 'special-resolved' : 'special-needed') + '">' + (
+            specialCard.resolved
+                ? 'Решено: ' + escaped(specialCard.helperNickname) + ' · +' + Number(specialCard.survivalBonus || 0) + '%'
+                : 'Нужен: ' + escaped((specialCard.professionTerms || []).join(' / '))
+        ) + '</span></div>',
+        '</article>'
+    ].join("") : "";
     $("#survivorCount").textContent = `${active.length} в игре`;
     const categoryCount = room.categoryOrder?.length || Object.keys(myCards).length;
     const revealRoundCount = room.revealRounds || categoryCount;
@@ -393,6 +405,10 @@ socket.on("cardRevealed", ({ playerId, trait }) => {
     pendingRevealAnimation = { playerId, trait };
     if (room?.phase !== "lobby") updateGame();
     if (playerId !== socket.id) playSound("reveal");
+});
+socket.on("specialCardResolved", ({ nickname: name, cardName }) => {
+    toast(name + " решает событие «" + cardName + "».");
+    playSound("accepted");
 });
 socket.on("votingStarted", () => { toast("Все раскрылись. Пора голосовать."); playSound("vote"); });
 socket.on("voteAccepted", () => { toast("Ваш голос принят."); playSound("accepted"); });

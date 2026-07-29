@@ -31,6 +31,7 @@ function applyRemoteConfig(nextConfig) {
     hiddenAvatars = config.hiddenAvatars || hiddenAvatars;
     renderCategories();
     renderBunkerTraits();
+    renderSpecialCards();
     renderDisasters();
     renderAvatarLibrary();
     showMessage("#saveMessage", "Настройки обновлены другим администратором.", "success");
@@ -119,6 +120,20 @@ function renderBunkerTraits() {
     updateDistributionTotals();
 }
 
+function renderSpecialCards() {
+    const cards = Array.isArray(config.specialCards) ? config.specialCards : [];
+    $("#specialCards").innerHTML = cards.length ? cards.map((card) => [
+        '<article class="category-card special-card" data-id="' + escapeHtml(card.id) + '">',
+        '<div class="category-top"><input class="special-card-name" value="' + escapeHtml(card.name) + '" aria-label="Название специальной карты"><button class="remove remove-special-card" type="button">Удалить</button></div>',
+        '<label>Что происходит</label><textarea class="special-card-description" rows="4" aria-label="Описание специальной карты">' + escapeHtml(card.description) + '</textarea>',
+        '<div class="special-card-fields">',
+        '<label>Профессии, которые решат проблему<input class="special-card-terms" value="' + escapeHtml((card.professionTerms || []).join(", ")) + '" placeholder="электрик, инженер" aria-label="Профессии через запятую"></label>',
+        '<label>Бонус к выживанию, %<input class="special-card-bonus" type="number" min="0" max="30" step="1" value="' + (Number(card.survivalBonus) || 0) + '" aria-label="Бонус к выживанию"></label>',
+        '</div>',
+        '</article>'
+    ].join("")).join("") : '<p class="avatar-library-empty">Пока нет спецкарт. Например: «Аварийный свет» — нужен электрик или инженер-электрик.</p>';
+}
+
 function updateDistributionTotals() {
     document.querySelectorAll("#categories .category-card, #bunkerTraits .bunker-trait-card").forEach((card) => {
         const total = [...card.querySelectorAll(".option-chance-input, .bunker-option-chance-input")].reduce((sum, input) => sum + (Number(input.value) || 0), 0);
@@ -182,6 +197,20 @@ function makeBunkerTrait() {
     renderBunkerTraits();
 }
 
+function makeSpecialCard() {
+    config = { ...config, ...collectConfig() };
+    config.specialCards = config.specialCards || [];
+    config.specialCards.push({
+        id: `special_${Date.now()}`,
+        name: "Новая спецкарта",
+        description: "Опишите проблему или событие в бункере.",
+        professionTerms: ["электрик"],
+        survivalBonus: 8
+    });
+    markDirty();
+    renderSpecialCards();
+}
+
 function collectConfig() {
     const categories = [...document.querySelectorAll("#categories .category-card")].map((card) => ({
         id: card.dataset.id,
@@ -200,8 +229,15 @@ function collectConfig() {
             chance: Number(option.querySelector(".bunker-option-chance-input").value)
         }))
     }));
+    const specialCards = [...document.querySelectorAll("#specialCards .special-card")].map((card) => ({
+        id: card.dataset.id,
+        name: card.querySelector(".special-card-name").value,
+        description: card.querySelector(".special-card-description").value,
+        professionTerms: card.querySelector(".special-card-terms").value.split(",").map((term) => term.trim()).filter(Boolean),
+        survivalBonus: Number(card.querySelector(".special-card-bonus").value)
+    }));
     const disasters = [...document.querySelectorAll(".disaster-value")].map((input) => input.value);
-    return { categories, disasters, bunkerTraits, hiddenAvatars, revision: config.revision };
+    return { categories, disasters, bunkerTraits, specialCards, hiddenAvatars, revision: config.revision };
 }
 
 async function loadEditor() {
@@ -211,6 +247,7 @@ async function loadEditor() {
     hiddenAvatars = avatarResponse.hiddenAvatars || [];
     renderCategories();
     renderBunkerTraits();
+    renderSpecialCards();
     renderDisasters();
     renderAvatarLibrary();
     isDirty = false;
@@ -256,6 +293,7 @@ $("#login").addEventListener("click", async () => {
 $("#password").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#login").click(); });
 $("#addCategory").addEventListener("click", makeCategory);
 $("#addBunkerTrait").addEventListener("click", makeBunkerTrait);
+$("#addSpecialCard").addEventListener("click", makeSpecialCard);
 $("#addDisaster").addEventListener("click", () => {
     config.disasters.push("Новый сценарий катастрофы.");
     markDirty();
@@ -380,6 +418,15 @@ $("#bunkerTraits").addEventListener("input", (event) => {
     markDirty();
     if (event.target.matches(".bunker-option-chance-input")) updateDistributionTotals();
 });
+$("#specialCards").addEventListener("click", (event) => {
+    const card = event.target.closest(".special-card");
+    if (!card || !event.target.closest(".remove-special-card")) return;
+    config = { ...config, ...collectConfig() };
+    config.specialCards = config.specialCards.filter((item) => item.id !== card.dataset.id);
+    markDirty();
+    renderSpecialCards();
+});
+$("#specialCards").addEventListener("input", markDirty);
 $("#disasterOptions").addEventListener("input", markDirty);
 $("#disasterOptions").addEventListener("click", (event) => {
     const button = event.target.closest(".remove-disaster");
@@ -443,6 +490,7 @@ $("#save").addEventListener("click", async () => {
         $("#reloadLatest").classList.add("hidden");
         renderCategories();
         renderBunkerTraits();
+        renderSpecialCards();
         renderDisasters();
         showMessage("#saveMessage", "Настройки сохранены.", "success");
     } catch (error) {
@@ -464,6 +512,7 @@ $("#reloadLatest").addEventListener("click", () => {
     $("#reloadLatest").classList.add("hidden");
     renderCategories();
     renderBunkerTraits();
+    renderSpecialCards();
     renderDisasters();
     renderAvatarLibrary();
     showMessage("#saveMessage", "Загружена последняя сохранённая версия.", "success");

@@ -103,6 +103,7 @@ const DEFAULT_GAME_CONFIG = {
     }],
     disasters: DISASTERS,
     bunkerTraits: [],
+    specialCards: [],
     hiddenAvatars: [],
     revision: 0
 };
@@ -200,6 +201,23 @@ function normalizeGameConfig(rawConfig) {
         return { id, name, options };
     }).filter(Boolean).slice(0, 16);
 
+    const usedSpecialCardIds = new Set();
+    const specialCards = (Array.isArray(rawConfig?.specialCards) ? rawConfig.specialCards : []).map((card) => {
+        const id = cleanCategoryId(card?.id);
+        const name = cleanText(card?.name, 60);
+        const description = cleanText(card?.description, 1200);
+        const rawTerms = Array.isArray(card?.professionTerms)
+            ? card.professionTerms
+            : String(card?.professionTerms || "").split(",");
+        const professionTerms = [...new Set(rawTerms
+            .map((term) => cleanText(term, 40).toLocaleLowerCase("ru"))
+            .filter(Boolean))].slice(0, 12);
+        const survivalBonus = Math.min(30, cleanScore(card?.survivalBonus, 8));
+        if (!id || !name || !description || !professionTerms.length || usedSpecialCardIds.has(id)) return null;
+        usedSpecialCardIds.add(id);
+        return { id, name, description, professionTerms, survivalBonus };
+    }).filter(Boolean).slice(0, 20);
+
     const hiddenAvatars = [...new Set(
         (Array.isArray(rawConfig?.hiddenAvatars) ? rawConfig.hiddenAvatars : [])
             .map((url) => String(url || ""))
@@ -208,7 +226,7 @@ function normalizeGameConfig(rawConfig) {
 
     const rawRevision = Number(rawConfig?.revision);
     const revision = Number.isSafeInteger(rawRevision) && rawRevision >= 0 ? rawRevision : 0;
-    return { categories: otherCategories, disasters, bunkerTraits, hiddenAvatars, revision };
+    return { categories: otherCategories, disasters, bunkerTraits, specialCards, hiddenAvatars, revision };
 }
 
 function loadGameConfig() {
@@ -576,6 +594,26 @@ function scoreRevealedCard(room, trait, value) {
     return (score - 50) / 50;
 }
 
+function specialCardState(room) {
+    if (!room.specialCard) return null;
+    return {
+        ...room.specialCard,
+        resolved: Boolean(room.specialCardResolvedBy),
+        helperNickname: room.specialCardResolvedBy?.nickname || null
+    };
+}
+
+function tryResolveSpecialCard(room) {
+    if (!room.specialCard || room.specialCardResolvedBy) return null;
+    const helper = activePlayers(room).find((player) => {
+        const profession = String(room.revealed[player.id]?.profession || "").toLocaleLowerCase("ru");
+        return profession && room.specialCard.professionTerms.some((term) => profession.includes(term));
+    });
+    if (!helper) return null;
+    room.specialCardResolvedBy = { id: helper.id, nickname: helper.nickname };
+    return room.specialCardResolvedBy;
+}
+
 function calculateBunkerSurvivalChance(room) {
     const players = activePlayers(room);
     if (!players.length || !room.capacity) return null;
@@ -591,7 +629,8 @@ function calculateBunkerSurvivalChance(room) {
     const averageScore = revealedCards ? totalScore / revealedCards : 0;
     const informationBonus = (revealedCards / maxCards) * 7;
     const professionBonus = new Set(players.map((player) => professionRating(room.revealed[player.id]?.profession).role).filter(Boolean)).size * 2;
-    return Math.max(20, Math.min(95, Math.round(55 + averageScore * 31 + informationBonus + Math.min(8, professionBonus))));
+    const specialBonus = specialCardState(room)?.resolved ? room.specialCard.survivalBonus : 0;
+    return Math.max(20, Math.min(95, Math.round(55 + averageScore * 31 + informationBonus + Math.min(8, professionBonus) + specialBonus)));
 }
 
 function publicState(room) {
@@ -615,6 +654,7 @@ function publicState(room) {
         revealedThisRound: room.revealedThisRound || {},
         capacity: room.capacity,
         bunkerTraits: room.bunkerTraits || [],
+        specialCard: specialCardState(room),
         actionSeconds: ACTION_DURATION_MS / 1000,
         turnPlayerId: currentTurnPlayerId(room),
         turnDeadline: room.turnDeadline || null,
@@ -775,12 +815,19 @@ function revealTraitForPlayer(room, playerId, requestedTrait) {
     if (!room.traitOrder.includes(trait) || room.revealedThisRound[playerId] || room.revealed[playerId]?.[trait]) return false;
     room.revealed[playerId][trait] = room.cards[playerId][trait];
     room.revealedThisRound[playerId] = trait;
+    const specialResolution = trait === "profession" ? tryResolveSpecialCard(room) : null;
     emitRoom(room);
     io.to(room.code).emit("cardRevealed", {
         playerId,
         nickname: room.players.find((player) => player.id === playerId)?.nickname,
         trait
     });
+    if (specialResolution) {
+        io.to(room.code).emit("specialCardResolved", {
+            nickname: specialResolution.nickname,
+            cardName: room.specialCard.name
+        });
+    }
     setTimeout(() => {
         if (room.phase !== "reveal" || currentTurnPlayerId(room) !== playerId || room.revealedThisRound[playerId] !== trait) return;
         advanceRevealTurn(room);
@@ -922,6 +969,8 @@ io.on("connection", (socket) => {
             round: 0,
             disaster: null,
             bunkerTraits: [],
+            specialCard: null,
+            specialCardResolvedBy: null,
             cards: {},
             revealed: {},
             revealedThisRound: {},
@@ -1011,6 +1060,8 @@ io.on("connection", (socket) => {
         ]));
         room.disaster = randomItem(gameConfig.disasters);
         room.bunkerTraits = assignBunkerTraits(gameConfig.bunkerTraits || []);
+        room.specialCard = gameConfig.specialCards?.length ? clone(randomItem(gameConfig.specialCards)) : null;
+        room.specialCardResolvedBy = null;
         room.cards = assignCards(activePlayers(room), gameConfig.categories);
         room.revealed = Object.fromEntries(activePlayers(room).map((player) => [player.id, {}]));
         room.revealedThisRound = {};
