@@ -720,6 +720,7 @@ function activateNextTurn(room) {
     }
     if (!currentTurnPlayerId(room)) {
         if (room.isSoloTest) return startNextRound(room);
+        if (room.round === 0 && room.traitOrder.length > 1) return startNextRound(room);
         openVoting(room);
         return;
     }
