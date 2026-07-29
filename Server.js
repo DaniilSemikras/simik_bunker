@@ -797,6 +797,9 @@ function startNextRound(room) {
         return;
     }
     if (activePlayers(room).length <= room.capacity) return endGame(room);
+    if (room.round >= room.revealRounds - 1 && hasAnotherRevealRound(room)) {
+        room.revealRounds = Math.min(room.traitOrder.length, room.revealRounds + 1);
+    }
     if (room.round >= room.revealRounds - 1) {
         io.to(room.code).emit("revealLimitReached");
         openVoting(room);
