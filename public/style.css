@@ -52,14 +52,14 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .game-view { display:grid; gap:16px; }
 .game-header { padding:0 2px; }
 .game-actions { justify-content:flex-end; }
-.results-banner { display:flex; align-items:center; gap:16px; overflow:hidden; padding:17px 20px; border:1px solid rgba(255,211,125,.56); border-radius:18px; background:linear-gradient(110deg,rgba(93,70,28,.78),rgba(39,63,38,.88)); box-shadow:inset 0 1px rgba(255,244,205,.14),0 14px 30px rgba(33,73,39,.2); }
-.result-emblem { display:grid; place-items:center; flex:0 0 46px; width:46px; height:46px; border:1px solid rgba(255,220,145,.65); border-radius:14px; color:#ffe09a; background:rgba(255,212,121,.12); box-shadow:0 0 22px rgba(255,210,113,.14); font-size:25px; }
-.result-copy { min-width:150px; }
+.results-banner { display:flex; flex-direction:column; align-items:center; gap:14px; overflow:hidden; padding:18px 20px 20px; border:1px solid rgba(255,211,125,.56); border-radius:18px; text-align:center; background:linear-gradient(110deg,rgba(93,70,28,.78),rgba(39,63,38,.88)); box-shadow:inset 0 1px rgba(255,244,205,.14),0 14px 30px rgba(33,73,39,.2); }
+.result-copy { min-width:0; }
 .result-kicker { color:#ffda91; font-size:10px; font-weight:900; letter-spacing:.11em; }
 .result-copy h3 { margin:3px 0 0; color:#fff4d9; font-size:18px; }
-.winner-list { display:flex; flex:1; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
-.winner-chip { display:inline-flex; align-items:center; gap:7px; min-height:38px; padding:5px 10px 5px 6px; border:1px solid rgba(150,242,168,.55); border-radius:100px; color:#e7ffeb; background:rgba(29,105,50,.32); font-size:12px; }
-.winner-chip .avatar { flex-basis:26px; width:26px; height:26px; font-size:11px; }
+.winner-list { display:flex; flex-wrap:wrap; justify-content:center; gap:12px 18px; width:100%; }
+.winner-chip { display:flex; flex-direction:column; align-items:center; gap:6px; min-width:64px; color:#e7ffeb; font-size:12px; }
+.winner-chip .avatar { flex-basis:54px; width:54px; height:54px; border:2px solid rgba(255,221,138,.72); box-shadow:0 0 0 4px rgba(131,227,152,.1),0 9px 16px rgba(0,0,0,.22); font-size:18px; }
+.winner-chip strong { max-width:96px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sound-button { border:1px solid var(--line); border-radius:8px; padding:7px 10px; color:var(--ink); background:rgba(15,11,10,.35); font-size:12px; font-weight:700; }
 .sound-button[aria-pressed="false"] { color:var(--muted); }
 .disaster-card { position:relative; overflow:hidden; padding:22px 24px; border:1px solid rgba(241,168,78,.34); border-radius:16px; background:linear-gradient(105deg, #42261d, #2e201e); }
@@ -149,4 +149,4 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 @keyframes public-card-reveal { 0% { opacity:0; transform:translateY(8px) scale(.84); } 65% { opacity:1; transform:translateY(-2px) scale(1.04); } 100% { opacity:1; transform:translateY(0) scale(1); } }
 @media (prefers-reduced-motion:reduce) { .cursor-aura { display:none; } .bunker-backdrop { transform:none; } .my-card.is-revealing,.public-card.is-revealing { animation:none; } }
 @media (max-width:720px) { .bunker-backdrop { background-position:62% center; } .app-shell { padding:20px 14px 36px; } .brand { margin-bottom:20px; } .menu-panel, #lobby { margin-top:2vh; padding:24px 20px; } .game-players { grid-template-columns:1fr; } .game-player { grid-template-columns:1fr; grid-template-areas:"identity" "cards" "vote"; } .player-name { padding:13px 16px 13px 20px; border-right:0; border-bottom:1px solid rgba(244,238,232,.1); } .game-player .avatar { flex-basis:48px; width:48px; height:48px; font-size:18px; } .public-cards { min-height:54px; padding:10px 14px 12px 20px; } .round-panel { grid-template-columns:1fr; gap:7px; top:8px; padding:14px; } .round-panel #roundLabel, .round-panel .action-timer, .round-panel h3, .round-panel #roundDescription, .round-panel #revealButton, .round-panel #skipVoteButton, .round-panel #actionHint { grid-column:1; grid-row:auto; } .round-panel #revealButton, .round-panel #skipVoteButton { width:100%; min-width:0; } .my-cards { grid-template-columns:repeat(2, minmax(0, 1fr)); } .game-header { align-items:flex-start; } .game-actions { flex-direction:column; align-items:flex-end; gap:8px; } .disaster-card p { font-size:15px; } .disaster-card.story-mode { padding:23px 21px; } .story-ready { width:100%; margin:0; } .story-wait { width:100%; } .disaster-accordion p { padding-right:0; } }
-@media (max-width:720px) { .results-banner { align-items:flex-start; flex-wrap:wrap; padding:15px; } .result-copy { flex:1; } .winner-list { width:100%; justify-content:flex-start; } }
+@media (max-width:720px) { .results-banner { padding:16px 14px 18px; } .winner-list { gap:11px 14px; } .winner-chip .avatar { flex-basis:48px; width:48px; height:48px; } }

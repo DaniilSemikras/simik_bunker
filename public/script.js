@@ -212,7 +212,6 @@ function updateGame() {
     $("#phaseTitle").textContent = isFinished ? "Игра завершена" : isStory ? "История катастрофы" : isVoting ? "Голосование" : "Раскрытие карт";
     $("#resultsBanner").classList.toggle("hidden", !isFinished);
     $("#resultsBanner").innerHTML = isFinished ? `
-        <div class="result-emblem" aria-hidden="true">✦</div>
         <div class="result-copy"><span class="result-kicker">ПОБЕДИТЕЛИ БУНКЕРА</span><h3>${winners.length ? "В бункере остались" : "Выживших не осталось"}</h3></div>
         <div class="winner-list">${winners.map((player) => `<span class="winner-chip">${avatarMarkup(player)}<strong>${escaped(player.nickname)}</strong></span>`).join("")}</div>
     ` : "";
