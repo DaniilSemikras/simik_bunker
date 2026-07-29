@@ -102,6 +102,7 @@ const DEFAULT_GAME_CONFIG = {
         ]
     }],
     disasters: DISASTERS,
+    bunkerTraits: [],
     hiddenAvatars: [],
     revision: 0
 };
@@ -179,6 +180,26 @@ function normalizeGameConfig(rawConfig) {
         : [];
     if (!disasters.length) throw new Error("Добавьте хотя бы один сценарий катастрофы.");
 
+    const usedBunkerTraitIds = new Set();
+    const bunkerTraits = (Array.isArray(rawConfig?.bunkerTraits) ? rawConfig.bunkerTraits : []).map((trait) => {
+        const id = cleanCategoryId(trait?.id);
+        const name = cleanText(trait?.name, 40);
+        const rawOptions = Array.isArray(trait?.options) ? trait.options : trait?.values;
+        const options = (Array.isArray(rawOptions) ? rawOptions : []).map((option, index, source) => {
+            const value = cleanText(typeof option === "string" ? option : option?.value, 120);
+            if (!value) return null;
+            const rawChance = typeof option === "string" ? undefined : option?.chance;
+            return { value, chance: cleanChance(rawChance, defaultChance(index, source.length)) };
+        }).filter(Boolean).slice(0, 40);
+        if (!id || !name || !options.length || usedBunkerTraitIds.has(id)) return null;
+        const chanceTotal = options.reduce((sum, option) => sum + option.chance, 0);
+        if (Math.abs(chanceTotal - 100) > 0.01) {
+            throw new Error("Сумма вероятностей в характеристике бункера «" + name + "» должна быть 100%. Сейчас: " + chanceTotal + "%.");
+        }
+        usedBunkerTraitIds.add(id);
+        return { id, name, options };
+    }).filter(Boolean).slice(0, 16);
+
     const hiddenAvatars = [...new Set(
         (Array.isArray(rawConfig?.hiddenAvatars) ? rawConfig.hiddenAvatars : [])
             .map((url) => String(url || ""))
@@ -187,7 +208,7 @@ function normalizeGameConfig(rawConfig) {
 
     const rawRevision = Number(rawConfig?.revision);
     const revision = Number.isSafeInteger(rawRevision) && rawRevision >= 0 ? rawRevision : 0;
-    return { categories: otherCategories, disasters, hiddenAvatars, revision };
+    return { categories: otherCategories, disasters, bunkerTraits, hiddenAvatars, revision };
 }
 
 function loadGameConfig() {
@@ -456,22 +477,31 @@ function professionBase(value) {
     return String(value || "").split(" — ")[0];
 }
 
+function pickWeightedOption(options) {
+    let roll = Math.random() * 100;
+    for (const option of options) {
+        roll -= option.chance;
+        if (roll <= 0) return option.value;
+    }
+    return options[options.length - 1].value;
+}
+
 function assignCards(players, categories) {
-    const pickOption = (options) => {
-        let roll = Math.random() * 100;
-        for (const option of options) {
-            roll -= option.chance;
-            if (roll <= 0) return option.value;
-        }
-        return options[options.length - 1].value;
-    };
     return Object.fromEntries(players.map((player) => [
         player.id,
         Object.fromEntries(categories.map((category) => {
-            const option = pickOption(category.options);
-            return [category.id, category.id === "profession" ? `${option} — ${randomItem(PROFESSION_RANKS)}` : option];
+            const option = pickWeightedOption(category.options);
+            return [category.id, category.id === "profession" ? option + " — " + randomItem(PROFESSION_RANKS) : option];
         }))
     ]));
+}
+
+function assignBunkerTraits(traits) {
+    return traits.map((trait) => ({
+        id: trait.id,
+        name: trait.name,
+        value: pickWeightedOption(trait.options)
+    }));
 }
 
 function roomFor(socket) {
@@ -578,6 +608,7 @@ function publicState(room) {
         categoryNames: room.categoryNames || Object.fromEntries(gameConfig.categories.map((category) => [category.id, category.name])),
         revealedThisRound: room.revealedThisRound || {},
         capacity: room.capacity,
+        bunkerTraits: room.bunkerTraits || [],
         actionSeconds: ACTION_DURATION_MS / 1000,
         turnPlayerId: currentTurnPlayerId(room),
         turnDeadline: room.turnDeadline || null,
@@ -811,6 +842,7 @@ io.on("connection", (socket) => {
             capacity: 0,
             round: 0,
             disaster: null,
+            bunkerTraits: [],
             cards: {},
             revealed: {},
             revealedThisRound: {},
@@ -876,6 +908,7 @@ io.on("connection", (socket) => {
             Object.fromEntries(category.options.map((option) => [option.value, option.score]))
         ]));
         room.disaster = randomItem(gameConfig.disasters);
+        room.bunkerTraits = assignBunkerTraits(gameConfig.bunkerTraits || []);
         room.cards = assignCards(activePlayers(room), gameConfig.categories);
         room.revealed = Object.fromEntries(activePlayers(room).map((player) => [player.id, {}]));
         room.revealedThisRound = {};

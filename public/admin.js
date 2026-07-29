@@ -30,6 +30,7 @@ function applyRemoteConfig(nextConfig) {
     config = nextConfig;
     hiddenAvatars = config.hiddenAvatars || hiddenAvatars;
     renderCategories();
+    renderBunkerTraits();
     renderDisasters();
     renderAvatarLibrary();
     showMessage("#saveMessage", "Настройки обновлены другим администратором.", "success");
@@ -95,9 +96,32 @@ function renderCategories() {
     updateDistributionTotals();
 }
 
+function renderBunkerTraits() {
+    const traits = Array.isArray(config.bunkerTraits) ? config.bunkerTraits : [];
+    $("#bunkerTraits").innerHTML = traits.length ? traits.map((trait) => {
+        const options = trait.options.map((option, index) => [
+            '<div class="option-row bunker-option-row">',
+            '<input class="bunker-option-value" value="' + escapeHtml(option.value) + '" aria-label="Вариант характеристики бункера">',
+            '<label class="option-chance"><span>Выпадение, %</span><input type="number" class="bunker-option-chance-input" min="0" max="100" step="0.01" value="' + (Number(option.chance) || 0) + '" aria-label="Вероятность выпадения варианта в процентах"></label>',
+            '<button class="remove-option remove-bunker-option" type="button" data-option-index="' + index + '" aria-label="Удалить вариант">×</button>',
+            '</div>'
+        ].join("")).join("");
+        return [
+            '<article class="category-card bunker-trait-card" data-id="' + escapeHtml(trait.id) + '">',
+            '<div class="category-top"><input class="bunker-trait-name" value="' + escapeHtml(trait.name) + '" aria-label="Название характеристики бункера"><button class="remove remove-bunker-trait" type="button">Удалить</button></div>',
+            '<label>Варианты и вероятность выпадения</label>',
+            '<div class="category-options">' + options + '</div>',
+            '<div class="distribution-actions"><p class="distribution-total">Сумма вероятностей: 100% из 100%</p><button class="equalize-chances equalize-bunker-chances" type="button">Распределить поровну</button></div>',
+            '<button class="add-option add-bunker-option" type="button">+ Добавить вариант</button>',
+            '</article>'
+        ].join("");
+    }).join("") : '<p class="avatar-library-empty">Пока нет характеристик. Добавьте, например, запас воды, еды или состояние генератора.</p>';
+    updateDistributionTotals();
+}
+
 function updateDistributionTotals() {
-    document.querySelectorAll(".category-card").forEach((card) => {
-        const total = [...card.querySelectorAll(".option-chance-input")].reduce((sum, input) => sum + (Number(input.value) || 0), 0);
+    document.querySelectorAll("#categories .category-card, #bunkerTraits .bunker-trait-card").forEach((card) => {
+        const total = [...card.querySelectorAll(".option-chance-input, .bunker-option-chance-input")].reduce((sum, input) => sum + (Number(input.value) || 0), 0);
         const target = card.querySelector(".distribution-total");
         target.textContent = `Сумма вероятностей: ${Math.round(total * 100) / 100}% из 100%`;
         target.classList.toggle("invalid", Math.abs(total - 100) > 0.01);
@@ -146,8 +170,20 @@ function makeCategory() {
     renderCategories();
 }
 
+function makeBunkerTrait() {
+    config = { ...config, ...collectConfig() };
+    config.bunkerTraits = config.bunkerTraits || [];
+    config.bunkerTraits.push({
+        id: `bunker_${Date.now()}`,
+        name: "Новая характеристика",
+        options: [{ value: "Первый вариант", chance: 50 }, { value: "Второй вариант", chance: 50 }]
+    });
+    markDirty();
+    renderBunkerTraits();
+}
+
 function collectConfig() {
-    const categories = [...document.querySelectorAll(".category-card")].map((card) => ({
+    const categories = [...document.querySelectorAll("#categories .category-card")].map((card) => ({
         id: card.dataset.id,
         name: card.querySelector(".category-name").value,
         options: [...card.querySelectorAll(".option-row")].map((option) => ({
@@ -156,8 +192,16 @@ function collectConfig() {
             chance: Number(option.querySelector(".option-chance-input").value)
         }))
     }));
+    const bunkerTraits = [...document.querySelectorAll("#bunkerTraits .bunker-trait-card")].map((card) => ({
+        id: card.dataset.id,
+        name: card.querySelector(".bunker-trait-name").value,
+        options: [...card.querySelectorAll(".bunker-option-row")].map((option) => ({
+            value: option.querySelector(".bunker-option-value").value,
+            chance: Number(option.querySelector(".bunker-option-chance-input").value)
+        }))
+    }));
     const disasters = [...document.querySelectorAll(".disaster-value")].map((input) => input.value);
-    return { categories, disasters, hiddenAvatars, revision: config.revision };
+    return { categories, disasters, bunkerTraits, hiddenAvatars, revision: config.revision };
 }
 
 async function loadEditor() {
@@ -166,6 +210,7 @@ async function loadEditor() {
     avatars = avatarResponse.avatars;
     hiddenAvatars = avatarResponse.hiddenAvatars || [];
     renderCategories();
+    renderBunkerTraits();
     renderDisasters();
     renderAvatarLibrary();
     isDirty = false;
@@ -176,6 +221,21 @@ async function loadEditor() {
     $("#logout").classList.remove("hidden");
     connectAdminSocket();
 }
+
+function setEditorTab(tabName) {
+    document.querySelectorAll(".admin-tab").forEach((tab) => {
+        const active = tab.dataset.editorTab === tabName;
+        tab.classList.toggle("is-active", active);
+        tab.setAttribute("aria-selected", String(active));
+    });
+    document.querySelectorAll("[data-editor-panel]").forEach((panel) => {
+        panel.classList.toggle("hidden", panel.dataset.editorPanel !== tabName);
+    });
+}
+
+document.querySelectorAll(".admin-tab").forEach((tab) => {
+    tab.addEventListener("click", () => setEditorTab(tab.dataset.editorTab));
+});
 
 $("#login").addEventListener("click", async () => {
     const password = $("#password").value;
@@ -195,6 +255,7 @@ $("#login").addEventListener("click", async () => {
 
 $("#password").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#login").click(); });
 $("#addCategory").addEventListener("click", makeCategory);
+$("#addBunkerTrait").addEventListener("click", makeBunkerTrait);
 $("#addDisaster").addEventListener("click", () => {
     config.disasters.push("Новый сценарий катастрофы.");
     markDirty();
@@ -278,6 +339,47 @@ $("#categories").addEventListener("input", (event) => {
     markDirty();
     if (event.target.matches(".option-chance-input")) updateDistributionTotals();
 });
+$("#bunkerTraits").addEventListener("click", (event) => {
+    const card = event.target.closest(".bunker-trait-card");
+    if (!card) return;
+    const draft = collectConfig();
+    config = { ...config, ...draft };
+    const trait = config.bunkerTraits.find((item) => item.id === card.dataset.id);
+    if (!trait) return;
+    if (event.target.closest(".equalize-bunker-chances")) {
+        const count = trait.options.length;
+        if (!count) return;
+        const baseChance = Math.floor((100 / count) * 100) / 100;
+        trait.options.forEach((option, index) => {
+            option.chance = index === count - 1 ? Math.round((100 - baseChance * (count - 1)) * 100) / 100 : baseChance;
+        });
+        markDirty();
+        renderBunkerTraits();
+        return;
+    }
+    if (event.target.closest(".remove-bunker-trait")) {
+        config.bunkerTraits = config.bunkerTraits.filter((item) => item.id !== card.dataset.id);
+        markDirty();
+        renderBunkerTraits();
+        return;
+    }
+    if (event.target.closest(".add-bunker-option")) {
+        trait.options.push({ value: "Новый вариант", chance: 0 });
+        markDirty();
+        renderBunkerTraits();
+        return;
+    }
+    const removeOption = event.target.closest(".remove-bunker-option");
+    if (removeOption) {
+        trait.options.splice(Number(removeOption.dataset.optionIndex), 1);
+        markDirty();
+        renderBunkerTraits();
+    }
+});
+$("#bunkerTraits").addEventListener("input", (event) => {
+    markDirty();
+    if (event.target.matches(".bunker-option-chance-input")) updateDistributionTotals();
+});
 $("#disasterOptions").addEventListener("input", markDirty);
 $("#disasterOptions").addEventListener("click", (event) => {
     const button = event.target.closest(".remove-disaster");
@@ -340,6 +442,7 @@ $("#save").addEventListener("click", async () => {
         pendingRemoteConfig = null;
         $("#reloadLatest").classList.add("hidden");
         renderCategories();
+        renderBunkerTraits();
         renderDisasters();
         showMessage("#saveMessage", "Настройки сохранены.", "success");
     } catch (error) {
@@ -360,6 +463,7 @@ $("#reloadLatest").addEventListener("click", () => {
     isDirty = false;
     $("#reloadLatest").classList.add("hidden");
     renderCategories();
+    renderBunkerTraits();
     renderDisasters();
     renderAvatarLibrary();
     showMessage("#saveMessage", "Загружена последняя сохранённая версия.", "success");

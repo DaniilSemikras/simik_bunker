@@ -225,6 +225,14 @@ function updateGame() {
         : `<details class="disaster-accordion"><summary><span class="eyebrow">КАТАСТРОФА · ОТКРЫТЬ ИСТОРИЮ</span><span class="accordion-icon" aria-hidden="true">⌄</span></summary><p>${disasterText}</p></details><div class="disaster-meta"><span class="capacity">Мест в бункере: ${room.capacity}</span>${bunkerChance}</div>`;
     $("#disasterCard").classList.toggle("story-mode", isStory);
     $("#disasterCard").innerHTML = disasterContent;
+    const bunkerTraits = Array.isArray(room.bunkerTraits) ? room.bunkerTraits : [];
+    $("#bunkerTraitsPanel").classList.toggle("hidden", !bunkerTraits.length);
+    $("#bunkerTraits").innerHTML = bunkerTraits.map((trait) => [
+        '<article class="bunker-trait-card">',
+        '<span>' + escaped(trait.name) + '</span>',
+        '<strong>' + escaped(trait.value) + '</strong>',
+        '</article>'
+    ].join("")).join("");
     $("#survivorCount").textContent = `${active.length} в игре`;
     const categoryCount = room.categoryOrder?.length || Object.keys(myCards).length;
     const revealRoundCount = room.revealRounds || categoryCount;
