@@ -121,6 +121,14 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .my-card.profession-item-card { border-color:rgba(128,174,255,.62); background:linear-gradient(145deg,rgba(48,77,138,.54),rgba(20,29,52,.98)); box-shadow:inset 0 1px rgba(220,231,255,.14),0 10px 22px rgba(26,53,117,.24); }
 .my-card.profession-item-card::after { background:rgba(151,184,255,.78); }
 .my-card.profession-item-card em { color:#dbe7ff; background:rgba(132,165,255,.17); }
+.my-card.weapon-action-card { border-color:rgba(239,116,83,.76); background:linear-gradient(145deg,rgba(117,47,35,.76),rgba(48,22,22,.98)); box-shadow:inset 0 1px rgba(255,222,205,.14),0 10px 22px rgba(99,31,22,.28); }
+.my-card.weapon-action-card::before { border-color:rgba(255,176,144,.24); box-shadow:0 0 0 13px rgba(239,116,83,.06); }
+.my-card.weapon-action-card::after { background:rgba(255,151,113,.88); }
+.my-card.weapon-action-card small { position:relative; z-index:1; display:block; margin-top:3px; color:#ffd6c7; font-size:9px; font-weight:750; line-height:1.2; }
+.my-card.weapon-action-card em { color:#ffe1d5; background:rgba(255,171,138,.16); }
+.my-card.weapon-action-card.is-choice { border-color:rgba(255,150,113,.95); background:linear-gradient(145deg,rgba(146,55,38,.88),rgba(62,25,23,.99)); box-shadow:inset 0 1px rgba(255,234,220,.2),0 12px 26px rgba(116,38,25,.4); }
+.my-card.weapon-action-card.is-choice:hover { border-color:#ffd1bd; background:linear-gradient(145deg,rgba(175,68,44,.92),rgba(76,29,25,.99)); }
+.my-card.weapon-action-card.is-used { border-color:rgba(158,150,143,.44); background:linear-gradient(145deg,rgba(60,54,64,.75),rgba(26,23,29,.98)); filter:saturate(.35); }
 .my-card.special-card-hand { border-color:rgba(192,143,255,.68); background:linear-gradient(145deg,rgba(92,54,137,.68),rgba(30,20,49,.98)); box-shadow:inset 0 1px rgba(240,218,255,.15),0 10px 22px rgba(73,35,113,.27); }
 .my-card.special-card-hand::before { border-color:rgba(219,183,255,.25); box-shadow:0 0 0 13px rgba(195,139,255,.06); }
 .my-card.special-card-hand::after { background:rgba(211,164,255,.85); }

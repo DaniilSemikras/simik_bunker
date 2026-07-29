@@ -63,6 +63,7 @@ let lastTurnSoundKey = "";
 let pendingRevealAnimation = null;
 let renderedRevealAnimation = null;
 let mySpecialCard = null;
+let myWeaponStatus = { hasWeapon: false, used: false, canEvict: false };
 let specialTargetMode = false;
 let playersView = localStorage.getItem("bunker-players-view") === "table" ? "table" : "cards";
 
@@ -273,6 +274,7 @@ function updateGame() {
     const isMyTurn = room.turnPlayerId === ownPlayerId();
     const hasVoted = room.votedPlayerIds?.includes(ownPlayerId());
     const canUseSpecialCard = Boolean(mySpecialCard && !mySpecialCard.used && me && !me.eliminated && room.phase === "reveal" && isMyTurn);
+    const canUseWeapon = Boolean(myWeaponStatus?.hasWeapon && !myWeaponStatus?.used && myWeaponStatus?.canEvict && me && !me.eliminated && room.phase === "reveal" && isMyTurn);
     const specialNeedsTarget = ["swap_random_trait", "take_backpack"].includes(mySpecialCard?.effect);
     const specialTraitLabel = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать предмет из рюкзака"
         : mySpecialCard.effect === "increase_capacity" ? "Добавить 1 место в бункере"
@@ -311,6 +313,7 @@ function updateGame() {
         '<span>' + escaped(trait.name) + '</span>',
         '<strong>' + escaped(trait.value) + '</strong>',
         trait.occupiedSlots ? '<small>занято мест: ' + escaped(trait.occupiedSlots) + '</small>' : '',
+        trait.evictedResidents ? '<small>выгнано жителей: ' + escaped(trait.evictedResidents) + '</small>' : '',
         '</article>'
     ].join("")).join("");
     $("#survivorCount").textContent = `${active.length} в игре`;
@@ -349,10 +352,13 @@ function updateGame() {
     const extraBaggageCards = (Array.isArray(me?.extraBaggage) ? me.extraBaggage : []).map((item) => (
         '<article class="my-card is-revealed profession-item-card"><span>Багаж</span><strong>' + escaped(item) + '</strong><em>добавлен</em></article>'
     )).join("");
+    const weaponActionCard = myWeaponStatus?.hasWeapon
+        ? '<' + (canUseWeapon ? 'button type="button" data-use-bunker-weapon' : 'article') + ' class="my-card weapon-action-card ' + (myWeaponStatus?.used ? 'is-used' : '') + (canUseWeapon ? ' is-choice' : '') + '"><span>Предмет в багаже</span><strong>Оружие</strong><small>Выгнать жителя и освободить 1 место</small><em>' + (myWeaponStatus?.used ? 'житель выгнан' : !myWeaponStatus?.canEvict ? 'жителей нет' : canUseWeapon ? 'нажмите, чтобы применить' : 'доступно в ваш ход') + '</em></' + (canUseWeapon ? 'button' : 'article') + '>'
+        : '';
     const specialCardInHand = mySpecialCard
         ? '<' + (canUseSpecialCard ? 'button type="button" data-use-special' : 'article') + ' class="my-card special-card-hand ' + (mySpecialCard.used ? 'is-used' : '') + (canUseSpecialCard ? ' is-choice' : '') + '"><span>Специальная карта</span><strong>' + escaped(mySpecialCard.name) + '</strong><small>' + escaped(specialTraitLabel) + '</small><em>' + (mySpecialCard.used ? 'использована' : specialTargetMode ? 'выберите игрока' : canUseSpecialCard ? 'нажмите, чтобы применить' : 'доступна в ваш ход') + '</em></' + (canUseSpecialCard ? 'button' : 'article') + '>'
         : "";
-    $("#myCards").innerHTML = personalCards + professionBaggage + extraBaggageCards + specialCardInHand;
+    $("#myCards").innerHTML = personalCards + professionBaggage + extraBaggageCards + weaponActionCard + specialCardInHand;
     const playerCardsMarkup = room.players.map((player) => {
         const playerCards = cardOrder.map((name) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, name);
@@ -488,6 +494,11 @@ $("#gamePlayers").addEventListener("click", (event) => {
     if (button) socket.emit("castVote", button.dataset.vote);
 });
 $("#myCards").addEventListener("click", (event) => {
+    if (event.target.closest("[data-use-bunker-weapon]")) {
+        socket.emit("useBunkerWeapon");
+        playSound("accepted");
+        return;
+    }
     if (event.target.closest("[data-use-special]")) {
         if (["swap_random_trait", "take_backpack"].includes(mySpecialCard?.effect)) {
             specialTargetMode = !specialTargetMode;
@@ -526,6 +537,7 @@ socket.on("leftRoom", () => {
     myCards = {};
     myPlayerId = "";
     mySpecialCard = null;
+    myWeaponStatus = { hasWeapon: false, used: false, canEvict: false };
     specialTargetMode = false;
     currentCode = "";
     clearSavedSession();
@@ -542,6 +554,7 @@ socket.on("roomExpired", () => {
     myCards = {};
     myPlayerId = "";
     mySpecialCard = null;
+    myWeaponStatus = { hasWeapon: false, used: false, canEvict: false };
     specialTargetMode = false;
     currentCode = "";
     clearSavedSession();
@@ -554,6 +567,14 @@ socket.on("yourSpecialCard", (card) => {
     mySpecialCard = card || null;
     if (room?.phase !== "lobby") updateGame();
 });
+socket.on("yourWeaponStatus", (status) => {
+    myWeaponStatus = {
+        hasWeapon: Boolean(status?.hasWeapon),
+        used: Boolean(status?.used),
+        canEvict: Boolean(status?.canEvict)
+    };
+    if (room?.phase !== "lobby") updateGame();
+});
 socket.on("gameStarted", () => { toast("Катастрофа выбрана. Прочитайте историю перед началом."); playSound("story"); });
 socket.on("roundStarted", ({ initial } = {}) => { toast(initial ? "История прочитана. Первый раунд начинается." : "Новый раунд: выберите карту, которую хотите раскрыть."); playSound("round"); });
 socket.on("cardRevealed", ({ playerId, trait }) => {
@@ -563,6 +584,10 @@ socket.on("cardRevealed", ({ playerId, trait }) => {
 });
 socket.on("professionItemReceived", ({ playerId, nickname: name, item }) => {
     toast(playerId === ownPlayerId() ? "В багаж добавлено: " + item + "." : name + " получает в багаж: " + item + ".");
+    playSound("accepted");
+});
+socket.on("residentEvicted", ({ nickname: name, capacity }) => {
+    toast(name + " выгоняет жителя из бункера. Мест для игроков: " + capacity + ".");
     playSound("accepted");
 });
 socket.on("specialCardUsed", ({ nickname: name, targetNickname, cardName, trait, action, item, capacity }) => {

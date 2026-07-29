@@ -25,7 +25,7 @@ const TRAITS = {
     age: ["18 лет", "21 год", "24 года", "29 лет", "34 года", "37 лет", "41 год", "45 лет", "47 лет", "52 года", "58 лет", "63 года"],
     body: ["атлетическое телосложение", "худощавое телосложение", "крепкое телосложение", "среднее телосложение", "рост 195 см", "рост 158 см", "быстро устаю", "выносливый", "после травмы колена", "гибкий", "сильные руки", "плохая координация"],
     parents: ["есть маленький ребёнок", "двое взрослых детей", "родители — фермеры", "родители живут за границей", "сирота", "ухаживаю за пожилой мамой", "есть младшая сестра", "воспитываю племянника", "родители — врачи", "единственный ребёнок в семье", "есть новорождённый сын", "семья в другом городе"],
-    backpack: ["аптечка и набор лекарств", "набор инструментов", "семена овощей", "солнечная батарея", "палатка и спальник", "рация", "фильтр для воды", "запас кофе", "генератор на педалях", "дрон", "ящик консервов", "тёплая одежда"],
+    backpack: ["аптечка и набор лекарств", "набор инструментов", "семена овощей", "солнечная батарея", "палатка и спальник", "рация", "фильтр для воды", "запас кофе", "генератор на педалях", "дрон", "ящик консервов", "тёплая одежда", "оружие"],
     specialAbility: ["умею оказывать первую помощь", "починю почти любую технику", "умею вскрывать замки", "владею жестовым языком", "нахожу воду по местности", "знаю основы химии", "умею выращивать грибы", "помню карты наизусть", "говорю на пяти языках", "вижу в темноте лучше большинства", "умею успокаивать людей", "разбираюсь в радиосвязи"]
 };
 const TRAIT_ORDER = Object.keys(TRAITS);
@@ -90,6 +90,8 @@ const SUPABASE_SECRET_KEY = String(process.env.SUPABASE_SECRET_KEY || "").trim()
 const adminSessions = new Map();
 const ADMIN_ROOM = "admin-editors";
 const BUNKER_TRAITS_SEED_VERSION = 1;
+const BACKPACK_WEAPON_SEED_VERSION = 1;
+const WEAPON_BACKPACK_OPTION = { value: "Оружие", score: 70, chance: 10 };
 const DEFAULT_BUNKER_TRAITS = [
     {
         id: "water",
@@ -139,6 +141,19 @@ const DEFAULT_BUNKER_TRAITS = [
         ]
     }
 ];
+const DEFAULT_BACKPACK_CATEGORY = {
+    id: "backpack",
+    name: "Багаж",
+    options: [
+        WEAPON_BACKPACK_OPTION,
+        { value: "Аптечка и набор лекарств", score: 85, chance: 18 },
+        { value: "Набор инструментов", score: 85, chance: 16 },
+        { value: "Фильтр для воды", score: 85, chance: 14 },
+        { value: "Солнечная батарея", score: 85, chance: 14 },
+        { value: "Рация", score: 85, chance: 10 },
+        { value: "Ящик консервов", score: 85, chance: 18 }
+    ]
+};
 const DEFAULT_GAME_CONFIG = {
     categories: [{
         id: "profession",
@@ -154,6 +169,7 @@ const DEFAULT_GAME_CONFIG = {
     disasters: DISASTERS,
     bunkerTraits: DEFAULT_BUNKER_TRAITS,
     bunkerTraitsSeedVersion: BUNKER_TRAITS_SEED_VERSION,
+    backpackWeaponSeedVersion: BACKPACK_WEAPON_SEED_VERSION,
     specialCards: [
         {
             id: "swap_random_trait",
@@ -274,6 +290,73 @@ function seedDefaultBunkerTraits(rawConfig) {
     };
 }
 
+function isBackpackCategory(category) {
+    const hint = `${category?.id || ""} ${category?.name || ""}`.toLocaleLowerCase("ru");
+    return /backpack|рюкзак|багаж/.test(hint);
+}
+
+function isWeaponItem(value) {
+    return /оруж|пистолет|автомат|винтовк|ружь|дробовик/.test(String(value || "").toLocaleLowerCase("ru"));
+}
+
+function optionsWithWeapon(rawOptions) {
+    const source = Array.isArray(rawOptions) ? rawOptions : [];
+    const total = source.reduce((sum, option, index) => sum + cleanChance(
+        typeof option === "string" ? undefined : option?.chance,
+        defaultChance(index, source.length)
+    ), 0);
+    const remainingChance = 100 - WEAPON_BACKPACK_OPTION.chance;
+    let assignedChance = 0;
+    const scaled = source.map((option, index) => {
+        const rawChance = cleanChance(
+            typeof option === "string" ? undefined : option?.chance,
+            defaultChance(index, source.length)
+        );
+        const chance = index === source.length - 1
+            ? Math.round((remainingChance - assignedChance) * 100) / 100
+            : Math.round(((total > 0 ? rawChance / total : 1 / source.length) * remainingChance) * 100) / 100;
+        assignedChance += chance;
+        return typeof option === "string" ? { value: option, chance } : { ...option, chance };
+    });
+    return [...scaled, clone(WEAPON_BACKPACK_OPTION)];
+}
+
+function seedBackpackWeapon(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.backpackWeaponSeedVersion) >= BACKPACK_WEAPON_SEED_VERSION) {
+        return { config: source, changed: false };
+    }
+    const categories = Array.isArray(source.categories) ? clone(source.categories) : [];
+    const backpackIndex = categories.findIndex(isBackpackCategory);
+    if (backpackIndex < 0) {
+        categories.push(clone(DEFAULT_BACKPACK_CATEGORY));
+    } else {
+        const category = categories[backpackIndex];
+        const options = Array.isArray(category.options) ? category.options : category.values;
+        if (!Array.isArray(options) || !options.some((option) => isWeaponItem(typeof option === "string" ? option : option?.value))) {
+            categories[backpackIndex] = {
+                ...category,
+                options: optionsWithWeapon(options),
+                values: undefined
+            };
+        }
+    }
+    return {
+        config: {
+            ...source,
+            categories,
+            backpackWeaponSeedVersion: BACKPACK_WEAPON_SEED_VERSION
+        },
+        changed: true
+    };
+}
+
+function seedGameConfig(rawConfig) {
+    const bunkerSeed = seedDefaultBunkerTraits(rawConfig);
+    const backpackSeed = seedBackpackWeapon(bunkerSeed.config);
+    return { config: backpackSeed.config, changed: bunkerSeed.changed || backpackSeed.changed };
+}
+
 function normalizeGameConfig(rawConfig) {
     const rawCategories = Array.isArray(rawConfig?.categories) ? rawConfig.categories : DEFAULT_GAME_CONFIG.categories;
     const usedIds = new Set();
@@ -386,13 +469,16 @@ function normalizeGameConfig(rawConfig) {
     const bunkerTraitsSeedVersion = Number(rawConfig?.bunkerTraitsSeedVersion) >= BUNKER_TRAITS_SEED_VERSION
         ? BUNKER_TRAITS_SEED_VERSION
         : 0;
-    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, specialCards, hiddenAvatars, revision };
+    const backpackWeaponSeedVersion = Number(rawConfig?.backpackWeaponSeedVersion) >= BACKPACK_WEAPON_SEED_VERSION
+        ? BACKPACK_WEAPON_SEED_VERSION
+        : 0;
+    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, specialCards, hiddenAvatars, revision };
 }
 
 function loadGameConfig() {
     try {
         if (fs.existsSync(CONFIG_PATH)) {
-            return normalizeGameConfig(seedDefaultBunkerTraits(JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"))).config);
+            return normalizeGameConfig(seedGameConfig(JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"))).config);
         }
     } catch (error) {
         console.warn("Не удалось загрузить настройки игры, используются стандартные.", error.message);
@@ -448,12 +534,12 @@ async function initializeGameConfig() {
     try {
         const storedConfig = await readSupabaseConfig();
         if (storedConfig) {
-            const seeded = seedDefaultBunkerTraits(storedConfig);
+            const seeded = seedGameConfig(storedConfig);
             gameConfig = normalizeGameConfig(seeded.config);
             if (seeded.changed) {
                 gameConfig.revision = Math.max(0, Number(gameConfig.revision) || 0) + 1;
                 await saveGameConfig(gameConfig);
-                console.log("Добавлены базовые характеристики бункера.");
+                console.log("Добавлены базовые характеристики бункера и оружие в багаж.");
             }
             console.log("Настройки игры загружены из Supabase.");
         } else {
@@ -691,9 +777,59 @@ function assignBunkerTraits(traits) {
             id: trait.id,
             name: trait.name,
             value: option.value,
-            occupiedSlots: cleanOccupiedSlots(option.occupiedSlots)
+            occupiedSlots: cleanOccupiedSlots(option.occupiedSlots),
+            evictedResidents: 0
         };
     });
+}
+
+function backpackTraitId(room) {
+    return (room.traitOrder || []).find((traitId) => traitId === "backpack" || isBackpackCategory({
+        id: traitId,
+        name: room.categoryNames?.[traitId]
+    })) || null;
+}
+
+function weaponSourceForPlayer(room, playerId) {
+    const backpackTrait = backpackTraitId(room);
+    const backpackValue = backpackTrait ? room.cards?.[playerId]?.[backpackTrait] : "";
+    if (isWeaponItem(backpackValue)) return { type: "backpack", trait: backpackTrait, item: backpackValue };
+    const professionItem = room.playerProfessionItems?.[playerId];
+    if (isWeaponItem(professionItem)) return { type: "profession", item: professionItem };
+    const extraBaggage = room.playerExtraBaggage?.[playerId] || [];
+    const item = extraBaggage.find(isWeaponItem);
+    return item ? { type: "extra", item } : null;
+}
+
+function useBunkerWeapon(room, playerId) {
+    if (room.playerResidentEvictions?.[playerId]) return { error: "Этим оружием уже выгнали жителя." };
+    const source = weaponSourceForPlayer(room, playerId);
+    if (!source) return { error: "Чтобы выгнать жителя, в вашем багаже должно быть оружие." };
+    const residentsTrait = (room.bunkerTraits || []).find((trait) => cleanOccupiedSlots(trait.occupiedSlots) > 0);
+    if (!residentsTrait) return { error: "В бункере нет жителей, которые занимают места." };
+
+    const wasRevealed = Boolean(room.revealed?.[playerId]?.[source.trait]);
+    if (source.type === "backpack") {
+        room.revealed[playerId] = room.revealed[playerId] || {};
+        room.revealed[playerId][source.trait] = source.item;
+    }
+    residentsTrait.occupiedSlots = Math.max(0, cleanOccupiedSlots(residentsTrait.occupiedSlots) - 1);
+    residentsTrait.evictedResidents = (Number(residentsTrait.evictedResidents) || 0) + 1;
+    room.bunkerOccupiedSlots = Math.max(0, (Number(room.bunkerOccupiedSlots) || 0) - 1);
+    const previousCapacity = room.capacity;
+    room.capacity = Math.min(activePlayers(room).length, room.capacity + 1);
+    room.playerResidentEvictions = room.playerResidentEvictions || {};
+    room.playerResidentEvictions[playerId] = {
+        traitId: residentsTrait.id,
+        at: Date.now()
+    };
+    return {
+        residentsTrait,
+        source,
+        previousCapacity,
+        capacity: room.capacity,
+        revealedTrait: source.type === "backpack" && !wasRevealed ? source.trait : null
+    };
 }
 
 function assignSpecialCards(players, specialCards, traitOrder) {
@@ -776,7 +912,7 @@ function movePlayerToSocket(room, player, socketId) {
     room.turnOrder = (room.turnOrder || []).map((id) => id === previousId ? socketId : id);
     room.eliminated = (room.eliminated || []).map((id) => id === previousId ? socketId : id);
 
-    for (const record of [room.cards, room.revealed, room.revealedThisRound, room.playerSpecialCards, room.playerProfessionItems, room.playerExtraBaggage]) {
+    for (const record of [room.cards, room.revealed, room.revealedThisRound, room.playerSpecialCards, room.playerProfessionItems, room.playerExtraBaggage, room.playerResidentEvictions]) {
         if (!record || !Object.prototype.hasOwnProperty.call(record, previousId)) continue;
         record[socketId] = record[previousId];
         delete record[previousId];
@@ -959,6 +1095,7 @@ function publicState(room) {
             revealed: room.revealed[player.id] || {},
             professionItem: room.playerProfessionItems?.[player.id] || null,
             extraBaggage: room.playerExtraBaggage?.[player.id] || [],
+            residentEviction: room.playerResidentEvictions?.[player.id] || null,
             usedSpecialCard: room.playerSpecialCards?.[player.id]?.used
                 ? { name: room.playerSpecialCards[player.id].name }
                 : null
@@ -972,6 +1109,11 @@ function emitRoom(room) {
         if (player.left) continue;
         io.to(player.id).emit("yourCards", room.cards[player.id] || {});
         io.to(player.id).emit("yourSpecialCard", room.playerSpecialCards?.[player.id] || null);
+        io.to(player.id).emit("yourWeaponStatus", {
+            hasWeapon: Boolean(weaponSourceForPlayer(room, player.id)),
+            used: Boolean(room.playerResidentEvictions?.[player.id]),
+            canEvict: (room.bunkerTraits || []).some((trait) => cleanOccupiedSlots(trait.occupiedSlots) > 0)
+        });
     }
 }
 
@@ -1284,6 +1426,7 @@ io.on("connection", (socket) => {
             playerSpecialCards: {},
             playerProfessionItems: {},
             playerExtraBaggage: {},
+            playerResidentEvictions: {},
             professionItemsByProfession: {},
             cardOptionsByTrait: {},
             cards: {},
@@ -1386,6 +1529,7 @@ io.on("connection", (socket) => {
         room.playerSpecialCards = assignSpecialCards(activePlayers(room), gameConfig.specialCards || [], room.traitOrder);
         room.playerProfessionItems = {};
         room.playerExtraBaggage = {};
+        room.playerResidentEvictions = {};
         room.professionItemsByProfession = Object.fromEntries((gameConfig.categories.find((category) => category.id === "profession")?.options || []).map((option) => [
             String(option.value || "").toLocaleLowerCase("ru"),
             option.passiveItem || ""
@@ -1437,6 +1581,31 @@ io.on("connection", (socket) => {
         if (!revealTraitForPlayer(room, socket.id, requestedTrait)) {
             return emitError(socket, "Эту карту сейчас нельзя раскрыть.");
         }
+    });
+
+    socket.on("useBunkerWeapon", () => {
+        const room = roomFor(socket);
+        if (!room || room.phase !== "reveal" || room.eliminated.includes(socket.id) || currentTurnPlayerId(room) !== socket.id) {
+            return emitError(socket, "Оружие можно применить только в свой ход.");
+        }
+        const result = useBunkerWeapon(room, socket.id);
+        if (result.error) return emitError(socket, result.error);
+        const player = room.players.find((candidate) => candidate.id === socket.id);
+        addActionLog(room, player?.nickname + " использует оружие и выгоняет одного жителя. Мест для игроков: " + result.previousCapacity + " → " + result.capacity + ".", "item");
+        if (result.revealedTrait) {
+            io.to(room.code).emit("cardRevealed", {
+                playerId: socket.id,
+                nickname: player?.nickname,
+                trait: result.revealedTrait
+            });
+        }
+        if (activePlayers(room).length <= room.capacity) endGame(room);
+        else emitRoom(room);
+        io.to(room.code).emit("residentEvicted", {
+            nickname: player?.nickname,
+            capacity: result.capacity,
+            occupiedSlots: room.bunkerOccupiedSlots
+        });
     });
 
     socket.on("useSpecialCard", (targetId) => {
