@@ -185,7 +185,7 @@ function makeCategory() {
     config.categories.push({
         id: `custom_${Date.now()}`,
         name: "Новая категория",
-        options: [{ value: "Первый вариант", score: 50, chance: 50 }, { value: "Второй вариант", score: 50, chance: 50 }]
+        options: [{ value: "Полезный опыт", score: 75, chance: 50 }, { value: "Сложное состояние", score: 25, chance: 50 }]
     });
     markDirty();
     renderCategories();
@@ -197,7 +197,7 @@ function makeBunkerTrait() {
     config.bunkerTraits.push({
         id: `bunker_${Date.now()}`,
         name: "Новая характеристика",
-        options: [{ value: "Первый вариант", chance: 50, occupiedSlots: 0 }, { value: "Второй вариант", chance: 50, occupiedSlots: 0 }]
+        options: [{ value: "Полностью исправно", chance: 50, occupiedSlots: 0 }, { value: "Работает с перебоями", chance: 50, occupiedSlots: 0 }]
     });
     markDirty();
     renderBunkerTraits();
@@ -246,7 +246,7 @@ function collectConfig() {
         text: row.querySelector(".disaster-value").value,
         shelterDuration: row.querySelector(".disaster-duration-value").value
     }));
-    return { categories, disasters, bunkerTraits, bunkerTraitsSeedVersion: config.bunkerTraitsSeedVersion, backpackWeaponSeedVersion: config.backpackWeaponSeedVersion, waterTraitLabelSeedVersion: config.waterTraitLabelSeedVersion, disasterDurationSeedVersion: config.disasterDurationSeedVersion, specialCards, hiddenAvatars, revision: config.revision };
+    return { categories, disasters, bunkerTraits, bunkerTraitsSeedVersion: config.bunkerTraitsSeedVersion, backpackWeaponSeedVersion: config.backpackWeaponSeedVersion, waterTraitLabelSeedVersion: config.waterTraitLabelSeedVersion, disasterDurationSeedVersion: config.disasterDurationSeedVersion, contentFillSeedVersion: config.contentFillSeedVersion, specialCards, hiddenAvatars, revision: config.revision };
 }
 
 async function loadEditor() {

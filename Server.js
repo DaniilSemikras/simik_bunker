@@ -93,6 +93,7 @@ const BUNKER_TRAITS_SEED_VERSION = 1;
 const BACKPACK_WEAPON_SEED_VERSION = 1;
 const WATER_TRAIT_LABEL_SEED_VERSION = 1;
 const DISASTER_DURATION_SEED_VERSION = 1;
+const CONTENT_FILL_SEED_VERSION = 1;
 const WEAPON_BACKPACK_OPTION = { value: "Оружие", score: 70, chance: 10 };
 const DEFAULT_BUNKER_TRAITS = [
     {
@@ -174,6 +175,7 @@ const DEFAULT_GAME_CONFIG = {
     backpackWeaponSeedVersion: BACKPACK_WEAPON_SEED_VERSION,
     waterTraitLabelSeedVersion: WATER_TRAIT_LABEL_SEED_VERSION,
     disasterDurationSeedVersion: DISASTER_DURATION_SEED_VERSION,
+    contentFillSeedVersion: CONTENT_FILL_SEED_VERSION,
     specialCards: [
         {
             id: "swap_random_trait",
@@ -357,6 +359,114 @@ function seedDisasterDurations(rawConfig) {
     };
 }
 
+function isPlaceholderValue(value) {
+    return /^(?:перв(?:ый|ая)|втор(?:ой|ая)|трет(?:ий|ья)|четв[её]рт(?:ый|ая))\s+вариант$/i.test(String(value || "").trim());
+}
+
+function categoryContentKind(category) {
+    const hint = `${category?.id || ""} ${category?.name || ""}`.toLocaleLowerCase("ru");
+    if (/profession|професс/.test(hint)) return "profession";
+    if (/health|здоров/.test(hint)) return "health";
+    if (/gender|\bsex\b|пол\b/.test(hint)) return "gender";
+    if (/age|возраст/.test(hint)) return "age";
+    if (/body|телослож/.test(hint)) return "body";
+    if (/parents|family|семь|родител/.test(hint)) return "family";
+    if (/backpack|рюкзак|багаж/.test(hint)) return "backpack";
+    if (/hobby|хобби/.test(hint)) return "hobby";
+    if (/orientation|ориентац/.test(hint)) return "orientation";
+    if (/special|спец/.test(hint)) return "special";
+    return "generic";
+}
+
+function categoryContentTemplate(category) {
+    const templates = {
+        profession: [["Врач скорой помощи", 95], ["Инженер-электрик", 92], ["Фермер", 90], ["Механик", 88], ["Строитель", 84], ["Повар", 76], ["Биолог", 78], ["Психолог", 62]],
+        health: [["Полностью здоров", 95], ["Сильный иммунитет", 90], ["Астма под контролем", 55], ["Диабет под контролем", 50], ["Перелом руки срастается", 35], ["Хроническая мигрень", 40]],
+        gender: [["Мужчина", 50], ["Женщина", 50]],
+        age: [["18 лет", 60], ["25 лет", 82], ["34 года", 86], ["42 года", 78], ["55 лет", 62], ["68 лет", 35]],
+        body: [["Атлетическое телосложение", 88], ["Крепкое телосложение", 82], ["Среднее телосложение", 58], ["Худощавое телосложение", 54], ["После травмы колена", 30], ["Выносливый", 85]],
+        family: [["Один, без иждивенцев", 75], ["Есть младшая сестра", 56], ["Ухаживает за пожилой мамой", 42], ["Семья в другом городе", 62], ["Есть маленький ребёнок", 45], ["Сирота", 65]],
+        backpack: [["Оружие", 70], ["Аптечка и набор лекарств", 92], ["Набор инструментов", 88], ["Фильтр для воды", 86], ["Солнечная батарея", 83], ["Рация", 74], ["Ящик консервов", 82]],
+        hobby: [["Выживание в дикой природе", 84], ["Садоводство", 78], ["Радиолюбительство", 72], ["Столярное дело", 74], ["Рыбалка", 62], ["Настольные игры", 44]],
+        orientation: [["Гетеросексуал", 50], ["Бисексуал", 50], ["Гомосексуал", 50]],
+        special: [["Оказывает первую помощь", 80], ["Чинит электрику", 90], ["Умеет выращивать грибы", 76], ["Разбирается в радиосвязи", 72], ["Вскрывает замки", 60], ["Успокаивает людей", 64]],
+        generic: [["Полезный опыт", 75], ["Обычный вариант", 50], ["Сложное состояние", 25], ["Практический навык", 70], ["Редкий ресурс", 80]]
+    };
+    return templates[categoryContentKind(category)];
+}
+
+function optionsFromCategoryTemplate(category) {
+    const template = categoryContentTemplate(category);
+    return template.map(([value, score], index) => ({
+        value,
+        score,
+        chance: defaultChance(index, template.length)
+    }));
+}
+
+function bunkerContentTemplate(trait) {
+    const hint = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
+    if (/water|вод|вокд/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "water").options);
+    if (/food|ед|пищ/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "food").options);
+    if (/electric|электр|свет/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "electricity").options);
+    if (/ventilat|вентил/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "ventilation").options);
+    if (/previous|предыдущ|жител|бомж/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "previous_residents").options);
+    return [
+        { value: "Полностью исправно", chance: 40, occupiedSlots: 0 },
+        { value: "Работает с перебоями", chance: 35, occupiedSlots: 0 },
+        { value: "Серьёзно повреждено", chance: 25, occupiedSlots: 0 }
+    ];
+}
+
+function seedPlaceholderContent(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.contentFillSeedVersion) >= CONTENT_FILL_SEED_VERSION) {
+        return { config: source, changed: false };
+    }
+    const categories = (Array.isArray(source.categories) ? source.categories : []).map((category) => {
+        const options = Array.isArray(category?.options) ? category.options : category?.values;
+        if (!Array.isArray(options) || !options.some((option) => isPlaceholderValue(typeof option === "string" ? option : option?.value))) return category;
+        if (options.every((option) => isPlaceholderValue(typeof option === "string" ? option : option?.value))) {
+            return { ...category, options: optionsFromCategoryTemplate(category), values: undefined };
+        }
+        const replacements = categoryContentTemplate(category);
+        let replacementIndex = 0;
+        return {
+            ...category,
+            options: options.map((option) => {
+                const value = typeof option === "string" ? option : option?.value;
+                if (!isPlaceholderValue(value)) return option;
+                const [nextValue, score] = replacements[replacementIndex++ % replacements.length];
+                return typeof option === "string" ? { value: nextValue, score } : { ...option, value: nextValue, score };
+            }),
+            values: undefined
+        };
+    });
+    const bunkerTraits = (Array.isArray(source.bunkerTraits) ? source.bunkerTraits : []).map((trait) => {
+        const options = Array.isArray(trait?.options) ? trait.options : trait?.values;
+        if (!Array.isArray(options) || !options.some((option) => isPlaceholderValue(typeof option === "string" ? option : option?.value))) return trait;
+        if (options.every((option) => isPlaceholderValue(typeof option === "string" ? option : option?.value))) {
+            return { ...trait, options: bunkerContentTemplate(trait), values: undefined };
+        }
+        const replacements = bunkerContentTemplate(trait);
+        let replacementIndex = 0;
+        return {
+            ...trait,
+            options: options.map((option) => {
+                const value = typeof option === "string" ? option : option?.value;
+                if (!isPlaceholderValue(value)) return option;
+                const replacement = replacements[replacementIndex++ % replacements.length];
+                return typeof option === "string" ? clone(replacement) : { ...option, value: replacement.value, occupiedSlots: replacement.occupiedSlots || 0 };
+            }),
+            values: undefined
+        };
+    });
+    return {
+        config: { ...source, categories, bunkerTraits, contentFillSeedVersion: CONTENT_FILL_SEED_VERSION },
+        changed: true
+    };
+}
+
 function isBackpackCategory(category) {
     const hint = `${category?.id || ""} ${category?.name || ""}`.toLocaleLowerCase("ru");
     return /backpack|рюкзак|багаж/.test(hint);
@@ -421,11 +531,12 @@ function seedBackpackWeapon(rawConfig) {
 function seedGameConfig(rawConfig) {
     const bunkerSeed = seedDefaultBunkerTraits(rawConfig);
     const waterLabelSeed = seedWaterTraitLabel(bunkerSeed.config);
-    const backpackSeed = seedBackpackWeapon(waterLabelSeed.config);
+    const contentSeed = seedPlaceholderContent(waterLabelSeed.config);
+    const backpackSeed = seedBackpackWeapon(contentSeed.config);
     const disasterSeed = seedDisasterDurations(backpackSeed.config);
     return {
         config: disasterSeed.config,
-        changed: bunkerSeed.changed || waterLabelSeed.changed || backpackSeed.changed || disasterSeed.changed
+        changed: bunkerSeed.changed || waterLabelSeed.changed || backpackSeed.changed || disasterSeed.changed || contentSeed.changed
     };
 }
 
@@ -554,7 +665,10 @@ function normalizeGameConfig(rawConfig) {
     const disasterDurationSeedVersion = Number(rawConfig?.disasterDurationSeedVersion) >= DISASTER_DURATION_SEED_VERSION
         ? DISASTER_DURATION_SEED_VERSION
         : 0;
-    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, disasterDurationSeedVersion, specialCards, hiddenAvatars, revision };
+    const contentFillSeedVersion = Number(rawConfig?.contentFillSeedVersion) >= CONTENT_FILL_SEED_VERSION
+        ? CONTENT_FILL_SEED_VERSION
+        : 0;
+    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, hiddenAvatars, revision };
 }
 
 function loadGameConfig() {
@@ -1023,8 +1137,7 @@ function addActionLog(room, text, type = "system") {
 
 function scoreRevealedCard(room, trait, value) {
     const configuredScore = room.cardScores?.[trait]?.[trait === "profession" ? professionBase(value) : value];
-    const score = cleanScore(configuredScore, defaultOptionScore(trait, value));
-    return (score - 50) / 50;
+    return cleanScore(configuredScore, defaultOptionScore(trait, value));
 }
 
 function giveProfessionItem(room, playerId) {
@@ -1127,11 +1240,7 @@ function calculateBunkerSurvivalChance(room) {
             revealedCards += 1;
         }
     }
-    const maxCards = players.length * Math.max(1, room.traitOrder.length);
-    const averageScore = revealedCards ? totalScore / revealedCards : 0;
-    const informationBonus = (revealedCards / maxCards) * 7;
-    const professionBonus = new Set(players.map((player) => professionRating(room.revealed[player.id]?.profession).role).filter(Boolean)).size * 2;
-    return Math.max(20, Math.min(95, Math.round(55 + averageScore * 31 + informationBonus + Math.min(8, professionBonus))));
+    return revealedCards ? Math.round(totalScore / revealedCards) : null;
 }
 
 function publicState(room) {

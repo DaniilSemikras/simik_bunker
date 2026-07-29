@@ -307,7 +307,7 @@ function updateGame() {
         <div class="winner-list">${winners.map((player) => `<span class="winner-chip">${avatarMarkup(player)}<strong>${escaped(player.nickname)}</strong></span>`).join("")}</div>
     ` : "";
     const bunkerChance = isFinished && typeof room.bunkerSurvivalChance === "number"
-        ? `<span class="bunker-chance">Прогноз выживания бункера: <strong>${room.bunkerSurvivalChance}%</strong></span>`
+        ? `<span class="bunker-chance">Выживаемость по полезности: <strong>${room.bunkerSurvivalChance}%</strong></span>`
         : "";
     const occupiedSlots = Number(room.bunkerOccupiedSlots) || 0;
     const occupiedSlotsLabel = occupiedSlots
