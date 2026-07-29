@@ -103,7 +103,20 @@ const DEFAULT_GAME_CONFIG = {
     }],
     disasters: DISASTERS,
     bunkerTraits: [],
-    specialCards: [],
+    specialCards: [
+        {
+            id: "swap_random_trait",
+            name: "Обмен случайной характеристикой",
+            description: "В начале игры карта выбирает характеристику. Один раз обменяйтесь ею с выбранным игроком.",
+            effect: "swap_random_trait"
+        },
+        {
+            id: "take_backpack",
+            name: "Забрать карточку рюкзака",
+            description: "Один раз заберите карточку рюкзака у выбранного игрока.",
+            effect: "take_backpack"
+        }
+    ],
     hiddenAvatars: [],
     revision: 0
 };
@@ -219,7 +232,10 @@ function normalizeGameConfig(rawConfig) {
     }).filter(Boolean).slice(0, 16);
 
     const usedSpecialCardIds = new Set();
-    const specialCards = (Array.isArray(rawConfig?.specialCards) ? rawConfig.specialCards : []).map((card) => {
+    const rawSpecialCards = Array.isArray(rawConfig?.specialCards) && rawConfig.specialCards.length
+        ? rawConfig.specialCards
+        : DEFAULT_GAME_CONFIG.specialCards;
+    const normalizedSpecialCards = rawSpecialCards.map((card) => {
         const id = cleanCategoryId(card?.id);
         const name = cleanText(card?.name, 60);
         const description = cleanText(card?.description, 1200);
@@ -232,6 +248,7 @@ function normalizeGameConfig(rawConfig) {
         usedSpecialCardIds.add(id);
         return { id, name, description, effect };
     }).filter(Boolean).slice(0, 20);
+    const specialCards = normalizedSpecialCards.length ? normalizedSpecialCards : clone(DEFAULT_GAME_CONFIG.specialCards);
 
     const hiddenAvatars = [...new Set(
         (Array.isArray(rawConfig?.hiddenAvatars) ? rawConfig.hiddenAvatars : [])

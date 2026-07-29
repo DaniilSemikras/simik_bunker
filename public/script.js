@@ -243,19 +243,6 @@ function updateGame() {
         '<strong>' + escaped(trait.value) + '</strong>',
         '</article>'
     ].join("")).join("");
-    $("#specialCardPanel").classList.toggle("hidden", !mySpecialCard);
-    $("#specialCard").innerHTML = mySpecialCard ? [
-        '<article class="special-card-game-inner ' + (mySpecialCard.used ? 'is-used' : '') + '">',
-        '<div class="special-card-copy"><span class="eyebrow">ЛИЧНАЯ СПОСОБНОСТЬ</span><h3>' + escaped(mySpecialCard.name) + '</h3><p>' + escaped(mySpecialCard.description) + '</p></div>',
-        '<div class="special-card-status"><span class="special-needed">' + escaped(specialTraitLabel) + '</span>' + (
-            mySpecialCard.used
-                ? '<span class="special-used">использована</span>'
-                : canUseSpecialCard
-                    ? '<button class="button special-card-use" type="button" data-use-special>' + (specialTargetMode ? 'Отмена' : 'Выбрать игрока') + '</button>'
-                    : '<span class="special-wait">Доступна во время раунда или голосования</span>'
-        ) + '</div>',
-        '</article>'
-    ].join("") : "";
     $("#survivorCount").textContent = `${active.length} в игре`;
     const categoryCount = room.categoryOrder?.length || Object.keys(myCards).length;
     const revealRoundCount = room.revealRounds || categoryCount;
@@ -287,7 +274,10 @@ function updateGame() {
     const professionBaggage = me?.professionItem
         ? '<article class="my-card is-revealed profession-item-card"><span>Багаж от профессии</span><strong>' + escaped(me.professionItem) + '</strong><em>получен</em></article>'
         : "";
-    $("#myCards").innerHTML = personalCards + professionBaggage;
+    const specialCardInHand = mySpecialCard
+        ? '<' + (canUseSpecialCard ? 'button type="button" data-use-special' : 'article') + ' class="my-card special-card-hand ' + (mySpecialCard.used ? 'is-used' : '') + (canUseSpecialCard ? ' is-choice' : '') + '"><span>Специальная карта</span><strong>' + escaped(mySpecialCard.name) + '</strong><small>' + escaped(specialTraitLabel) + '</small><em>' + (mySpecialCard.used ? 'использована' : specialTargetMode ? 'выберите игрока' : canUseSpecialCard ? 'нажмите, чтобы применить' : 'доступна во время игры') + '</em></' + (canUseSpecialCard ? 'button' : 'article') + '>'
+        : "";
+    $("#myCards").innerHTML = personalCards + professionBaggage + specialCardInHand;
     $("#gamePlayers").innerHTML = room.players.map((player) => {
         const playerCards = Object.entries(player.revealed || {}).map(([name, value]) => `<span class="public-card ${isNewReveal(player.id, name) ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> ${escaped(value)}</span>`).join("")
             + (player.professionItem ? `<span class="public-card profession-item"><b>Багаж:</b> ${escaped(player.professionItem)}</span>` : "")
@@ -390,12 +380,12 @@ $("#gamePlayers").addEventListener("click", (event) => {
     const button = event.target.closest("[data-vote]");
     if (button) socket.emit("castVote", button.dataset.vote);
 });
-$("#specialCard").addEventListener("click", (event) => {
-    if (!event.target.closest("[data-use-special]")) return;
-    specialTargetMode = !specialTargetMode;
-    updateGame();
-});
 $("#myCards").addEventListener("click", (event) => {
+    if (event.target.closest("[data-use-special]")) {
+        specialTargetMode = !specialTargetMode;
+        updateGame();
+        return;
+    }
     const card = event.target.closest("[data-reveal-trait]");
     if (card) {
         socket.emit("revealTrait", card.dataset.revealTrait);
