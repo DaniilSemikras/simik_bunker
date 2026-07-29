@@ -223,13 +223,22 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
             canSelectSpecialTarget ? `<button class="special-target-button" data-special-target="${player.id}">${escaped(specialTargetAction)}</button>` : "",
             canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : ""
         ].filter(Boolean).join("");
+        const voters = (room.voteMarkers?.[player.id] || [])
+            .map((voterId) => room.players.find((candidate) => candidate.id === voterId))
+            .filter(Boolean);
+        const visibleVoters = voters.slice(0, 4);
+        const voteMarkerMarkup = visibleVoters.length
+            ? '<div class="vote-markers table-vote-markers" aria-label="Голоса против игрока">' + visibleVoters.map((voter) => (
+                '<span class="vote-avatar" title="' + escaped(voter.nickname) + '">' + avatarMarkup(voter) + '</span>'
+            )).join("") + (voters.length > visibleVoters.length ? '<span class="vote-more">+' + (voters.length - visibleVoters.length) + '</span>' : '') + '</div>'
+            : "";
         const values = cardOrder.map((trait) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, trait);
             const value = isRevealed ? player.revealed[trait] : "скрыто";
             return `<td class="${isRevealed ? "" : "is-hidden-value"}"><span class="table-cell-value" title="${escaped(value)}">${escaped(value)}</span></td>`;
         }).join("");
         return `<tr class="${playerState}">
-            <th scope="row"><span class="table-player">${avatarMarkup(player)}<span><strong title="${escaped(player.nickname)}">${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></span></span></th>
+            <th scope="row"><span class="table-player">${avatarMarkup(player)}<span><strong title="${escaped(player.nickname)}">${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small>${voteMarkerMarkup}</span></span></th>
             ${values}
             ${hasProfessionItems ? `<td class="table-extra"><span class="table-cell-value" title="${escaped(player.professionItem || "—")}">${player.professionItem ? escaped(player.professionItem) : "—"}</span></td>` : ""}
             ${hasUsedSpecialCards ? `<td class="table-extra"><span class="table-cell-value" title="${escaped(player.usedSpecialCard?.name || "—")}">${player.usedSpecialCard ? escaped(player.usedSpecialCard.name) : "—"}</span></td>` : ""}
