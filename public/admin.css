@@ -51,6 +51,9 @@ input:focus,textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px rg
 .option-passive-item span { display:block; margin:0 0 4px; color:#d6b98f; font-size:10px; font-weight:750; letter-spacing:.04em; text-transform:uppercase; }
 .option-passive-item input { padding:9px 10px; }
 .bunker-option-row { grid-template-columns:minmax(0,1fr) 105px 100px 34px; }
+.random-percentage-toggle { display:flex; align-items:center; gap:8px; margin:12px 0!important; color:#bdeaff; font-size:12px; font-weight:750; }
+.random-percentage-toggle input { flex:0 0 auto; width:16px; height:16px; margin:0; accent-color:#69cfff; }
+.bunker-trait-card.is-random-percentage .bunker-variant-editor { display:none; }
 .special-card-description { min-height:96px; margin-top:0; }
 .special-card-fields { display:grid; grid-template-columns:minmax(0,1fr) 155px; gap:10px; }
 .special-card-fields label { margin:14px 0 0; }

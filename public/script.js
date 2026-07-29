@@ -150,8 +150,12 @@ function traitName(trait) {
 function waterFillPercentage(trait) {
     const traitHint = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
     if (!/water|вод/.test(traitHint)) return null;
+    const directFill = Number(trait?.fillPercent);
+    if (Number.isFinite(directFill)) return Math.max(0, Math.min(100, Math.round(directFill)));
     const value = String(trait?.value || "").toLocaleLowerCase("ru");
     if (/нет|отсутств|пуст/.test(value)) return 0;
+    const percentValue = Number((value.match(/(\d{1,3})\s*%/) || [])[1]);
+    if (Number.isFinite(percentValue)) return Math.max(0, Math.min(100, percentValue));
     const hasTwoYears = /(?:2|два|две)\s*(?:год|лет)/.test(value);
     const hasYear = /год|лет/.test(value);
     const hasMonths = /месяц/.test(value);

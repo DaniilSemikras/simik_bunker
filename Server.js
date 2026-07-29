@@ -92,6 +92,8 @@ const ADMIN_ROOM = "admin-editors";
 const BUNKER_TRAITS_SEED_VERSION = 1;
 const BACKPACK_WEAPON_SEED_VERSION = 1;
 const WATER_TRAIT_LABEL_SEED_VERSION = 1;
+const WATER_OPTIONS_SEED_VERSION = 1;
+const WATER_RANDOM_PERCENT_SEED_VERSION = 1;
 const DISASTER_DURATION_SEED_VERSION = 1;
 const CONTENT_FILL_SEED_VERSION = 1;
 const WEAPON_BACKPACK_OPTION = { value: "Оружие", score: 70, chance: 10 };
@@ -174,6 +176,8 @@ const DEFAULT_GAME_CONFIG = {
     bunkerTraitsSeedVersion: BUNKER_TRAITS_SEED_VERSION,
     backpackWeaponSeedVersion: BACKPACK_WEAPON_SEED_VERSION,
     waterTraitLabelSeedVersion: WATER_TRAIT_LABEL_SEED_VERSION,
+    waterOptionsSeedVersion: WATER_OPTIONS_SEED_VERSION,
+    waterRandomPercentSeedVersion: WATER_RANDOM_PERCENT_SEED_VERSION,
     disasterDurationSeedVersion: DISASTER_DURATION_SEED_VERSION,
     contentFillSeedVersion: CONTENT_FILL_SEED_VERSION,
     specialCards: [
@@ -313,6 +317,44 @@ function seedWaterTraitLabel(rawConfig) {
             bunkerTraits,
             waterTraitLabelSeedVersion: WATER_TRAIT_LABEL_SEED_VERSION
         },
+        changed: true
+    };
+}
+
+function seedRandomWaterOptions(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.waterOptionsSeedVersion) >= WATER_OPTIONS_SEED_VERSION) {
+        return { config: source, changed: false };
+    }
+    const bunkerTraits = (Array.isArray(source.bunkerTraits) ? source.bunkerTraits : []).map((trait) => {
+        const hint = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
+        if (!/water|вод|вокд/.test(hint)) return trait;
+        const options = Array.isArray(trait?.options) ? trait.options : trait?.values;
+        const hasOnlyStub = !Array.isArray(options) || options.length < 2 || options.every((option) => {
+            const value = typeof option === "string" ? option : option?.value;
+            return /^\d+$/.test(String(value || "").trim()) || isPlaceholderValue(value);
+        });
+        return hasOnlyStub
+            ? { ...trait, name: "Наличие воды", options: clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "water").options), values: undefined }
+            : trait;
+    });
+    return {
+        config: { ...source, bunkerTraits, waterOptionsSeedVersion: WATER_OPTIONS_SEED_VERSION },
+        changed: true
+    };
+}
+
+function seedRandomWaterPercentage(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.waterRandomPercentSeedVersion) >= WATER_RANDOM_PERCENT_SEED_VERSION) {
+        return { config: source, changed: false };
+    }
+    const bunkerTraits = (Array.isArray(source.bunkerTraits) ? source.bunkerTraits : []).map((trait) => {
+        const hint = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
+        return /water|вод|вокд/.test(hint) ? { ...trait, randomPercentage: true } : trait;
+    });
+    return {
+        config: { ...source, bunkerTraits, waterRandomPercentSeedVersion: WATER_RANDOM_PERCENT_SEED_VERSION },
         changed: true
     };
 }
@@ -531,12 +573,14 @@ function seedBackpackWeapon(rawConfig) {
 function seedGameConfig(rawConfig) {
     const bunkerSeed = seedDefaultBunkerTraits(rawConfig);
     const waterLabelSeed = seedWaterTraitLabel(bunkerSeed.config);
-    const contentSeed = seedPlaceholderContent(waterLabelSeed.config);
+    const waterOptionsSeed = seedRandomWaterOptions(waterLabelSeed.config);
+    const waterPercentageSeed = seedRandomWaterPercentage(waterOptionsSeed.config);
+    const contentSeed = seedPlaceholderContent(waterPercentageSeed.config);
     const backpackSeed = seedBackpackWeapon(contentSeed.config);
     const disasterSeed = seedDisasterDurations(backpackSeed.config);
     return {
         config: disasterSeed.config,
-        changed: bunkerSeed.changed || waterLabelSeed.changed || backpackSeed.changed || disasterSeed.changed || contentSeed.changed
+        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || backpackSeed.changed || disasterSeed.changed || contentSeed.changed
     };
 }
 
@@ -612,7 +656,7 @@ function normalizeGameConfig(rawConfig) {
             throw new Error("Сумма вероятностей в характеристике бункера «" + name + "» должна быть 100%. Сейчас: " + chanceTotal + "%.");
         }
         usedBunkerTraitIds.add(id);
-        return { id, name, options };
+        return { id, name, options, randomPercentage: Boolean(trait?.randomPercentage) };
     }).filter(Boolean).slice(0, 16);
 
     const usedSpecialCardIds = new Set();
@@ -662,13 +706,19 @@ function normalizeGameConfig(rawConfig) {
     const waterTraitLabelSeedVersion = Number(rawConfig?.waterTraitLabelSeedVersion) >= WATER_TRAIT_LABEL_SEED_VERSION
         ? WATER_TRAIT_LABEL_SEED_VERSION
         : 0;
+    const waterOptionsSeedVersion = Number(rawConfig?.waterOptionsSeedVersion) >= WATER_OPTIONS_SEED_VERSION
+        ? WATER_OPTIONS_SEED_VERSION
+        : 0;
+    const waterRandomPercentSeedVersion = Number(rawConfig?.waterRandomPercentSeedVersion) >= WATER_RANDOM_PERCENT_SEED_VERSION
+        ? WATER_RANDOM_PERCENT_SEED_VERSION
+        : 0;
     const disasterDurationSeedVersion = Number(rawConfig?.disasterDurationSeedVersion) >= DISASTER_DURATION_SEED_VERSION
         ? DISASTER_DURATION_SEED_VERSION
         : 0;
     const contentFillSeedVersion = Number(rawConfig?.contentFillSeedVersion) >= CONTENT_FILL_SEED_VERSION
         ? CONTENT_FILL_SEED_VERSION
         : 0;
-    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, hiddenAvatars, revision };
+    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, hiddenAvatars, revision };
 }
 
 function loadGameConfig() {
@@ -968,6 +1018,17 @@ function assignCards(players, categories) {
 
 function assignBunkerTraits(traits) {
     return traits.map((trait) => {
+        if (trait.randomPercentage) {
+            const fillPercent = Math.floor(Math.random() * 101);
+            return {
+                id: trait.id,
+                name: trait.name,
+                value: fillPercent + "%",
+                fillPercent,
+                occupiedSlots: 0,
+                evictedResidents: 0
+            };
+        }
         const option = pickWeightedEntry(trait.options);
         return {
             id: trait.id,

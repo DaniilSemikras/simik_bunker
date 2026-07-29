@@ -101,6 +101,7 @@ function renderCategories() {
 function renderBunkerTraits() {
     const traits = Array.isArray(config.bunkerTraits) ? config.bunkerTraits : [];
     $("#bunkerTraits").innerHTML = traits.length ? traits.map((trait) => {
+        const isRandomPercentage = Boolean(trait.randomPercentage);
         const options = trait.options.map((option, index) => [
             '<div class="option-row bunker-option-row">',
             '<input class="bunker-option-value" value="' + escapeHtml(option.value) + '" aria-label="Вариант характеристики бункера">',
@@ -110,12 +111,10 @@ function renderBunkerTraits() {
             '</div>'
         ].join("")).join("");
         return [
-            '<article class="category-card bunker-trait-card" data-id="' + escapeHtml(trait.id) + '">',
+            '<article class="category-card bunker-trait-card' + (isRandomPercentage ? ' is-random-percentage' : '') + '" data-id="' + escapeHtml(trait.id) + '">',
             '<div class="category-top"><input class="bunker-trait-name" value="' + escapeHtml(trait.name) + '" aria-label="Название характеристики бункера"><button class="remove remove-bunker-trait" type="button">Удалить</button></div>',
-            '<label>Варианты и вероятность выпадения</label>',
-            '<div class="category-options">' + options + '</div>',
-            '<div class="distribution-actions"><p class="distribution-total">Сумма вероятностей: 100% из 100%</p><button class="equalize-chances equalize-bunker-chances" type="button">Распределить поровну</button></div>',
-            '<button class="add-option add-bunker-option" type="button">+ Добавить вариант</button>',
+            '<label class="random-percentage-toggle"><input class="bunker-random-percentage-input" type="checkbox"' + (isRandomPercentage ? ' checked' : '') + '><span>Случайный процент от 0 до 100%</span></label>',
+            '<div class="bunker-variant-editor"><label>Варианты и вероятность выпадения</label><div class="category-options">' + options + '</div><div class="distribution-actions"><p class="distribution-total">Сумма вероятностей: 100% из 100%</p><button class="equalize-chances equalize-bunker-chances" type="button">Распределить поровну</button></div><button class="add-option add-bunker-option" type="button">+ Добавить вариант</button></div>',
             '</article>'
         ].join("");
     }).join("") : '<p class="avatar-library-empty">Пока нет характеристик. Добавьте, например, запас воды, еды или состояние генератора.</p>';
@@ -230,6 +229,7 @@ function collectConfig() {
     const bunkerTraits = [...document.querySelectorAll("#bunkerTraits .bunker-trait-card")].map((card) => ({
         id: card.dataset.id,
         name: card.querySelector(".bunker-trait-name").value,
+        randomPercentage: Boolean(card.querySelector(".bunker-random-percentage-input")?.checked),
         options: [...card.querySelectorAll(".bunker-option-row")].map((option) => ({
             value: option.querySelector(".bunker-option-value").value,
             chance: Number(option.querySelector(".bunker-option-chance-input").value),
@@ -246,7 +246,7 @@ function collectConfig() {
         text: row.querySelector(".disaster-value").value,
         shelterDuration: row.querySelector(".disaster-duration-value").value
     }));
-    return { categories, disasters, bunkerTraits, bunkerTraitsSeedVersion: config.bunkerTraitsSeedVersion, backpackWeaponSeedVersion: config.backpackWeaponSeedVersion, waterTraitLabelSeedVersion: config.waterTraitLabelSeedVersion, disasterDurationSeedVersion: config.disasterDurationSeedVersion, contentFillSeedVersion: config.contentFillSeedVersion, specialCards, hiddenAvatars, revision: config.revision };
+    return { categories, disasters, bunkerTraits, bunkerTraitsSeedVersion: config.bunkerTraitsSeedVersion, backpackWeaponSeedVersion: config.backpackWeaponSeedVersion, waterTraitLabelSeedVersion: config.waterTraitLabelSeedVersion, waterOptionsSeedVersion: config.waterOptionsSeedVersion, waterRandomPercentSeedVersion: config.waterRandomPercentSeedVersion, disasterDurationSeedVersion: config.disasterDurationSeedVersion, contentFillSeedVersion: config.contentFillSeedVersion, specialCards, hiddenAvatars, revision: config.revision };
 }
 
 async function loadEditor() {
@@ -426,6 +426,12 @@ $("#bunkerTraits").addEventListener("click", (event) => {
 $("#bunkerTraits").addEventListener("input", (event) => {
     markDirty();
     if (event.target.matches(".bunker-option-chance-input")) updateDistributionTotals();
+});
+$("#bunkerTraits").addEventListener("change", (event) => {
+    if (!event.target.matches(".bunker-random-percentage-input")) return;
+    config = { ...config, ...collectConfig() };
+    markDirty();
+    renderBunkerTraits();
 });
 $("#specialCards").addEventListener("click", (event) => {
     const card = event.target.closest(".special-card");
