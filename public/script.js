@@ -58,6 +58,8 @@ let countdownTimer;
 let audioContext;
 let soundsEnabled = localStorage.getItem("bunker-sounds") !== "off";
 let lastTurnSoundKey = "";
+let pendingRevealAnimation = null;
+let renderedRevealAnimation = null;
 
 function show(screen) {
     ["#menu", "#lobby", "#game"].forEach((id) => $(id).classList.toggle("hidden", id !== screen));
@@ -245,6 +247,10 @@ function updateGame() {
     const canRevealProfession = room.phase === "reveal" && trait && me && !me.eliminated && isMyTurn && !hasRevealedThisRound;
     const canChooseTrait = isChoiceRound && me && !me.eliminated && isMyTurn && !hasRevealedThisRound;
     const canSkipVote = isVoting && room.voteCanBeSkipped !== false && me && !me.eliminated && !hasVoted;
+    const revealAnimation = pendingRevealAnimation !== renderedRevealAnimation ? pendingRevealAnimation : null;
+    const isNewReveal = (playerId, traitId) => Boolean(
+        revealAnimation && revealAnimation.playerId === playerId && revealAnimation.trait === traitId
+    );
     $("#revealButton").classList.toggle("hidden", !canRevealProfession);
     $("#revealButton").textContent = canRevealProfession ? `Раскрыть: ${traitName(trait)}` : "";
     $("#skipVoteButton").classList.toggle("hidden", !canSkipVote);
@@ -256,10 +262,10 @@ function updateGame() {
         myCards[name],
         Boolean(myRevealed[name]),
         canChooseTrait && !myRevealed[name],
-        room.revealedThisRound?.[socket.id] === name
+        isNewReveal(socket.id, name)
     )).join("");
     $("#gamePlayers").innerHTML = room.players.map((player) => {
-        const playerCards = Object.entries(player.revealed || {}).map(([name, value]) => `<span class="public-card ${room.revealedThisRound?.[player.id] === name ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> ${escaped(value)}</span>`).join("");
+        const playerCards = Object.entries(player.revealed || {}).map(([name, value]) => `<span class="public-card ${isNewReveal(player.id, name) ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> ${escaped(value)}</span>`).join("");
         const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== socket.id;
         const playerState = player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
         const playerStatus = player.left ? "вышел" : player.eliminated ? "исключён" : isFinished ? "победитель" : "в игре";
@@ -270,6 +276,7 @@ function updateGame() {
             ${player.id === room.hostId ? '<span class="host-star" aria-label="Ведущий" title="Ведущий">★</span>' : ""}
         </article>`;
     }).join("");
+    if (revealAnimation) renderedRevealAnimation = revealAnimation;
     updateActionTimer();
 }
 
@@ -373,7 +380,11 @@ socket.on("resumeFailed", () => {
 socket.on("yourCards", (cards) => { myCards = cards; if (room?.phase !== "lobby") updateGame(); });
 socket.on("gameStarted", () => { toast("Катастрофа выбрана. Прочитайте историю перед началом."); playSound("story"); });
 socket.on("roundStarted", ({ initial } = {}) => { toast(initial ? "История прочитана. Первый раунд начинается." : "Новый раунд: выберите карту, которую хотите раскрыть."); playSound("round"); });
-socket.on("cardRevealed", ({ playerId }) => { if (playerId !== socket.id) playSound("reveal"); });
+socket.on("cardRevealed", ({ playerId, trait }) => {
+    pendingRevealAnimation = { playerId, trait };
+    if (room?.phase !== "lobby") updateGame();
+    if (playerId !== socket.id) playSound("reveal");
+});
 socket.on("votingStarted", () => { toast("Все раскрылись. Пора голосовать."); playSound("vote"); });
 socket.on("voteAccepted", () => { toast("Ваш голос принят."); playSound("accepted"); });
 socket.on("playerEliminated", ({ nickname: name }) => { toast(`${name} не попадает в бункер.`); playSound("out"); });
