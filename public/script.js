@@ -267,7 +267,7 @@ function updateGame() {
             <div class="player-name">${avatarMarkup(player)}<div><strong>${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></div></div>
             <div class="public-cards">${playerCards || '<span class="muted">карты ещё не раскрыты</span>'}</div>
             ${canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : ""}
-            ${player.eliminated ? '<span class="eliminated-mark">ИСКЛЮЧЁН</span>' : isFinished && !player.left ? '<span class="winner-mark">ПОБЕДИТЕЛЬ</span>' : player.id === room.hostId ? '<span class="host-star" aria-label="Ведущий" title="Ведущий">★</span>' : ""}
+            ${player.id === room.hostId ? '<span class="host-star" aria-label="Ведущий" title="Ведущий">★</span>' : ""}
         </article>`;
     }).join("");
     updateActionTimer();

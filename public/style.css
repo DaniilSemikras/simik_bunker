@@ -123,9 +123,6 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .game-player { position:relative; display:grid; grid-template-columns:216px minmax(0,1fr); grid-template-areas:"identity cards" "vote vote"; overflow:hidden; padding:0; border:1px solid var(--line); border-radius:17px; background:linear-gradient(135deg,rgba(35,31,28,.9),rgba(18,15,14,.88)); box-shadow:inset 0 1px rgba(255,255,255,.04),0 10px 26px rgba(0,0,0,.15); transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease; }
 .game-player::before { position:absolute; top:0; bottom:0; left:0; width:4px; background:#84786e; content:""; }
 .host-star { position:absolute; z-index:1; top:9px; right:12px; color:#ffd27a; font-size:17px; line-height:1; text-shadow:0 2px 8px rgba(0,0,0,.5); }
-.winner-mark,.eliminated-mark { position:absolute; z-index:1; top:9px; right:12px; border-radius:100px; padding:4px 7px; font-size:9px; font-weight:900; letter-spacing:.06em; }
-.winner-mark { border:1px solid rgba(255,221,138,.56); color:#ffdfa1; background:rgba(106,84,34,.42); }
-.eliminated-mark { border:1px solid rgba(236,128,117,.52); color:#ffd0ca; background:rgba(111,44,39,.42); }
 .game-player:hover { transform:translateY(-2px); box-shadow:inset 0 1px rgba(255,255,255,.06),0 15px 30px rgba(0,0,0,.22); }
 .game-player.active-player { border-color:rgba(116,205,132,.62); background:linear-gradient(135deg,rgba(43,89,55,.5),rgba(19,28,21,.9)); }
 .game-player.active-player::before { background:linear-gradient(#9bebaa,#3cc76b); box-shadow:0 0 18px rgba(108,224,133,.72); }
