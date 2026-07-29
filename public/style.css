@@ -29,6 +29,8 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .primary { width:100%; margin-top:12px; color:#25170b; background:var(--accent); }
 .secondary { color:var(--ink); background:var(--panel-2); }
 #startSoloTest { width:100%; margin-top:8px; border:1px dashed rgba(241,168,78,.38); color:#ffd09b; background:rgba(241,168,78,.07); font-size:12px; }
+.debug-button { width:100%; margin-top:8px; border:1px dashed rgba(125,192,255,.42); color:#c9e7ff; background:rgba(72,123,175,.12); font-size:12px; }
+.debug-button:hover { background:rgba(72,123,175,.22); }
 .or { display:flex; align-items:center; gap:12px; margin:20px 0; color:var(--muted); font-size:12px; }
 .or::before, .or::after { content:""; flex:1; height:1px; background:var(--line); }
 .join-row { display:flex; gap:8px; }

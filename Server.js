@@ -619,6 +619,7 @@ function publicState(room) {
             id: player.id,
             nickname: player.nickname,
             avatarUrl: player.avatarUrl || null,
+            isBot: Boolean(player.isBot),
             left: Boolean(player.left),
             eliminated: room.eliminated.includes(player.id),
             revealed: room.revealed[player.id] || {}
@@ -642,6 +643,17 @@ function clearActionTimer(room) {
     if (room.actionTimer) clearTimeout(room.actionTimer);
     room.actionTimer = null;
     room.timerKind = null;
+    for (const timer of room.botTimers || []) clearTimeout(timer);
+    room.botTimers = [];
+}
+
+function scheduleBotAction(room, callback, delay) {
+    const timer = setTimeout(() => {
+        room.botTimers = (room.botTimers || []).filter((item) => item !== timer);
+        callback();
+    }, delay);
+    room.botTimers = room.botTimers || [];
+    room.botTimers.push(timer);
 }
 
 function endGame(room) {
@@ -666,6 +678,15 @@ function openVoting(room) {
     room.actionTimer = setTimeout(() => resolveVote(room, true), ACTION_DURATION_MS);
     io.to(room.code).emit("votingStarted");
     emitRoom(room);
+    activePlayers(room).filter((player) => player.isBot).forEach((bot, index) => {
+        scheduleBotAction(room, () => {
+            if (room.phase !== "voting" || room.votes[bot.id]) return;
+            const otherBots = activePlayers(room).filter((player) => player.isBot && player.id !== bot.id);
+            room.votes[bot.id] = otherBots.length ? randomItem(otherBots).id : SKIP_VOTE;
+            emitRoom(room);
+            resolveVote(room);
+        }, 850 + index * 500);
+    });
 }
 
 function playerHasAvailableCard(room, playerId) {
@@ -691,6 +712,16 @@ function activateNextTurn(room) {
     room.timerKind = "turn";
     room.actionTimer = setTimeout(() => advanceRevealTurn(room, true), ACTION_DURATION_MS);
     emitRoom(room);
+    const currentPlayer = room.players.find((player) => player.id === currentTurnPlayerId(room));
+    if (currentPlayer?.isBot) {
+        scheduleBotAction(room, () => {
+            if (room.phase !== "reveal" || currentTurnPlayerId(room) !== currentPlayer.id) return;
+            const trait = room.round === 0
+                ? room.traitOrder[0]
+                : room.traitOrder.find((item) => !room.revealed[currentPlayer.id]?.[item]);
+            revealTraitForPlayer(room, currentPlayer.id, trait);
+        }, 800);
+    }
 }
 
 function beginRevealRound(room) {
@@ -712,6 +743,26 @@ function advanceRevealTurn(room, timedOut = false) {
     }
     room.turnIndex += 1;
     activateNextTurn(room);
+}
+
+function revealTraitForPlayer(room, playerId, requestedTrait) {
+    if (room.phase !== "reveal" || room.eliminated.includes(playerId)) return false;
+    if (currentTurnPlayerId(room) !== playerId) return false;
+    const trait = room.round === 0 ? room.traitOrder[0] : requestedTrait;
+    if (!room.traitOrder.includes(trait) || room.revealedThisRound[playerId] || room.revealed[playerId]?.[trait]) return false;
+    room.revealed[playerId][trait] = room.cards[playerId][trait];
+    room.revealedThisRound[playerId] = trait;
+    emitRoom(room);
+    io.to(room.code).emit("cardRevealed", {
+        playerId,
+        nickname: room.players.find((player) => player.id === playerId)?.nickname,
+        trait
+    });
+    setTimeout(() => {
+        if (room.phase !== "reveal" || currentTurnPlayerId(room) !== playerId || room.revealedThisRound[playerId] !== trait) return;
+        advanceRevealTurn(room);
+    }, 620);
+    return true;
 }
 
 function startNextRound(room) {
@@ -837,7 +888,7 @@ io.on("connection", (socket) => {
         rooms[code] = {
             code,
             host: socket.id,
-            players: [{ id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(), left: false }],
+            players: [{ id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(), left: false, isBot: false }],
             phase: "lobby",
             capacity: 0,
             round: 0,
@@ -855,7 +906,8 @@ io.on("connection", (socket) => {
             turnDeadline: null,
             voteDeadline: null,
             actionTimer: null,
-            timerKind: null
+            timerKind: null,
+            botTimers: []
         };
         socket.join(code);
         socket.emit("roomEntered", { code, playerToken: rooms[code].players[0].token });
@@ -874,7 +926,7 @@ io.on("connection", (socket) => {
         if (room.players.some((player) => !player.left && player.nickname.toLocaleLowerCase("ru") === nickname.toLocaleLowerCase("ru"))) {
             return emitError(socket, "Такой никнейм уже занят.");
         }
-        const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(room), left: false };
+        const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(room), left: false, isBot: false };
         room.players.push(player);
         socket.join(code);
         socket.emit("roomEntered", { code, playerToken: player.token });
@@ -891,6 +943,28 @@ io.on("connection", (socket) => {
         movePlayerToSocket(room, player, socket.id);
         socket.join(code);
         socket.emit("roomEntered", { code, playerToken: player.token });
+        emitRoom(room);
+    });
+
+    socket.on("addTestPlayers", () => {
+        const room = roomFor(socket);
+        if (!room || room.host !== socket.id) return emitError(socket, "Добавлять тестовых игроков может только ведущий.");
+        if (room.phase !== "lobby") return;
+        const slots = 12 - activePlayers(room).length;
+        if (slots <= 0) return emitError(socket, "В комнате уже максимум игроков.");
+        const count = Math.min(2, slots);
+        let botNumber = room.players.filter((player) => player.isBot).length;
+        for (let index = 0; index < count; index += 1) {
+            botNumber += 1;
+            room.players.push({
+                id: "bot_" + crypto.randomBytes(10).toString("hex"),
+                token: null,
+                nickname: "Тест-бот " + botNumber,
+                avatarUrl: chooseAvatar(room),
+                left: false,
+                isBot: true
+            });
+        }
         emitRoom(room);
     });
 
@@ -947,18 +1021,9 @@ io.on("connection", (socket) => {
         const room = roomFor(socket);
         if (!room || room.phase !== "reveal" || room.eliminated.includes(socket.id)) return;
         if (currentTurnPlayerId(room) !== socket.id) return emitError(socket, "Сейчас ход другого игрока.");
-        const trait = room.round === 0 ? room.traitOrder[0] : requestedTrait;
-        if (!room.traitOrder.includes(trait)) return;
-        if (room.revealedThisRound[socket.id]) return;
-        if (room.revealed[socket.id][trait]) return emitError(socket, "Эта карта уже раскрыта.");
-        room.revealed[socket.id][trait] = room.cards[socket.id][trait];
-        room.revealedThisRound[socket.id] = trait;
-        emitRoom(room);
-        io.to(room.code).emit("cardRevealed", { playerId: socket.id, nickname: room.players.find((player) => player.id === socket.id)?.nickname, trait });
-        setTimeout(() => {
-            if (room.phase !== "reveal" || currentTurnPlayerId(room) !== socket.id || room.revealedThisRound[socket.id] !== trait) return;
-            advanceRevealTurn(room);
-        }, 620);
+        if (!revealTraitForPlayer(room, socket.id, requestedTrait)) {
+            return emitError(socket, "Эту карту сейчас нельзя раскрыть.");
+        }
     });
 
     socket.on("castVote", (targetId) => {

@@ -177,6 +177,7 @@ function updateLobby() {
     `).join("");
     $("#startGame").classList.toggle("hidden", !isHost());
     $("#startSoloTest").classList.toggle("hidden", !isHost() || playerTotal !== 1);
+    $("#addTestPlayers").classList.toggle("hidden", !isHost() || playerTotal >= 12);
     $("#startHint").textContent = playerTotal === 1 && isHost()
         ? "В тесте можно раскрыть все карточки — без голосования."
         : playerTotal < 3
@@ -309,6 +310,7 @@ $("#nickname").addEventListener("keydown", (event) => { if (event.key === "Enter
 $("#roomCode").addEventListener("input", (event) => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
 $("#startGame").addEventListener("click", () => socket.emit("startGame"));
 $("#startSoloTest").addEventListener("click", () => socket.emit("startSoloTest"));
+$("#addTestPlayers").addEventListener("click", () => socket.emit("addTestPlayers"));
 $("#revealButton").addEventListener("click", () => {
     socket.emit("revealTrait", room?.currentTrait);
     playSound("reveal");
