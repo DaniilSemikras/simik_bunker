@@ -285,6 +285,12 @@ function updateGame() {
     const isVoting = room.phase === "voting";
     const isFinished = room.phase === "finished";
     const winners = room.players.filter((player) => !player.left && !player.eliminated);
+    const utilityBreakdown = Array.isArray(room.utilityBreakdown) ? room.utilityBreakdown : [];
+    const utilityRows = utilityBreakdown.map((entry) => {
+        const player = room.players.find((candidate) => candidate.id === entry.playerId);
+        if (!player) return "";
+        return '<span class="utility-player">' + avatarMarkup(player) + '<span><strong>' + escaped(player.nickname) + '</strong><small>' + entry.revealedCards + ' карт</small></span><b>' + entry.utility + '%</b></span>';
+    }).join("");
     const myRevealed = me?.revealed || {};
     const hasRevealedThisRound = Boolean(room.revealedThisRound?.[ownPlayerId()]);
     const isChoiceRound = room.phase === "reveal" && !trait;
@@ -309,6 +315,7 @@ function updateGame() {
     $("#resultsBanner").innerHTML = isFinished ? `
         <div class="result-copy"><span class="result-kicker">ПОБЕДИТЕЛИ БУНКЕРА</span><h3>${winners.length ? "В бункере остались" : "Выживших не осталось"}</h3></div>
         <div class="winner-list">${winners.map((player) => `<span class="winner-chip">${avatarMarkup(player)}<strong>${escaped(player.nickname)}</strong></span>`).join("")}</div>
+        ${utilityRows ? `<div class="utility-breakdown"><span class="utility-kicker">ПОЛЕЗНОСТЬ ВЫЖИВШИХ</span><div class="utility-list">${utilityRows}</div></div>` : ""}
     ` : "";
     const bunkerChance = isFinished && typeof room.bunkerSurvivalChance === "number"
         ? `<span class="bunker-chance">Выживаемость по полезности: <strong>${room.bunkerSurvivalChance}%</strong></span>`

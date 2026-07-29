@@ -1290,17 +1290,29 @@ function useSpecialCard(room, playerId, targetId) {
     return { card: specialCard, trait: specialCard.trait, action: specialCard.effect };
 }
 
-function calculateBunkerSurvivalChance(room) {
+function calculateUtilityBreakdown(room) {
     const players = activePlayers(room);
-    if (!players.length || !room.capacity) return null;
-    let totalScore = 0;
-    let revealedCards = 0;
-    for (const player of players) {
+    return players.map((player) => {
+        let totalScore = 0;
+        let revealedCards = 0;
         for (const [trait, value] of Object.entries(room.revealed[player.id] || {})) {
             totalScore += scoreRevealedCard(room, trait, value);
             revealedCards += 1;
         }
-    }
+        return {
+            playerId: player.id,
+            utility: revealedCards ? Math.round(totalScore / revealedCards) : 0,
+            totalScore,
+            revealedCards
+        };
+    });
+}
+
+function calculateBunkerSurvivalChance(room) {
+    if (!room.capacity) return null;
+    const breakdown = calculateUtilityBreakdown(room);
+    const totalScore = breakdown.reduce((sum, player) => sum + player.totalScore, 0);
+    const revealedCards = breakdown.reduce((sum, player) => sum + player.revealedCards, 0);
     return revealedCards ? Math.round(totalScore / revealedCards) : null;
 }
 
@@ -1336,6 +1348,9 @@ function publicState(room) {
         voteMarkers,
         voteCanBeSkipped: voteCanBeSkipped(room),
         bunkerSurvivalChance: room.phase === "finished" ? calculateBunkerSurvivalChance(room) : null,
+        utilityBreakdown: room.phase === "finished"
+            ? calculateUtilityBreakdown(room).map(({ playerId, utility, revealedCards }) => ({ playerId, utility, revealedCards }))
+            : [],
         roomCloseDeadline: room.roomCloseDeadline || null,
         actionLog: room.actionLog || [],
         players: room.players.map((player) => ({
