@@ -136,9 +136,9 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .player-view-toggle { border:1px solid rgba(241,168,78,.42); border-radius:100px; padding:5px 9px; color:#ffd59c; background:rgba(80,47,25,.24); font-size:11px; font-weight:800; }
 .player-view-toggle[aria-pressed="true"] { border-color:rgba(159,180,255,.6); color:#e1e7ff; background:rgba(72,88,150,.3); }
 .game-players.players-table-view { display:block; width:100%; min-width:0; max-width:100%; overflow:hidden; }
-.players-table-scroll { width:100%; min-width:0; max-width:100%; overflow-x:auto; overflow-y:hidden; margin-top:14px; border:1px solid rgba(244,238,232,.12); border-radius:13px; }
-.players-table { width:100%; min-width:0; max-width:100%; table-layout:fixed; border-collapse:separate; border-spacing:0; color:#eadfd7; font-size:11px; text-align:left; }
-.players-table th,.players-table td { min-width:0; max-width:0; overflow:hidden; border-right:1px solid rgba(244,238,232,.08); border-bottom:1px solid rgba(244,238,232,.08); padding:8px 7px; line-height:1.28; vertical-align:middle; }
+.players-table-scroll { width:100%; min-width:0; max-width:100%; overflow-x:hidden; overflow-y:hidden; margin-top:14px; border:1px solid rgba(244,238,232,.12); border-radius:13px; }
+.players-table { width:100%; min-width:100%; max-width:100%; table-layout:fixed; border-collapse:separate; border-spacing:0; color:#eadfd7; font-size:11px; text-align:left; }
+.players-table th,.players-table td { min-width:0; max-width:none; overflow-wrap:anywhere; word-break:break-word; border-right:1px solid rgba(244,238,232,.08); border-bottom:1px solid rgba(244,238,232,.08); padding:8px 7px; line-height:1.28; vertical-align:middle; }
 .players-table th:first-child { width:132px; }
 .players-table th:last-child,.players-table td:last-child { width:88px; }
 .players-table thead th { position:sticky; top:0; z-index:1; color:#ffc77e; background:#2a211e; font-size:10px; font-weight:850; letter-spacing:.045em; text-transform:uppercase; }
@@ -148,7 +148,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .players-table tbody tr.survivor { background:rgba(52,115,65,.3); }
 .players-table tbody tr.eliminated,.players-table tbody tr.left-player { color:#978a84; background:rgba(52,38,36,.32); }
 .players-table .is-hidden-value { color:#938981; font-style:italic; }
-.table-cell-value,.table-header-value { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.table-cell-value,.table-header-value { display:block; max-width:100%; overflow-wrap:anywhere; word-break:break-word; white-space:normal; }
 .table-player { display:flex; align-items:center; gap:6px; min-width:0; }
 .table-player .avatar { display:grid; flex:0 0 27px; width:27px; height:27px; border:1px solid rgba(255,228,190,.58); font-size:11px; }
 .table-player strong,.table-player small { display:block; }
@@ -156,7 +156,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .table-player small { margin-top:2px; color:#bdecc5; font-size:9px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
 .table-extra { max-width:0; }
 .table-player-actions { display:flex; min-width:0; gap:6px; }
-.table-player-actions .vote-button,.table-player-actions .special-target-button { min-width:0; min-height:32px; height:32px; padding:5px; overflow:hidden; font-size:10px; line-height:1.1; text-overflow:ellipsis; white-space:nowrap; }
+.table-player-actions .vote-button,.table-player-actions .special-target-button { min-width:0; min-height:32px; height:auto; padding:5px; overflow-wrap:anywhere; font-size:10px; line-height:1.1; white-space:normal; }
 .action-log-panel { padding:16px 20px 18px; }
 .action-log-panel .lobby-heading { margin-top:0; }
 .action-log { display:grid; gap:5px; max-height:174px; margin:10px 0 0; padding:0; overflow:auto; list-style:none; }
