@@ -64,10 +64,14 @@
                     </section>
                 </div>
                 <section class="panel players-panel">
-                    <div class="lobby-heading"><h3>Участники</h3><span id="survivorCount" class="count"></span></div>
+                    <div class="lobby-heading"><h3>Участники</h3><div class="players-heading-actions"><button id="playerViewToggle" class="player-view-toggle" type="button">▦ Таблица</button><span id="survivorCount" class="count"></span></div></div>
                     <div id="gamePlayers" class="game-players"></div>
                 </section>
             </div>
+            <section class="panel action-log-panel">
+                <div class="lobby-heading"><h3>Журнал действий</h3><span class="count">последние события</span></div>
+                <ol id="actionLog" class="action-log"></ol>
+            </section>
         </section>
     </main>
 

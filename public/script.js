@@ -63,6 +63,7 @@ let pendingRevealAnimation = null;
 let renderedRevealAnimation = null;
 let mySpecialCard = null;
 let specialTargetMode = false;
+let playersView = localStorage.getItem("bunker-players-view") === "table" ? "table" : "cards";
 
 function show(screen) {
     ["#menu", "#lobby", "#game"].forEach((id) => $(id).classList.toggle("hidden", id !== screen));
@@ -205,6 +206,38 @@ function cardMarkup(trait, value, revealed, canChoose, isRevealing = false) {
         : `<article class="${classes}">${content}</article>`;
 }
 
+function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specialTargetAction) {
+    const hasProfessionItems = room.players.some((player) => player.professionItem);
+    const hasUsedSpecialCards = room.players.some((player) => player.usedSpecialCard);
+    const extraHeaders = [
+        hasProfessionItems ? "<th>Багаж от профессии</th>" : "",
+        hasUsedSpecialCards ? "<th>Спецкарта</th>" : "",
+        (isVoting || specialTargetMode) ? "<th>Действие</th>" : ""
+    ].join("");
+    const rows = room.players.map((player) => {
+        const playerState = player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
+        const playerStatus = player.left ? "вышел" : player.eliminated ? "исключён" : isFinished ? "победитель" : "в игре";
+        const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== socket.id;
+        const canSelectSpecialTarget = specialTargetMode && !player.left && !player.eliminated && player.id !== socket.id;
+        const actions = [
+            canSelectSpecialTarget ? `<button class="special-target-button" data-special-target="${player.id}">${escaped(specialTargetAction)}</button>` : "",
+            canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : ""
+        ].filter(Boolean).join("");
+        const values = cardOrder.map((trait) => {
+            const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, trait);
+            return `<td class="${isRevealed ? "" : "is-hidden-value"}">${isRevealed ? escaped(player.revealed[trait]) : "скрыто"}</td>`;
+        }).join("");
+        return `<tr class="${playerState}">
+            <th scope="row"><span class="table-player">${avatarMarkup(player)}<span><strong>${escaped(player.nickname)}${player.id === socket.id ? " (вы)" : ""}</strong><small>${playerStatus}</small></span></span></th>
+            ${values}
+            ${hasProfessionItems ? `<td class="table-extra">${player.professionItem ? escaped(player.professionItem) : "—"}</td>` : ""}
+            ${hasUsedSpecialCards ? `<td class="table-extra">${player.usedSpecialCard ? escaped(player.usedSpecialCard.name) : "—"}</td>` : ""}
+            ${(isVoting || specialTargetMode) ? `<td><div class="table-player-actions">${actions || "—"}</div></td>` : ""}
+        </tr>`;
+    }).join("");
+    return `<div class="players-table-scroll"><table class="players-table"><thead><tr><th>Игрок</th>${cardOrder.map((trait) => `<th>${escaped(traitName(trait))}</th>`).join("")}${extraHeaders}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
 function updateGame() {
     if (!room) return;
     const me = room.players.find((player) => player.id === socket.id);
@@ -252,6 +285,8 @@ function updateGame() {
     $("#survivorCount").textContent = `${active.length} в игре`;
     const categoryCount = room.categoryOrder?.length || Object.keys(myCards).length;
     const revealRoundCount = room.revealRounds || categoryCount;
+    $("#playerViewToggle").textContent = playersView === "table" ? "▤ Карточки" : "▦ Таблица";
+    $("#playerViewToggle").setAttribute("aria-pressed", String(playersView === "table"));
     $(".round-panel").classList.toggle("hidden", isStory);
     $("#roundLabel").textContent = isFinished ? "ИГРА ЗАВЕРШЕНА" : isStory ? "ИСТОРИЯ КАТАСТРОФЫ" : isVoting ? "ГОЛОСОВАНИЕ" : `РАУНД ${room.round} ИЗ ${revealRoundCount}`;
     $("#roundTitle").textContent = isFinished ? "Бункер определил выживших" : isStory ? "Прочитайте историю" : isVoting ? "Кого не берём в бункер?" : trait ? `Первый ход: ${traitName(trait)}` : "Выберите карту для раскрытия";
@@ -284,7 +319,7 @@ function updateGame() {
         ? '<' + (canUseSpecialCard ? 'button type="button" data-use-special' : 'article') + ' class="my-card special-card-hand ' + (mySpecialCard.used ? 'is-used' : '') + (canUseSpecialCard ? ' is-choice' : '') + '"><span>Специальная карта</span><strong>' + escaped(mySpecialCard.name) + '</strong><small>' + escaped(specialTraitLabel) + '</small><em>' + (mySpecialCard.used ? 'использована' : specialTargetMode ? 'выберите игрока' : canUseSpecialCard ? 'нажмите, чтобы применить' : 'доступна в ваш ход') + '</em></' + (canUseSpecialCard ? 'button' : 'article') + '>'
         : "";
     $("#myCards").innerHTML = personalCards + professionBaggage + specialCardInHand;
-    $("#gamePlayers").innerHTML = room.players.map((player) => {
+    const playerCardsMarkup = room.players.map((player) => {
         const playerCards = cardOrder.map((name) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, name);
             const value = isRevealed ? player.revealed[name] : "скрыто";
@@ -316,6 +351,14 @@ function updateGame() {
             ${player.id === room.hostId ? '<span class="host-star" aria-label="Ведущий" title="Ведущий">★</span>' : ""}
         </article>`;
     }).join("");
+    $("#gamePlayers").classList.toggle("players-table-view", playersView === "table");
+    $("#gamePlayers").innerHTML = playersView === "table"
+        ? playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specialTargetAction)
+        : playerCardsMarkup;
+    const logEntries = Array.isArray(room.actionLog) ? room.actionLog : [];
+    $("#actionLog").innerHTML = logEntries.length
+        ? logEntries.slice().reverse().map((entry) => `<li class="action-log-entry ${escaped(entry.type || "system")}"><time>${new Date(entry.at).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</time><span>${escaped(entry.text)}</span></li>`).join("")
+        : '<li class="action-log-empty">События игры появятся здесь.</li>';
     if (revealAnimation) renderedRevealAnimation = revealAnimation;
     updateActionTimer();
 }
@@ -358,6 +401,11 @@ $("#roomCode").addEventListener("input", (event) => { event.target.value = event
 $("#startGame").addEventListener("click", () => socket.emit("startGame"));
 $("#startSoloTest").addEventListener("click", () => socket.emit("startSoloTest"));
 $("#addTestPlayers").addEventListener("click", () => socket.emit("addTestPlayers"));
+$("#playerViewToggle").addEventListener("click", () => {
+    playersView = playersView === "table" ? "cards" : "table";
+    localStorage.setItem("bunker-players-view", playersView);
+    if (room?.phase !== "lobby") updateGame();
+});
 $("#revealButton").addEventListener("click", () => {
     socket.emit("revealTrait", room?.currentTrait);
     playSound("reveal");

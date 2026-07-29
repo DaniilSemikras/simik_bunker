@@ -132,6 +132,35 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .my-card.is-revealing { animation:card-reveal .62s cubic-bezier(.2,.82,.24,1) both; }
 .game-players { display:grid; grid-template-columns:repeat(auto-fit, minmax(390px, 1fr)); gap:12px; margin-top:14px; }
 .players-panel { max-height:none; overflow:visible; }
+.players-heading-actions { display:flex; align-items:center; gap:8px; }
+.player-view-toggle { border:1px solid rgba(241,168,78,.42); border-radius:100px; padding:5px 9px; color:#ffd59c; background:rgba(80,47,25,.24); font-size:11px; font-weight:800; }
+.player-view-toggle[aria-pressed="true"] { border-color:rgba(159,180,255,.6); color:#e1e7ff; background:rgba(72,88,150,.3); }
+.game-players.players-table-view { display:block; overflow:hidden; }
+.players-table-scroll { overflow:auto; margin-top:14px; border:1px solid rgba(244,238,232,.12); border-radius:13px; }
+.players-table { width:100%; min-width:max-content; border-collapse:separate; border-spacing:0; color:#eadfd7; font-size:12px; text-align:left; }
+.players-table th,.players-table td { max-width:220px; border-right:1px solid rgba(244,238,232,.08); border-bottom:1px solid rgba(244,238,232,.08); padding:9px 10px; line-height:1.32; vertical-align:middle; }
+.players-table thead th { position:sticky; top:0; z-index:1; color:#ffc77e; background:#2a211e; font-size:10px; font-weight:850; letter-spacing:.045em; text-transform:uppercase; }
+.players-table tr > :last-child { border-right:0; }
+.players-table tbody tr:last-child > * { border-bottom:0; }
+.players-table tbody tr.active-player { background:rgba(33,91,47,.2); }
+.players-table tbody tr.survivor { background:rgba(52,115,65,.3); }
+.players-table tbody tr.eliminated,.players-table tbody tr.left-player { color:#978a84; background:rgba(52,38,36,.32); }
+.players-table .is-hidden-value { color:#938981; font-style:italic; }
+.table-player { display:flex; align-items:center; gap:8px; min-width:135px; }
+.table-player .avatar { display:grid; flex:0 0 31px; width:31px; height:31px; border:1px solid rgba(255,228,190,.58); font-size:12px; }
+.table-player strong,.table-player small { display:block; }
+.table-player strong { color:#fff4eb; font-size:12px; }
+.table-player small { margin-top:2px; color:#bdecc5; font-size:9px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+.table-extra { max-width:190px; }
+.table-player-actions { display:flex; gap:6px; min-width:130px; }
+.table-player-actions .vote-button,.table-player-actions .special-target-button { min-width:118px; }
+.action-log-panel { padding:16px 20px 18px; }
+.action-log-panel .lobby-heading { margin-top:0; }
+.action-log { display:grid; gap:6px; max-height:310px; margin:12px 0 0; padding:0; overflow:auto; list-style:none; }
+.action-log-entry { display:grid; grid-template-columns:42px minmax(0,1fr); gap:9px; padding:9px 10px; border-left:3px solid rgba(241,168,78,.44); border-radius:8px; background:rgba(12,10,9,.22); color:#e2d6cf; font-size:12px; line-height:1.35; }
+.action-log-entry time { color:#aa9d94; font-variant-numeric:tabular-nums; font-size:11px; }
+.action-log-entry.reveal { border-left-color:#8fdca0; }.action-log-entry.vote { border-left-color:#f0ae5f; }.action-log-entry.special { border-left-color:#c495ff; }.action-log-entry.out { border-left-color:#e7887d; }.action-log-entry.finish { border-left-color:#f7db86; }
+.action-log-empty { padding:12px; color:#9d9188; font-size:12px; }
 .game-player { position:relative; display:grid; grid-template-columns:148px minmax(0,1fr); grid-template-rows:minmax(0,1fr); grid-template-areas:"identity cards"; overflow:hidden; padding:0; border:1px solid var(--line); border-radius:17px; background:linear-gradient(135deg,rgba(35,31,28,.9),rgba(18,15,14,.88)); box-shadow:inset 0 1px rgba(255,255,255,.04),0 10px 26px rgba(0,0,0,.15); transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease; }
 .game-player.has-actions { grid-template-rows:minmax(0,1fr) 56px; grid-template-areas:"identity cards" "vote vote"; }
 .game-player::before { position:absolute; top:0; bottom:0; left:0; width:4px; background:#84786e; content:""; }

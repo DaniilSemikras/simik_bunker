@@ -644,6 +644,17 @@ function currentTurnPlayerId(room) {
     return room.turnOrder?.[room.turnIndex] || null;
 }
 
+function addActionLog(room, text, type = "system") {
+    const entry = {
+        id: (room.actionLogSequence || 0) + 1,
+        text: cleanText(text, 240),
+        type,
+        at: Date.now()
+    };
+    room.actionLogSequence = entry.id;
+    room.actionLog = [...(room.actionLog || []), entry].slice(-60);
+}
+
 function scoreRevealedCard(room, trait, value) {
     const configuredScore = room.cardScores?.[trait]?.[trait === "profession" ? professionBase(value) : value];
     const score = cleanScore(configuredScore, defaultOptionScore(trait, value));
@@ -730,6 +741,7 @@ function publicState(room) {
         voteCanBeSkipped: voteCanBeSkipped(room),
         bunkerSurvivalChance: room.phase === "finished" ? calculateBunkerSurvivalChance(room) : null,
         roomCloseDeadline: room.roomCloseDeadline || null,
+        actionLog: room.actionLog || [],
         players: room.players.map((player) => ({
             id: player.id,
             nickname: player.nickname,
@@ -785,9 +797,11 @@ function endGame(room) {
     room.votes = {};
     room.roomCloseDeadline = Date.now() + FINISHED_ROOM_TTL_MS;
     room.closeTimer = setTimeout(() => closeRoom(room), FINISHED_ROOM_TTL_MS);
+    const winners = activePlayers(room).map((player) => player.nickname);
+    addActionLog(room, winners.length ? "Игра завершена. В бункере остались: " + winners.join(", ") + "." : "Игра завершена. Выживших не осталось.", "finish");
     emitRoom(room);
     io.to(room.code).emit("gameFinished", {
-        survivors: activePlayers(room).map((player) => player.nickname)
+        survivors: winners
     });
 }
 
@@ -800,6 +814,7 @@ function openVoting(room) {
     room.voteDeadline = Date.now() + ACTION_DURATION_MS;
     room.timerKind = "vote";
     room.actionTimer = setTimeout(() => resolveVote(room, true), ACTION_DURATION_MS);
+    addActionLog(room, "Началось голосование.", "vote");
     io.to(room.code).emit("votingStarted");
     emitRoom(room);
     activePlayers(room).filter((player) => player.isBot).forEach((bot, index) => {
@@ -807,6 +822,8 @@ function openVoting(room) {
             if (room.phase !== "voting" || room.votes[bot.id]) return;
             const otherBots = activePlayers(room).filter((player) => player.isBot && player.id !== bot.id);
             room.votes[bot.id] = otherBots.length ? randomItem(otherBots).id : SKIP_VOTE;
+            const target = room.players.find((player) => player.id === room.votes[bot.id]);
+            addActionLog(room, room.votes[bot.id] === SKIP_VOTE ? bot.nickname + " выбирает не исключать никого." : bot.nickname + " голосует против " + target?.nickname + ".", "vote");
             emitRoom(room);
             resolveVote(room);
         }, 850 + index * 500);
@@ -851,7 +868,7 @@ function activateNextTurn(room) {
             if (room.phase !== "reveal" || currentTurnPlayerId(room) !== currentPlayer.id) return;
             const trait = room.round === 0
                 ? room.traitOrder[0]
-                : room.traitOrder.find((item) => !room.revealed[currentPlayer.id]?.[item]);
+                : randomItem(room.traitOrder.filter((item) => !room.revealed[currentPlayer.id]?.[item]));
             revealTraitForPlayer(room, currentPlayer.id, trait);
         }, 800);
     }
@@ -892,16 +909,19 @@ function revealTraitForPlayer(room, playerId, requestedTrait) {
     room.revealed[playerId][trait] = room.cards[playerId][trait];
     room.revealedThisRound[playerId] = trait;
     const professionItem = trait === "profession" ? giveProfessionItem(room, playerId) : null;
+    const player = room.players.find((candidate) => candidate.id === playerId);
+    addActionLog(room, player?.nickname + " раскрывает «" + (room.categoryNames?.[trait] || trait) + "»: " + room.cards[playerId][trait] + ".", "reveal");
+    if (professionItem) addActionLog(room, player?.nickname + " получает в багаж: " + professionItem + ".", "item");
     emitRoom(room);
     io.to(room.code).emit("cardRevealed", {
         playerId,
-        nickname: room.players.find((player) => player.id === playerId)?.nickname,
+        nickname: player?.nickname,
         trait
     });
     if (professionItem) {
         io.to(room.code).emit("professionItemReceived", {
             playerId,
-            nickname: room.players.find((player) => player.id === playerId)?.nickname,
+            nickname: player?.nickname,
             item: professionItem
         });
     }
@@ -968,12 +988,14 @@ function resolveVote(room, timedOut = false) {
     const skipVotes = totals[SKIP_VOTE] || 0;
     const highestPlayerVotes = Math.max(0, ...voters.map((player) => totals[player.id] || 0));
     if (skipVotes > 0 && skipVotes >= highestPlayerVotes) {
+        addActionLog(room, "Голосование завершено: никого не исключили.", "vote");
         io.to(room.code).emit("voteSkipped", { timedOut });
         continueWithoutElimination(room);
         return;
     }
     const candidates = voters.filter((player) => totals[player.id] === highestPlayerVotes);
     if (!highestPlayerVotes || candidates.length !== 1) {
+        addActionLog(room, "Голоса разделились — никто не исключен.", "vote");
         io.to(room.code).emit("voteTied", { timedOut, nextRound: canOpenAnotherDeadlockRound(room) });
         continueAfterDeadlock(room);
         return;
@@ -983,6 +1005,7 @@ function resolveVote(room, timedOut = false) {
     const eliminatedPlayer = room.players.find((player) => player.id === eliminatedId);
 
     room.eliminated.push(eliminatedId);
+    addActionLog(room, eliminatedPlayer.nickname + " исключён из бункера.", "out");
     io.to(room.code).emit("playerEliminated", { nickname: eliminatedPlayer.nickname });
     startNextRound(room);
 }
@@ -1063,7 +1086,9 @@ io.on("connection", (socket) => {
             timerKind: null,
             botTimers: [],
             roomCloseDeadline: null,
-            closeTimer: null
+            closeTimer: null,
+            actionLog: [],
+            actionLogSequence: 0
         };
         socket.join(code);
         socket.emit("roomEntered", { code, playerToken: rooms[code].players[0].token });
@@ -1151,6 +1176,9 @@ io.on("connection", (socket) => {
         room.eliminated = [];
         room.votes = {};
         room.round = 0;
+        room.actionLog = [];
+        room.actionLogSequence = 0;
+        addActionLog(room, "Игра началась. Катастрофа определена.", "system");
         io.to(room.code).emit("gameStarted");
         emitRoom(room);
     }
@@ -1175,6 +1203,7 @@ io.on("connection", (socket) => {
         const room = roomFor(socket);
         if (!room || room.host !== socket.id) return emitError(socket, "Начать раунд после истории может только ведущий.");
         if (room.phase !== "story") return;
+        addActionLog(room, "Ведущий начинает первый раунд.", "system");
         io.to(room.code).emit("roundStarted", { initial: true });
         beginRevealRound(room);
     });
@@ -1200,6 +1229,9 @@ io.on("connection", (socket) => {
         if (result.error) return emitError(socket, result.error);
         const player = room.players.find((candidate) => candidate.id === socket.id);
         const target = room.players.find((candidate) => candidate.id === targetId);
+        addActionLog(room, result.action === "take_backpack"
+            ? player?.nickname + " применяет «" + result.card.name + "» и забирает рюкзак у " + target?.nickname + "."
+            : player?.nickname + " применяет «" + result.card.name + "» и меняется «" + (room.categoryNames?.[result.trait] || result.trait) + "» с " + target?.nickname + ".", "special");
         emitRoom(room);
         io.to(room.code).emit("specialCardUsed", {
             nickname: player?.nickname,
@@ -1217,6 +1249,7 @@ io.on("connection", (socket) => {
         if (targetId === socket.id) return emitError(socket, "Нельзя голосовать за себя.");
         if (room.votes[socket.id]) return emitError(socket, "Ваш голос уже принят.");
         room.votes[socket.id] = targetId;
+        addActionLog(room, room.players.find((player) => player.id === socket.id)?.nickname + " голосует против " + room.players.find((player) => player.id === targetId)?.nickname + ".", "vote");
         socket.emit("voteAccepted");
         emitRoom(room);
         resolveVote(room);
@@ -1228,6 +1261,7 @@ io.on("connection", (socket) => {
         if (!voteCanBeSkipped(room)) return emitError(socket, "Все доступные карты уже раскрыты — нужно выбрать, кого исключить.");
         if (room.votes[socket.id]) return emitError(socket, "Ваш голос уже принят.");
         room.votes[socket.id] = SKIP_VOTE;
+        addActionLog(room, room.players.find((player) => player.id === socket.id)?.nickname + " выбирает не исключать никого.", "vote");
         socket.emit("voteAccepted");
         emitRoom(room);
         resolveVote(room);
