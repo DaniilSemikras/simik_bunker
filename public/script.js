@@ -220,7 +220,7 @@ function updateGame() {
     const turnPlayer = room.players.find((player) => player.id === room.turnPlayerId);
     const isMyTurn = room.turnPlayerId === socket.id;
     const hasVoted = room.votedPlayerIds?.includes(socket.id);
-    const canUseSpecialCard = Boolean(mySpecialCard && !mySpecialCard.used && me && !me.eliminated && ["reveal", "voting"].includes(room.phase));
+    const canUseSpecialCard = Boolean(mySpecialCard && !mySpecialCard.used && me && !me.eliminated && room.phase === "reveal" && isMyTurn);
     const specialTraitLabel = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать: Рюкзак" : `Обмен: ${traitName(mySpecialCard.trait)}`;
     const specialTargetAction = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать рюкзак" : `Обменяться: ${traitName(mySpecialCard.trait)}`;
     if (!canUseSpecialCard) specialTargetMode = false;
@@ -281,7 +281,7 @@ function updateGame() {
         ? '<article class="my-card is-revealed profession-item-card"><span>Багаж от профессии</span><strong>' + escaped(me.professionItem) + '</strong><em>получен</em></article>'
         : "";
     const specialCardInHand = mySpecialCard
-        ? '<' + (canUseSpecialCard ? 'button type="button" data-use-special' : 'article') + ' class="my-card special-card-hand ' + (mySpecialCard.used ? 'is-used' : '') + (canUseSpecialCard ? ' is-choice' : '') + '"><span>Специальная карта</span><strong>' + escaped(mySpecialCard.name) + '</strong><small>' + escaped(specialTraitLabel) + '</small><em>' + (mySpecialCard.used ? 'использована' : specialTargetMode ? 'выберите игрока' : canUseSpecialCard ? 'нажмите, чтобы применить' : 'доступна во время игры') + '</em></' + (canUseSpecialCard ? 'button' : 'article') + '>'
+        ? '<' + (canUseSpecialCard ? 'button type="button" data-use-special' : 'article') + ' class="my-card special-card-hand ' + (mySpecialCard.used ? 'is-used' : '') + (canUseSpecialCard ? ' is-choice' : '') + '"><span>Специальная карта</span><strong>' + escaped(mySpecialCard.name) + '</strong><small>' + escaped(specialTraitLabel) + '</small><em>' + (mySpecialCard.used ? 'использована' : specialTargetMode ? 'выберите игрока' : canUseSpecialCard ? 'нажмите, чтобы применить' : 'доступна в ваш ход') + '</em></' + (canUseSpecialCard ? 'button' : 'article') + '>'
         : "";
     $("#myCards").innerHTML = personalCards + professionBaggage + specialCardInHand;
     $("#gamePlayers").innerHTML = room.players.map((player) => {

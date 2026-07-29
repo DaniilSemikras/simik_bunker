@@ -1189,8 +1189,8 @@ io.on("connection", (socket) => {
 
     socket.on("useSpecialCard", (targetId) => {
         const room = roomFor(socket);
-        if (!room || !["reveal", "voting"].includes(room.phase) || room.eliminated.includes(socket.id)) {
-            return emitError(socket, "Спецкарту можно применить только во время игры.");
+        if (!room || room.phase !== "reveal" || room.eliminated.includes(socket.id) || currentTurnPlayerId(room) !== socket.id) {
+            return emitError(socket, "Спецкарту можно применить только в свой ход.");
         }
         if (targetId === socket.id || !activePlayers(room).some((player) => player.id === targetId)) {
             return emitError(socket, "Выберите другого игрока, который ещё в игре.");
