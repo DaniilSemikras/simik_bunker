@@ -45,6 +45,7 @@ let room = null;
 let myCards = {};
 let myPlayerId = "";
 let currentCode = "";
+let serverTimeOffset = 0;
 const SESSION_KEY = "bunker-player-session";
 let savedSession = (() => {
     try {
@@ -63,7 +64,7 @@ let lastTurnSoundKey = "";
 let pendingRevealAnimation = null;
 let renderedRevealAnimation = null;
 let mySpecialCard = null;
-let myWeaponStatus = { hasWeapon: false, used: false, canEvict: false };
+let myWeaponStatus = { hasWeapon: false, revealed: false, used: false, canEvict: false };
 let specialTargetMode = false;
 const canUsePlayerTable = () => window.matchMedia("(min-width: 721px)").matches;
 let playersView = canUsePlayerTable() && localStorage.getItem("bunker-players-view") === "table" ? "table" : "cards";
@@ -187,6 +188,8 @@ function traitName(trait) {
 
 function updateActionTimer() {
     const timer = $("#actionTimer");
+    const controls = $("#timerControls");
+    const extendButton = $("#extendRoomTimer");
     const deadline = room?.phase === "finished"
         ? room.roomCloseDeadline
         : room?.phase === "voting"
@@ -195,14 +198,16 @@ function updateActionTimer() {
                 ? room.turnDeadline
                 : null;
     if (!deadline) {
-        timer.classList.add("hidden");
+        controls.classList.add("hidden");
+        extendButton.classList.add("hidden");
         return;
     }
-    const seconds = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    const seconds = Math.max(0, Math.ceil((deadline - (Date.now() + serverTimeOffset)) / 1000));
     const kind = room.phase === "finished" ? "Комната закроется через" : room.phase === "voting" ? "До конца голосования" : "Время хода";
     timer.textContent = `${kind}: ${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
     timer.classList.toggle("urgent", seconds <= 10);
-    timer.classList.remove("hidden");
+    controls.classList.remove("hidden");
+    extendButton.classList.toggle("hidden", room.phase !== "finished");
 }
 
 function nickname() {
@@ -257,45 +262,53 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
     const hasUsedSpecialCards = players.some((player) => player.usedSpecialCard);
     const playerStatus = (player) => player.left ? "вышел" : player.eliminated ? "исключён" : isFinished ? "победитель" : "в игре";
     const playerState = (player) => player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
-    const traitRow = (label, cells, extraClass = "") => `<tr class="${extraClass}"><th scope="row"><span class="table-header-value" title="${escaped(label)}">${escaped(label)}</span></th>${cells}</tr>`;
-    const traitRows = cardOrder.map((trait) => traitRow(
-        traitName(trait),
-        players.map((player) => {
-            const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, trait);
-            const isMe = player.id === ownPlayerId();
-            const hasOwnValue = isMe && Object.prototype.hasOwnProperty.call(myCards, trait);
-            const isFinishReveal = isFinished && !player.left && !player.eliminated && Array.isArray(player.finishRevealedTraits) && player.finishRevealedTraits.includes(trait);
-            const baseValue = hasOwnValue ? myCards[trait] : isRevealed ? player.revealed[trait] : "скрыто";
-            const extraBaggage = trait === "backpack" && Array.isArray(player.extraBaggage) ? player.extraBaggage : [];
-            const value = extraBaggage.length ? [baseValue, ...extraBaggage].filter(Boolean).join(" · ") : baseValue;
-            const canRevealHere = isMe && !isRevealed && (canChooseTrait || (canRevealProfession && trait === room.currentTrait));
-            const visibilityClass = isFinishReveal ? "is-finish-reveal-value" : isRevealed ? "is-revealed-value" : hasOwnValue ? "is-private-value" : "is-hidden-value";
-            return `<td class="${visibilityClass} ${playerState(player)}"><div class="table-cell-content ${canRevealHere ? "has-reveal-control" : ""}"><span class="table-cell-value" title="${escaped(value)}">${escaped(value)}</span>${canRevealHere ? `<button class="table-reveal-button" type="button" data-reveal-trait="${trait}" title="Раскрыть: ${escaped(traitName(trait))}" aria-label="Раскрыть: ${escaped(traitName(trait))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.8"></circle></svg></button>` : ""}</div></td>`;
-        }).join("")
-    )).join("");
-    const extraRows = [
-        hasProfessionBaggageItems ? traitRow("Багаж от профессии", players.map((player) => `<td class="table-extra ${professionBaggageFor(player) ? "is-revealed-value" : ""} ${playerState(player)}"><span class="table-cell-value" title="${escaped(professionBaggageFor(player) || "—")}">${professionBaggageFor(player) ? escaped(professionBaggageFor(player)) : "—"}</span></td>`).join("")) : "",
-        hasUsedSpecialCards ? traitRow("Спецкарта", players.map((player) => `<td class="table-extra ${player.usedSpecialCard ? "is-revealed-value" : ""} ${playerState(player)}"><span class="table-cell-value" title="${escaped(player.usedSpecialCard?.name || "—")}">${player.usedSpecialCard ? escaped(player.usedSpecialCard.name) : "—"}</span></td>`).join("")) : ""
-    ].join("");
     const showVotes = isVoting || players.some((player) => (room.voteMarkers?.[player.id] || []).length);
-    const voteRow = showVotes ? traitRow("Голоса против", players.map((player) => {
+    const traitCell = (player, trait) => {
+        const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, trait);
+        const isMe = player.id === ownPlayerId();
+        const hasOwnValue = isMe && Object.prototype.hasOwnProperty.call(myCards, trait);
+        const isFinishReveal = isFinished && !player.left && !player.eliminated && Array.isArray(player.finishRevealedTraits) && player.finishRevealedTraits.includes(trait);
+        const baseValue = hasOwnValue ? myCards[trait] : isRevealed ? player.revealed[trait] : "скрыто";
+        const extraBaggage = trait === "backpack" && Array.isArray(player.extraBaggage) ? player.extraBaggage : [];
+        const value = extraBaggage.length ? [baseValue, ...extraBaggage].filter(Boolean).join(" · ") : baseValue;
+        const canRevealHere = isMe && !isRevealed && (canChooseTrait || (canRevealProfession && trait === room.currentTrait));
+        const visibilityClass = isFinishReveal ? "is-finish-reveal-value" : isRevealed ? "is-revealed-value" : hasOwnValue ? "is-private-value" : "is-hidden-value";
+        return `<td class="${visibilityClass} ${playerState(player)}"><div class="table-cell-content ${canRevealHere ? "has-reveal-control" : ""}"><span class="table-cell-value" title="${escaped(value)}">${escaped(value)}</span>${canRevealHere ? `<button class="table-reveal-button" type="button" data-reveal-trait="${trait}" title="Раскрыть: ${escaped(traitName(trait))}" aria-label="Раскрыть: ${escaped(traitName(trait))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.8"></circle></svg></button>` : ""}</div></td>`;
+    };
+    const voteCell = (player) => {
         const voters = (room.voteMarkers?.[player.id] || [])
             .map((voterId) => players.find((candidate) => candidate.id === voterId))
             .filter(Boolean);
         const visibleVoters = voters.slice(0, 3);
         const voteWord = voters.length === 1 ? "голос" : voters.length >= 2 && voters.length <= 4 ? "голоса" : "голосов";
         return `<td class="table-vote-cell ${playerState(player)}">${visibleVoters.map((voter) => `<span class="vote-avatar" title="${escaped(voter.nickname)}">${avatarMarkup(voter)}</span>`).join("")}${voters.length > visibleVoters.length ? `<span class="vote-more">+${voters.length - visibleVoters.length}</span>` : ""}<span class="table-vote-count ${voters.length ? "" : "is-empty"}">${voters.length} ${voteWord}</span></td>`;
-    }).join(""), "table-vote-row") : "";
-    const actionRow = (isVoting || specialTargetMode) ? traitRow("Действие", players.map((player) => {
+    };
+    const actionCell = (player) => {
         const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== ownPlayerId();
         const canSelectSpecialTarget = specialTargetMode && !player.left && !player.eliminated && player.id !== ownPlayerId();
         const action = canSelectSpecialTarget
             ? `<button class="special-target-button" data-special-target="${player.id}">${escaped(specialTargetAction)}</button>`
             : canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : "—";
         return `<td class="table-action-cell ${playerState(player)}">${action}</td>`;
-    }).join(""), "table-action-row") : "";
-    const playerHeaders = players.map((player, index) => `<th scope="col" class="${playerState(player)}"><span class="table-player-head">${avatarMarkup(player)}<strong title="${escaped(player.nickname)}">${escaped(player.nickname)}${player.id === ownPlayerId() ? " (вы)" : ""}</strong><small>№ ${index + 1} · ${playerStatus(player)}</small></span></th>`).join("");
-    return `<div class="players-table-scroll"><table class="players-table"><thead><tr><th><span class="table-header-value" title="Характеристика">Характеристика</span></th>${playerHeaders}</tr></thead><tbody>${traitRows}${extraRows}${voteRow}${actionRow}</tbody></table></div>`;
+    };
+    const columns = [
+        ...cardOrder.map((trait) => `<th scope="col"><span class="table-header-value" title="${escaped(traitName(trait))}">${escaped(traitName(trait))}</span></th>`),
+        hasProfessionBaggageItems ? '<th scope="col"><span class="table-header-value" title="Багаж от профессии">Багаж от профессии</span></th>' : "",
+        hasUsedSpecialCards ? '<th scope="col"><span class="table-header-value" title="Спецкарта">Спецкарта</span></th>' : "",
+        showVotes ? '<th scope="col"><span class="table-header-value">Голоса против</span></th>' : "",
+        (isVoting || specialTargetMode) ? '<th scope="col"><span class="table-header-value">Действие</span></th>' : ""
+    ].join("");
+    const rows = players.map((player, index) => {
+        const identity = `<th scope="row" class="table-player-cell ${playerState(player)}"><span class="table-player">${avatarMarkup(player)}<span><strong title="${escaped(player.nickname)}">${escaped(player.nickname)}${player.id === ownPlayerId() ? " (вы)" : ""}</strong><small>№ ${index + 1} · ${playerStatus(player)}</small></span></span></th>`;
+        const extras = [
+            hasProfessionBaggageItems ? `<td class="table-extra ${professionBaggageFor(player) ? "is-revealed-value" : "is-hidden-value"} ${playerState(player)}"><span class="table-cell-value" title="${escaped(professionBaggageFor(player) || "—")}">${professionBaggageFor(player) ? escaped(professionBaggageFor(player)) : "—"}</span></td>` : "",
+            hasUsedSpecialCards ? `<td class="table-extra ${player.usedSpecialCard ? "is-revealed-value" : "is-hidden-value"} ${playerState(player)}"><span class="table-cell-value" title="${escaped(player.usedSpecialCard?.name || "—")}">${player.usedSpecialCard ? escaped(player.usedSpecialCard.name) : "—"}</span></td>` : "",
+            showVotes ? voteCell(player) : "",
+            (isVoting || specialTargetMode) ? actionCell(player) : ""
+        ].join("");
+        return `<tr class="${playerState(player)}">${identity}${cardOrder.map((trait) => traitCell(player, trait)).join("")}${extras}</tr>`;
+    }).join("");
+    return `<div class="players-table-scroll"><table class="players-table players-table-transposed"><thead><tr><th><span class="table-header-value">Игрок</span></th>${columns}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function updateGame() {
@@ -324,7 +337,7 @@ function updateGame() {
     const isMyTurn = room.turnPlayerId === ownPlayerId();
     const hasVoted = room.votedPlayerIds?.includes(ownPlayerId());
     const canUseSpecialCard = Boolean(mySpecialCard && !mySpecialCard.used && me && !me.eliminated && room.phase === "reveal" && isMyTurn);
-    const canUseWeapon = Boolean(myWeaponStatus?.hasWeapon && !myWeaponStatus?.used && myWeaponStatus?.canEvict && me && !me.eliminated && room.phase === "reveal" && isMyTurn);
+    const canUseWeapon = Boolean(myWeaponStatus?.hasWeapon && myWeaponStatus?.revealed && !myWeaponStatus?.used && myWeaponStatus?.canEvict && me && !me.eliminated && room.phase === "reveal" && isMyTurn);
     const specialNeedsTarget = ["swap_random_trait", "take_backpack"].includes(mySpecialCard?.effect);
     const specialTraitLabel = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать предмет из рюкзака"
         : mySpecialCard.effect === "swap_adjacent_profession" ? (mySpecialCard.direction === "left" ? "Обменяться профессией с соседом слева" : mySpecialCard.direction === "right" ? "Обменяться профессией с соседом справа" : "Обменяться профессией со случайным соседом")
@@ -419,7 +432,7 @@ function updateGame() {
     const professionBaggage = me?.professionItem
         ? '<article class="my-card is-revealed profession-item-card"><span>Багаж от профессии</span><strong>' + escaped(me.professionItem) + '</strong><em>получен</em></article>'
         : "";
-    const weaponActionCard = myWeaponStatus?.hasWeapon
+    const weaponActionCard = myWeaponStatus?.hasWeapon && myWeaponStatus?.revealed
         ? '<' + (canUseWeapon ? 'button type="button" data-use-bunker-weapon' : 'article') + ' class="my-card weapon-action-card ' + (myWeaponStatus?.used ? 'is-used' : '') + (canUseWeapon ? ' is-choice' : '') + '"><span>Предмет в багаже</span><strong>Оружие</strong><small>Выгнать жителя и освободить 1 место</small><em>' + (myWeaponStatus?.used ? 'житель выгнан' : !myWeaponStatus?.canEvict ? 'жителей нет' : canUseWeapon ? 'нажмите, чтобы применить' : 'доступно в ваш ход') + '</em></' + (canUseWeapon ? 'button' : 'article') + '>'
         : '';
     const specialCardInHand = mySpecialCard
@@ -539,6 +552,7 @@ $("#revealButton").addEventListener("click", () => {
     playSound("reveal");
 });
 $("#skipVoteButton").addEventListener("click", () => socket.emit("skipVote"));
+$("#extendRoomTimer").addEventListener("click", () => socket.emit("extendRoomClose"));
 $("#soundToggle").addEventListener("click", () => {
     soundsEnabled = !soundsEnabled;
     localStorage.setItem("bunker-sounds", soundsEnabled ? "on" : "off");
@@ -613,6 +627,7 @@ socket.on("roomState", (state) => {
     const turnKey = `${state.code}:${state.round}:${state.turnPlayerId || ""}:${state.turnDeadline || ""}`;
     const isMyTurn = state.phase === "reveal" && state.turnPlayerId === ownPlayerId();
     const justFinished = state.phase === "finished" && (!room || room.code !== state.code || room.phase !== "finished");
+    if (Number.isFinite(Number(state.serverNow))) serverTimeOffset = Number(state.serverNow) - Date.now();
     room = state;
     renderRoom();
     if (justFinished) {
@@ -659,6 +674,7 @@ socket.on("yourSpecialCard", (card) => {
 socket.on("yourWeaponStatus", (status) => {
     myWeaponStatus = {
         hasWeapon: Boolean(status?.hasWeapon),
+        revealed: Boolean(status?.revealed),
         used: Boolean(status?.used),
         canEvict: Boolean(status?.canEvict)
     };

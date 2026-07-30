@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#101716">
     <title>Бункер — игра для друзей</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="style.css?v=20260730-themed-results">
+    <link rel="stylesheet" href="style.css?v=20260730-sync-close-timer">
 </head>
 <body>
     <div class="bunker-backdrop" aria-hidden="true"></div>
@@ -54,7 +54,10 @@
             <div class="game-layout">
                 <section class="panel round-panel">
                     <p id="roundLabel" class="eyebrow"></p>
-                    <div id="actionTimer" class="action-timer hidden" aria-live="polite"></div>
+                    <div id="timerControls" class="timer-controls hidden">
+                        <div id="actionTimer" class="action-timer" aria-live="polite"></div>
+                        <button id="extendRoomTimer" class="extend-room-timer hidden" type="button" title="Продлить просмотр результатов на 30 секунд" aria-label="Продлить просмотр результатов на 30 секунд">+30</button>
+                    </div>
                     <div class="round-copy">
                         <h3 id="roundTitle"></h3>
                         <p id="roundDescription" class="hint"></p>
@@ -88,6 +91,6 @@
 
     <div id="toast" class="toast" role="status"></div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="script.js?v=20260730-themed-results"></script>
+    <script src="script.js?v=20260730-sync-close-timer"></script>
 </body>
 </html>

@@ -32,9 +32,12 @@ const TRAIT_ORDER = Object.keys(TRAITS);
 const CATEGORY_NAMES = {
     profession: "Профессия",
     health: "Здоровье",
+    gender_age: "Пол и возраст",
     gender: "Пол",
     age: "Возраст",
     body: "Телосложение",
+    character: "Характер",
+    family: "Семья",
     parents: "Родители",
     backpack: "Рюкзак",
     specialAbility: "Спецвозможность"
@@ -123,9 +126,9 @@ function professionBunkerFit(room, professionValue) {
 function defaultOptionScore(trait, value) {
     const text = String(value || "").toLocaleLowerCase("ru");
     if (trait === "profession") return Math.round(50 + professionRating(value).score * 45);
-    if (trait === "gender" || trait === "parents") return 50;
-    if (trait === "age") {
-        const age = Number.parseInt(text, 10);
+    if (trait === "gender" || trait === "parents" || trait === "character" || trait === "family") return 50;
+    if (trait === "age" || trait === "gender_age") {
+        const age = Number((text.match(/\d{1,3}/) || [])[0]);
         if (age < 20) return 40;
         if (age > 60) return 10;
         return 75;
@@ -157,7 +160,7 @@ const WATER_OPTIONS_SEED_VERSION = 1;
 const WATER_RANDOM_PERCENT_SEED_VERSION = 1;
 const WATER_DURATION_SEED_VERSION = 1;
 const BACKPACK_WATER_SEED_VERSION = 1;
-const GENDER_OPTIONS_SEED_VERSION = 1;
+const GENDER_OPTIONS_SEED_VERSION = 2;
 const HEALTH_CATEGORY_SEED_VERSION = 1;
 const SPECIAL_CARD_LIBRARY_SEED_VERSION = 4;
 const DISASTER_DURATION_SEED_VERSION = 1;
@@ -168,12 +171,36 @@ const WATER_BACKPACK_OPTIONS = [
     { value: "Канистры воды на 2 недели", score: 84, chance: 7 },
     { value: "Запас питьевой воды на месяц", score: 94, chance: 5 }
 ];
-const DEFAULT_GENDER_CATEGORY = {
-    id: "gender",
-    name: "Пол",
+const DEFAULT_GENDER_AGE_CATEGORY = {
+    id: "gender_age",
+    name: "Пол и возраст",
     options: [
-        { value: "Мужчина", score: 50, chance: 50 },
-        { value: "Женщина", score: 50, chance: 50 }
+        { value: "Мужчина, 19 лет", score: 40, chance: 8.33 },
+        { value: "Мужчина, 27 лет", score: 75, chance: 8.33 },
+        { value: "Мужчина, 36 лет", score: 75, chance: 8.33 },
+        { value: "Мужчина, 48 лет", score: 75, chance: 8.33 },
+        { value: "Мужчина, 63 года", score: 10, chance: 8.33 },
+        { value: "Мужчина, 76 лет", score: 10, chance: 8.33 },
+        { value: "Женщина, 18 лет", score: 40, chance: 8.33 },
+        { value: "Женщина, 25 лет", score: 75, chance: 8.33 },
+        { value: "Женщина, 34 года", score: 75, chance: 8.33 },
+        { value: "Женщина, 42 года", score: 75, chance: 8.33 },
+        { value: "Женщина, 55 лет", score: 75, chance: 8.33 },
+        { value: "Женщина, 68 лет", score: 10, chance: 8.37 }
+    ]
+};
+const DEFAULT_CHARACTER_CATEGORY = {
+    id: "character",
+    name: "Характер",
+    options: [
+        { value: "Спокойный и собранный", score: 82, chance: 14 },
+        { value: "Лидер, но вспыльчивый", score: 58, chance: 12 },
+        { value: "Доброжелательный оптимист", score: 74, chance: 14 },
+        { value: "Паникёр", score: 22, chance: 10 },
+        { value: "Рациональный одиночка", score: 64, chance: 12 },
+        { value: "Конфликтный, но решительный", score: 38, chance: 10 },
+        { value: "Внимательный командный игрок", score: 86, chance: 14 },
+        { value: "Скрытный интроверт", score: 48, chance: 14 }
     ]
 };
 const DEFAULT_HEALTH_CATEGORY = {
@@ -288,7 +315,7 @@ const DEFAULT_GAME_CONFIG = {
             { value: "строитель", score: 90, chance: 20 },
             { value: "механик", score: 88, chance: 20 }
         ]
-    }, DEFAULT_HEALTH_CATEGORY],
+    }, DEFAULT_HEALTH_CATEGORY, DEFAULT_GENDER_AGE_CATEGORY, DEFAULT_CHARACTER_CATEGORY],
     disasters: DISASTERS,
     bunkerTraits: DEFAULT_BUNKER_TRAITS,
     bunkerTraitsSeedVersion: BUNKER_TRAITS_SEED_VERSION,
@@ -572,9 +599,11 @@ function categoryContentKind(category) {
     const hint = `${category?.id || ""} ${category?.name || ""}`.toLocaleLowerCase("ru");
     if (/profession|професс/.test(hint)) return "profession";
     if (/health|здоров/.test(hint)) return "health";
+    if (/gender[_-]?age|пол.*возраст|возраст.*пол/.test(hint)) return "gender_age";
     if (/gender|\bsex\b|пол\b/.test(hint)) return "gender";
     if (/age|возраст/.test(hint)) return "age";
     if (/body|телослож/.test(hint)) return "body";
+    if (/character|характер/.test(hint)) return "character";
     if (/parents|family|семь|родител/.test(hint)) return "family";
     if (/backpack|рюкзак|багаж/.test(hint)) return "backpack";
     if (/hobby|хобби/.test(hint)) return "hobby";
@@ -587,10 +616,12 @@ function categoryContentTemplate(category) {
     const templates = {
         profession: [["Врач скорой помощи", 95], ["Инженер-электрик", 92], ["Фермер", 90], ["Механик", 88], ["Строитель", 84], ["Повар", 76], ["Биолог", 78], ["Психолог", 62]],
         health: [["Полностью здоров", 95], ["Сильный иммунитет", 90], ["Астма под контролем", 55], ["Диабет под контролем", 50], ["Перелом руки срастается", 35], ["Хроническая мигрень", 40]],
+        gender_age: DEFAULT_GENDER_AGE_CATEGORY.options.map((option) => [option.value, option.score]),
         gender: [["Мужчина", 50], ["Женщина", 50]],
         age: [["18 лет", 60], ["25 лет", 82], ["34 года", 86], ["42 года", 78], ["55 лет", 62], ["68 лет", 35]],
         body: [["Атлетическое телосложение", 88], ["Крепкое телосложение", 82], ["Среднее телосложение", 58], ["Худощавое телосложение", 54], ["После травмы колена", 30], ["Выносливый", 85]],
         family: [["Один, без иждивенцев", 75], ["Есть младшая сестра", 56], ["Ухаживает за пожилой мамой", 42], ["Семья в другом городе", 62], ["Есть маленький ребёнок", 45], ["Сирота", 65]],
+        character: DEFAULT_CHARACTER_CATEGORY.options.map((option) => [option.value, option.score]),
         backpack: [["Оружие", 70], ["Аптечка и набор лекарств", 92], ["Набор инструментов", 88], ["Фильтр для воды", 86], ["Солнечная батарея", 83], ["Рация", 74], ["Ящик консервов", 82]],
         hobby: [["Выживание в дикой природе", 84], ["Садоводство", 78], ["Радиолюбительство", 72], ["Столярное дело", 74], ["Рыбалка", 62], ["Настольные игры", 44]],
         orientation: [["Гетеросексуал", 50], ["Бисексуал", 50], ["Гомосексуал", 50]],
@@ -792,33 +823,28 @@ function seedBackpackWater(rawConfig) {
     };
 }
 
-function isGenderCategory(category) {
+function isProfileCategory(category) {
     const id = String(category?.id || "").toLocaleLowerCase("ru");
     const name = String(category?.name || "").toLocaleLowerCase("ru").trim();
-    return id === "gender" || name === "пол";
+    return ["gender", "age", "family", "gender_age", "character"].includes(id)
+        || /^(пол|возраст|семья|характер|пол и возраст)$/.test(name);
 }
 
-function seedNormalGenderOptions(rawConfig) {
+function seedProfileCategories(rawConfig) {
     const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
     if (Number(source.genderOptionsSeedVersion) >= GENDER_OPTIONS_SEED_VERSION) {
         return { config: source, changed: false };
     }
     const categories = Array.isArray(source.categories) ? clone(source.categories) : [];
-    const genderIndex = categories.findIndex(isGenderCategory);
-    if (genderIndex < 0) {
-        categories.push(clone(DEFAULT_GENDER_CATEGORY));
-    } else {
-        categories[genderIndex] = {
-            ...categories[genderIndex],
-            name: "Пол",
-            options: clone(DEFAULT_GENDER_CATEGORY.options),
-            values: undefined
-        };
-    }
+    const profileIndexes = categories.map((category, index) => isProfileCategory(category) ? index : -1).filter((index) => index >= 0);
+    const healthIndex = categories.findIndex((category) => /health|здоров/.test(`${category?.id || ""} ${category?.name || ""}`.toLocaleLowerCase("ru")));
+    const insertAt = profileIndexes.length ? profileIndexes[0] : Math.max(0, healthIndex + 1);
+    const remainingCategories = categories.filter((category) => !isProfileCategory(category));
+    remainingCategories.splice(Math.min(insertAt, remainingCategories.length), 0, clone(DEFAULT_GENDER_AGE_CATEGORY), clone(DEFAULT_CHARACTER_CATEGORY));
     return {
         config: {
             ...source,
-            categories,
+            categories: remainingCategories,
             genderOptionsSeedVersion: GENDER_OPTIONS_SEED_VERSION
         },
         changed: true
@@ -886,13 +912,13 @@ function seedGameConfig(rawConfig) {
     const contentSeed = seedPlaceholderContent(waterDurationSeed.config);
     const backpackSeed = seedBackpackWeapon(contentSeed.config);
     const backpackWaterSeed = seedBackpackWater(backpackSeed.config);
-    const genderSeed = seedNormalGenderOptions(backpackWaterSeed.config);
-    const healthSeed = seedHealthCategory(genderSeed.config);
+    const profileSeed = seedProfileCategories(backpackWaterSeed.config);
+    const healthSeed = seedHealthCategory(profileSeed.config);
     const specialCardSeed = seedSpecialCardLibrary(healthSeed.config);
     const disasterSeed = seedDisasterDurations(specialCardSeed.config);
     return {
         config: disasterSeed.config,
-        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || waterDurationSeed.changed || backpackSeed.changed || backpackWaterSeed.changed || genderSeed.changed || healthSeed.changed || specialCardSeed.changed || disasterSeed.changed || contentSeed.changed
+        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || waterDurationSeed.changed || backpackSeed.changed || backpackWaterSeed.changed || profileSeed.changed || healthSeed.changed || specialCardSeed.changed || disasterSeed.changed || contentSeed.changed
     };
 }
 
@@ -1422,18 +1448,23 @@ function weaponSourceForPlayer(room, playerId) {
     return item ? { type: "extra", item } : null;
 }
 
+function weaponSourceIsRevealed(room, playerId, source) {
+    if (!source) return false;
+    if (source.type === "backpack") return Boolean(room.revealed?.[playerId]?.[source.trait]);
+    if (source.type === "profession") return Boolean(room.revealed?.[playerId]?.profession);
+    return true;
+}
+
 function useBunkerWeapon(room, playerId) {
     if (room.playerResidentEvictions?.[playerId]) return { error: "Этим оружием уже выгнали жителя." };
     const source = weaponSourceForPlayer(room, playerId);
     if (!source) return { error: "Чтобы выгнать жителя, в вашем багаже должно быть оружие." };
+    if (!weaponSourceIsRevealed(room, playerId, source)) {
+        return { error: "Сначала раскройте карточку с оружием — нельзя использовать скрытый предмет." };
+    }
     const residentsTrait = (room.bunkerTraits || []).find((trait) => cleanOccupiedSlots(trait.occupiedSlots) > 0);
     if (!residentsTrait) return { error: "В бункере нет жителей, которые занимают места." };
 
-    const wasRevealed = Boolean(room.revealed?.[playerId]?.[source.trait]);
-    if (source.type === "backpack") {
-        room.revealed[playerId] = room.revealed[playerId] || {};
-        room.revealed[playerId][source.trait] = source.item;
-    }
     residentsTrait.occupiedSlots = Math.max(0, cleanOccupiedSlots(residentsTrait.occupiedSlots) - 1);
     residentsTrait.evictedResidents = (Number(residentsTrait.evictedResidents) || 0) + 1;
     room.bunkerOccupiedSlots = Math.max(0, (Number(room.bunkerOccupiedSlots) || 0) - 1);
@@ -1448,8 +1479,7 @@ function useBunkerWeapon(room, playerId) {
         residentsTrait,
         source,
         previousCapacity,
-        capacity: room.capacity,
-        revealedTrait: source.type === "backpack" && !wasRevealed ? source.trait : null
+        capacity: room.capacity
     };
 }
 
@@ -1500,7 +1530,8 @@ function revealRoundsFor(playerCount, categoryCount) {
 
 const ACTION_DURATION_MS = 60_000;
 const RECONNECT_GRACE_MS = 60_000;
-const FINISHED_ROOM_TTL_MS = 5 * 60_000;
+const FINISHED_ROOM_TTL_MS = 3 * 60_000;
+const ROOM_CLOSE_EXTENSION_MS = 30_000;
 const MIN_PLAYERS_TO_START = 3;
 const SKIP_VOTE = "__skip_vote__";
 
@@ -1533,6 +1564,19 @@ function closeRoom(room, notifyPlayers = true) {
     for (const player of room.players) cancelPendingLeave(player);
     if (notifyPlayers) io.to(room.code).emit("roomExpired");
     delete rooms[room.code];
+}
+
+function scheduleRoomClose(room, deadline) {
+    if (room.closeTimer) clearTimeout(room.closeTimer);
+    room.roomCloseDeadline = deadline;
+    room.closeTimer = setTimeout(() => closeRoom(room), Math.max(0, deadline - Date.now()));
+}
+
+function extendRoomClose(room) {
+    const baseDeadline = Math.max(Date.now(), Number(room.roomCloseDeadline) || 0);
+    const deadline = baseDeadline + ROOM_CLOSE_EXTENSION_MS;
+    scheduleRoomClose(room, deadline);
+    return deadline;
 }
 
 function movePlayerToSocket(room, player, socketId) {
@@ -1771,6 +1815,7 @@ function publicState(room) {
     }, {});
     return {
         code: room.code,
+        serverNow: Date.now(),
         hostId: room.host,
         phase: room.phase,
         disaster: room.disaster,
@@ -1825,6 +1870,7 @@ function emitRoom(room) {
         io.to(player.id).emit("yourSpecialCard", room.playerSpecialCards?.[player.id] || null);
         io.to(player.id).emit("yourWeaponStatus", {
             hasWeapon: Boolean(weaponSourceForPlayer(room, player.id)),
+            revealed: weaponSourceIsRevealed(room, player.id, weaponSourceForPlayer(room, player.id)),
             used: Boolean(room.playerResidentEvictions?.[player.id]),
             canEvict: (room.bunkerTraits || []).some((trait) => cleanOccupiedSlots(trait.occupiedSlots) > 0)
         });
@@ -1867,8 +1913,7 @@ function endGame(room) {
     room.turnDeadline = null;
     room.voteDeadline = null;
     room.votes = {};
-    room.roomCloseDeadline = Date.now() + FINISHED_ROOM_TTL_MS;
-    room.closeTimer = setTimeout(() => closeRoom(room), FINISHED_ROOM_TTL_MS);
+    scheduleRoomClose(room, Date.now() + FINISHED_ROOM_TTL_MS);
     const winners = activePlayers(room).map((player) => player.nickname);
     addActionLog(room, "Игра окончена — все оставшиеся характеристики раскрыты.", "reveal");
     addActionLog(room, winners.length ? "Игра завершена. В бункере остались: " + winners.join(", ") + "." : "Игра завершена. Выживших не осталось.", "finish");
@@ -2295,6 +2340,17 @@ io.on("connection", (socket) => {
         addActionLog(room, "Ведущий начинает первый раунд.", "system");
         io.to(room.code).emit("roundStarted", { initial: true });
         beginRevealRound(room);
+    });
+
+    socket.on("extendRoomClose", () => {
+        const room = roomFor(socket);
+        const player = room?.players.find((candidate) => candidate.id === socket.id);
+        if (!room || room.phase !== "finished" || !player || player.left) {
+            return emitError(socket, "Продлить время можно только после завершения этой игры.");
+        }
+        extendRoomClose(room);
+        addActionLog(room, `${player.nickname} продлевает просмотр результатов на 30 секунд.`, "system");
+        emitRoom(room);
     });
 
     socket.on("revealTrait", (requestedTrait) => {
