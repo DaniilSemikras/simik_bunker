@@ -1397,7 +1397,8 @@ function useSpecialCard(room, playerId, targetId) {
     if (specialCard.effect === "random_capacity") {
         const previousCapacity = room.capacity;
         const canIncrease = room.capacity < activePlayers(room).length;
-        const canDecrease = room.capacity > 1;
+        // Two places is the safe lower bound for the random resize card.
+        const canDecrease = room.capacity > 2;
         if (!canIncrease && !canDecrease) return { error: "Размер бункера уже нельзя изменить." };
         const change = canIncrease && canDecrease ? (Math.random() < 0.5 ? 1 : -1) : canIncrease ? 1 : -1;
         room.capacity += change;
