@@ -1483,15 +1483,16 @@ function useBunkerWeapon(room, playerId) {
     };
 }
 
-function assignSpecialCards(players, specialCards, traitOrder) {
+function assignSpecialCards(players, specialCards, traitOrder, bunkerBaseCapacity) {
     const exchangeTraits = traitOrder.filter((trait) => !["profession", "backpack"].includes(trait));
     const rerollTraits = traitOrder.filter((trait) => trait !== "profession");
+    const canModifyCapacity = Number(bunkerBaseCapacity) > 2;
     const usableCards = specialCards.filter((card) => (
         card.effect === "swap_random_trait" ? exchangeTraits.length > 0
             : card.effect === "swap_adjacent_profession" ? players.length > 1 && traitOrder.includes("profession")
             : card.effect === "take_backpack" ? traitOrder.includes("backpack")
                 : card.effect === "reroll_own_trait" ? rerollTraits.length > 0
-                    : ["increase_capacity", "decrease_capacity", "random_capacity"].includes(card.effect)
+                    : ["increase_capacity", "decrease_capacity", "random_capacity"].includes(card.effect) && canModifyCapacity
     ));
     if (!usableCards.length) return {};
     return Object.fromEntries(players.map((player) => {
@@ -2293,7 +2294,7 @@ io.on("connection", (socket) => {
         room.bunkerOccupiedSlots = room.bunkerTraits.reduce((total, trait) => total + cleanOccupiedSlots(trait.occupiedSlots), 0);
         room.capacity = Math.max(1, room.bunkerBaseCapacity - room.bunkerOccupiedSlots);
         room.cards = assignCards(activePlayers(room), gameConfig.categories);
-        room.playerSpecialCards = assignSpecialCards(activePlayers(room), gameConfig.specialCards || [], room.traitOrder);
+        room.playerSpecialCards = assignSpecialCards(activePlayers(room), gameConfig.specialCards || [], room.traitOrder, room.bunkerBaseCapacity);
         room.playerProfessionItems = {};
         room.playerExtraBaggage = {};
         room.playerResidentEvictions = {};
