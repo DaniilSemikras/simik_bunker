@@ -120,6 +120,50 @@ function professionBunkerFit(room, professionValue) {
     if (/(воды нет|3 дня|недел)/.test(water) && waterExpert) {
         addBonus(12, "поможет с очисткой и поиском воды");
     }
+    const residents = traitText(["resident", "жител", "обитател"]);
+    if (/(агресс|конфликт|опасн|мар[оа]дер)/.test(residents) && includesAny(profession, ["военн", "спасател", "пожарн", "охран", "полиц"])) {
+        addBonus(16, "сможет обеспечить безопасность при опасных жителях");
+    }
+    return { bonus, reasons };
+}
+
+function professionItemBunkerFit(room, professionValue, itemValue) {
+    const item = String(itemValue || "").toLocaleLowerCase("ru");
+    if (!item) return { bonus: 0, reasons: [] };
+    const bunker = (room?.bunkerTraits || []).map((trait) => `${trait?.id || ""} ${trait?.name || ""} ${trait?.value || ""}`).join(" ").toLocaleLowerCase("ru");
+    const disaster = String(room?.disaster || "").toLocaleLowerCase("ru");
+    const profession = professionBase(professionValue).toLocaleLowerCase("ru");
+    const reasons = [];
+    let bonus = 0;
+    const addBonus = (amount, reason) => {
+        if (!amount || bonus >= 28) return;
+        const applied = Math.min(amount, 28 - bonus);
+        bonus += applied;
+        reasons.push(`${reason} +${applied}`);
+    };
+    const technicalFailure = /(электр|вентил|состояни).*(сломан|поврежден|аварийн|ремонт)|(?:сломан|поврежден|аварийн|ремонт).*(электр|вентил|состояни)/.test(bunker);
+    const lowFood = /(еды нет|3 дня|недел|голод)/.test(bunker);
+    const lowWater = /(воды нет|3 дня|недел|очистк)/.test(bunker);
+    const specialization = bunker;
+
+    if (/(мультитул|предохранител|инструмент|ремонт|кабель|креп[её]ж)/.test(item) && technicalFailure) {
+        addBonus(20, "профессиональный набор ускоряет ремонт систем");
+    }
+    if (/(семен|выращиван|культиватор|удобрен)/.test(item) && (/ферм/.test(specialization) || lowFood)) {
+        addBonus(20, "семена и инвентарь помогут наладить питание");
+    }
+    if (/(па[йе]к|консерв|горелк|запас еды)/.test(item) && lowFood) {
+        addBonus(16, "запас продовольствия поддержит команду при нехватке еды");
+    }
+    if (/(аптечк|лекарств|медицин)/.test(item) && (/(медицин|лаборатор)/.test(specialization) || /(вирус|эпидем|токсич|радиац)/.test(disaster))) {
+        addBonus(18, "медицинский запас особенно важен в этой катастрофе");
+    }
+    if (/(реактив|анализ|фильтр|очистк)/.test(item) && (lowWater || /лаборатор/.test(specialization))) {
+        addBonus(18, "набор пригодится для проверки и очистки воды");
+    }
+    if (/(рация|связ|фонар|аварийн)/.test(item) && /(военн|спасател|пожарн|связист|радист)/.test(profession)) {
+        addBonus(10, "аварийный комплект усиливает роль в координации команды");
+    }
     return { bonus, reasons };
 }
 
@@ -416,13 +460,16 @@ function defaultChance(index, count) {
 
 function defaultProfessionItem(value) {
     const text = String(value || "").toLocaleLowerCase("ru");
-    if (/(врач|фельдшер|медик|ветеринар)/.test(text)) return "аптечка и запас лекарств";
-    if (/(электрик|энергетик|инженер|электронщик)/.test(text)) return "мультитул и запас предохранителей";
-    if (/(фермер|агроном|садовод)/.test(text)) return "семена и мини-набор для выращивания";
-    if (/(повар|кондитер)/.test(text)) return "набор сухих пайков";
-    if (/(строител|сварщик)/.test(text)) return "ремонтный набор";
-    if (/(механик|автомеханик)/.test(text)) return "набор инструментов";
-    if (/(программист|радист|связист)/.test(text)) return "рация и набор для связи";
+    if (/(врач|фельдшер|медик|ветеринар|хирург)/.test(text)) return "аптечка, антибиотики и перевязочный набор";
+    if (/(биолог|химик|лаборант|фармацевт)/.test(text)) return "реактивы и тест-набор для воды";
+    if (/(электрик|энергетик|инженер|электронщик)/.test(text)) return "мультиметр, кабель и запас предохранителей";
+    if (/(сантехник|гидролог)/.test(text)) return "фильтр и набор для очистки воды";
+    if (/(фермер|агроном|садовод)/.test(text)) return "семена, удобрения и ручной культиватор";
+    if (/(повар|кондитер|кулинар)/.test(text)) return "сухие пайки и походная горелка";
+    if (/(строител|сварщик)/.test(text)) return "ремонтный набор и крепёж";
+    if (/(механик|автомеханик)/.test(text)) return "слесарный набор и запасные детали";
+    if (/(военн|спасател|пожарн|охранник|полиц)/.test(text)) return "рация, фонарь и аварийный набор";
+    if (/(программист|радист|связист)/.test(text)) return "рация и диагностический набор";
     if (/(психолог|учител)/.test(text)) return "набор для коммуникации с группой";
     return "";
 }
@@ -1777,13 +1824,27 @@ function calculateUtilityBreakdown(room) {
         const professionScore = scoreRevealedCard(room, "profession", professionValue);
         const professionBonus = professionValue ? Math.max(0, professionScore - professionBaseScore) : 0;
         const professionReasons = professionBonus ? professionBunkerFit(room, professionValue).reasons : [];
+        const professionItem = room.playerProfessionItems?.[player.id] || "";
+        const professionItemFit = professionItem ? professionItemBunkerFit(room, professionValue, professionItem) : { bonus: 0, reasons: [] };
+        if (professionItem) {
+            totalScore += Math.min(100, 55 + professionItemFit.bonus);
+            revealedCards += 1;
+        }
+        const contributions = [
+            ...professionReasons.map((reason) => ({ source: professionValue || "Профессия", reason })),
+            ...professionItemFit.reasons.map((reason) => ({ source: professionItem, reason }))
+        ];
         return {
             playerId: player.id,
             utility: revealedCards ? Math.round(totalScore / revealedCards) : 0,
             totalScore,
             revealedCards,
             professionBonus,
-            professionReasons
+            professionReasons,
+            professionItem,
+            professionItemBonus: professionItemFit.bonus,
+            professionItemReasons: professionItemFit.reasons,
+            contributions
         };
     });
 }
@@ -1840,7 +1901,7 @@ function publicState(room) {
         voteCanBeSkipped: voteCanBeSkipped(room),
         bunkerSurvivalChance: room.phase === "finished" ? calculateBunkerSurvivalChance(room) : null,
         utilityBreakdown: room.phase === "finished"
-            ? calculateUtilityBreakdown(room).map(({ playerId, utility, revealedCards, professionBonus, professionReasons }) => ({ playerId, utility, revealedCards, professionBonus, professionReasons }))
+            ? calculateUtilityBreakdown(room).map(({ playerId, utility, revealedCards, professionBonus, professionReasons, professionItem, professionItemBonus, professionItemReasons, contributions }) => ({ playerId, utility, revealedCards, professionBonus, professionReasons, professionItem, professionItemBonus, professionItemReasons, contributions }))
             : [],
         roomCloseDeadline: room.roomCloseDeadline || null,
         actionLog: room.actionLog || [],
