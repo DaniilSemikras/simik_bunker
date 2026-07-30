@@ -98,6 +98,7 @@ const WATER_DURATION_SEED_VERSION = 1;
 const BACKPACK_WATER_SEED_VERSION = 1;
 const GENDER_OPTIONS_SEED_VERSION = 1;
 const HEALTH_CATEGORY_SEED_VERSION = 1;
+const SPECIAL_CARD_LIBRARY_SEED_VERSION = 1;
 const DISASTER_DURATION_SEED_VERSION = 1;
 const CONTENT_FILL_SEED_VERSION = 1;
 const WEAPON_BACKPACK_OPTION = { value: "Оружие", score: 70, chance: 10 };
@@ -238,6 +239,7 @@ const DEFAULT_GAME_CONFIG = {
     backpackWaterSeedVersion: BACKPACK_WATER_SEED_VERSION,
     genderOptionsSeedVersion: GENDER_OPTIONS_SEED_VERSION,
     healthCategorySeedVersion: HEALTH_CATEGORY_SEED_VERSION,
+    specialCardLibrarySeedVersion: SPECIAL_CARD_LIBRARY_SEED_VERSION,
     disasterDurationSeedVersion: DISASTER_DURATION_SEED_VERSION,
     contentFillSeedVersion: CONTENT_FILL_SEED_VERSION,
     specialCards: [
@@ -248,9 +250,15 @@ const DEFAULT_GAME_CONFIG = {
             effect: "swap_random_trait"
         },
         {
+            id: "swap_adjacent_profession",
+            name: "Соседский обмен профессией",
+            description: "Один раз случайно выберите соседа слева или справа и обменяйтесь с ним профессиями.",
+            effect: "swap_adjacent_profession"
+        },
+        {
             id: "take_backpack",
-            name: "Забрать карточку рюкзака",
-            description: "Один раз заберите предмет из рюкзака выбранного игрока и добавьте его в свой багаж.",
+            name: "Украсть предмет из багажа",
+            description: "Один раз украдите предмет из багажа выбранного игрока. У вас он появится в той же карточке багажа, а у цели останется пусто.",
             effect: "take_backpack"
         },
         {
@@ -777,6 +785,24 @@ function seedHealthCategory(rawConfig) {
     };
 }
 
+function seedSpecialCardLibrary(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.specialCardLibrarySeedVersion) >= SPECIAL_CARD_LIBRARY_SEED_VERSION) {
+        return { config: source, changed: false };
+    }
+    const specialCards = Array.isArray(source.specialCards) ? [...source.specialCards] : [];
+    const adjacentSwap = DEFAULT_GAME_CONFIG.specialCards.find((card) => card.effect === "swap_adjacent_profession");
+    const hasAdjacentSwap = specialCards.some((card) => card?.effect === "swap_adjacent_profession" || /сосед|лев|прав/.test(`${card?.id || ""} ${card?.name || ""}`.toLocaleLowerCase("ru")));
+    return {
+        config: {
+            ...source,
+            specialCards: hasAdjacentSwap ? specialCards : [...specialCards, clone(adjacentSwap)],
+            specialCardLibrarySeedVersion: SPECIAL_CARD_LIBRARY_SEED_VERSION
+        },
+        changed: true
+    };
+}
+
 function seedGameConfig(rawConfig) {
     const bunkerSeed = seedDefaultBunkerTraits(rawConfig);
     const waterLabelSeed = seedWaterTraitLabel(bunkerSeed.config);
@@ -788,10 +814,11 @@ function seedGameConfig(rawConfig) {
     const backpackWaterSeed = seedBackpackWater(backpackSeed.config);
     const genderSeed = seedNormalGenderOptions(backpackWaterSeed.config);
     const healthSeed = seedHealthCategory(genderSeed.config);
-    const disasterSeed = seedDisasterDurations(healthSeed.config);
+    const specialCardSeed = seedSpecialCardLibrary(healthSeed.config);
+    const disasterSeed = seedDisasterDurations(specialCardSeed.config);
     return {
         config: disasterSeed.config,
-        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || waterDurationSeed.changed || backpackSeed.changed || backpackWaterSeed.changed || genderSeed.changed || healthSeed.changed || disasterSeed.changed || contentSeed.changed
+        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || waterDurationSeed.changed || backpackSeed.changed || backpackWaterSeed.changed || genderSeed.changed || healthSeed.changed || specialCardSeed.changed || disasterSeed.changed || contentSeed.changed
     };
 }
 
@@ -880,7 +907,9 @@ function normalizeGameConfig(rawConfig) {
         const name = cleanText(card?.name, 60);
         const description = cleanText(card?.description, 1200);
         const hint = `${id} ${name}`.toLocaleLowerCase("ru");
-        const effect = /увелич|добав.*(?:мест|слот)|расшир/.test(hint)
+        const effect = card?.effect === "swap_adjacent_profession" || (/сосед|лев|прав/.test(hint) && /професс|специальност/.test(hint))
+            ? "swap_adjacent_profession"
+            : /увелич|добав.*(?:мест|слот)|расшир/.test(hint)
             ? "increase_capacity"
             : /уменьш|отнят|убрат.*(?:мест|слот)|сократ/.test(hint)
                 ? "decrease_capacity"
@@ -890,7 +919,7 @@ function normalizeGameConfig(rawConfig) {
                         ? "reroll_own_trait"
                         : card?.effect === "take_backpack"
                             ? "take_backpack"
-                            : ["increase_capacity", "decrease_capacity", "random_capacity", "reroll_own_trait"].includes(card?.effect)
+                            : ["increase_capacity", "decrease_capacity", "random_capacity", "reroll_own_trait", "swap_adjacent_profession"].includes(card?.effect)
                                 ? card.effect
                                 : card?.effect === "swap_random_trait" || card?.effect === "swap_trait"
                                     ? "swap_random_trait"
@@ -936,13 +965,16 @@ function normalizeGameConfig(rawConfig) {
     const healthCategorySeedVersion = Number(rawConfig?.healthCategorySeedVersion) >= HEALTH_CATEGORY_SEED_VERSION
         ? HEALTH_CATEGORY_SEED_VERSION
         : 0;
+    const specialCardLibrarySeedVersion = Number(rawConfig?.specialCardLibrarySeedVersion) >= SPECIAL_CARD_LIBRARY_SEED_VERSION
+        ? SPECIAL_CARD_LIBRARY_SEED_VERSION
+        : 0;
     const disasterDurationSeedVersion = Number(rawConfig?.disasterDurationSeedVersion) >= DISASTER_DURATION_SEED_VERSION
         ? DISASTER_DURATION_SEED_VERSION
         : 0;
     const contentFillSeedVersion = Number(rawConfig?.contentFillSeedVersion) >= CONTENT_FILL_SEED_VERSION
         ? CONTENT_FILL_SEED_VERSION
         : 0;
-    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, waterDurationSeedVersion, backpackWaterSeedVersion, genderOptionsSeedVersion, healthCategorySeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, hiddenAvatars, revision };
+    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, waterDurationSeedVersion, backpackWaterSeedVersion, genderOptionsSeedVersion, healthCategorySeedVersion, specialCardLibrarySeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, hiddenAvatars, revision };
 }
 
 function loadGameConfig() {
@@ -1352,6 +1384,7 @@ function assignSpecialCards(players, specialCards, traitOrder) {
     const rerollTraits = traitOrder.filter((trait) => trait !== "profession");
     const usableCards = specialCards.filter((card) => (
         card.effect === "swap_random_trait" ? exchangeTraits.length > 0
+            : card.effect === "swap_adjacent_profession" ? players.length > 1 && traitOrder.includes("profession")
             : card.effect === "take_backpack" ? traitOrder.includes("backpack")
                 : card.effect === "reroll_own_trait" ? rerollTraits.length > 0
                     : ["increase_capacity", "decrease_capacity", "random_capacity"].includes(card.effect)
@@ -1360,6 +1393,7 @@ function assignSpecialCards(players, specialCards, traitOrder) {
     return Object.fromEntries(players.map((player) => {
         const card = clone(randomItem(usableCards));
         card.trait = card.effect === "swap_random_trait" ? randomItem(exchangeTraits)
+            : card.effect === "swap_adjacent_profession" ? "profession"
             : card.effect === "reroll_own_trait" ? randomItem(rerollTraits)
                 : card.effect === "take_backpack" ? "backpack" : null;
         return [player.id, { ...card, used: false }];
@@ -1455,6 +1489,8 @@ function addActionLog(room, text, type = "system") {
 }
 
 function scoreRevealedCard(room, trait, value) {
+    const isBackpack = /backpack|рюкзак|багаж/.test(`${trait || ""} ${room.categoryNames?.[trait] || ""}`.toLocaleLowerCase("ru"));
+    if (isBackpack && /^(?:рюкзак забран|багаж пуст)$/i.test(String(value || "").trim())) return 0;
     const isHealth = isHealthTrait(trait, room.categoryNames?.[trait]);
     const scoreKey = trait === "profession" ? professionBase(value) : isHealth ? healthBase(value) : value;
     const configuredScore = room.cardScores?.[trait]?.[scoreKey];
@@ -1471,11 +1507,45 @@ function giveProfessionItem(room, playerId) {
     return item;
 }
 
+function adjacentPlayerId(room, playerId) {
+    const players = activePlayers(room);
+    const index = players.findIndex((player) => player.id === playerId);
+    if (index < 0 || players.length < 2) return null;
+    const candidates = [...new Set([
+        players[(index - 1 + players.length) % players.length]?.id,
+        players[(index + 1) % players.length]?.id
+    ])].filter((candidateId) => candidateId && candidateId !== playerId);
+    return candidates.length ? randomItem(candidates) : null;
+}
+
 function useSpecialCard(room, playerId, targetId) {
     const specialCard = room.playerSpecialCards?.[playerId];
     if (!specialCard || specialCard.used) return { error: "Эта спецкарта уже использована." };
-    if (!["swap_random_trait", "take_backpack", "increase_capacity", "decrease_capacity", "random_capacity", "reroll_own_trait"].includes(specialCard.effect)) return { error: "Неизвестный эффект спецкарты." };
+    if (!["swap_random_trait", "swap_adjacent_profession", "take_backpack", "increase_capacity", "decrease_capacity", "random_capacity", "reroll_own_trait"].includes(specialCard.effect)) return { error: "Неизвестный эффект спецкарты." };
     if (!room.cards[playerId]) return { error: "Не удалось найти ваши карточки." };
+
+    if (specialCard.effect === "swap_adjacent_profession") {
+        const neighborId = adjacentPlayerId(room, playerId);
+        if (!neighborId || !room.cards[neighborId]) return { error: "Для обмена нужен хотя бы один сосед в игре." };
+        const trait = "profession";
+        const myValue = room.cards[playerId][trait];
+        const neighborValue = room.cards[neighborId][trait];
+        room.cards[playerId][trait] = neighborValue;
+        room.cards[neighborId][trait] = myValue;
+        if (Object.prototype.hasOwnProperty.call(room.revealed[playerId] || {}, trait)) room.revealed[playerId][trait] = neighborValue;
+        if (Object.prototype.hasOwnProperty.call(room.revealed[neighborId] || {}, trait)) room.revealed[neighborId][trait] = myValue;
+        const myItem = room.playerProfessionItems?.[playerId];
+        const neighborItem = room.playerProfessionItems?.[neighborId];
+        if (room.playerProfessionItems) {
+            if (neighborItem) room.playerProfessionItems[playerId] = neighborItem;
+            else delete room.playerProfessionItems[playerId];
+            if (myItem) room.playerProfessionItems[neighborId] = myItem;
+            else delete room.playerProfessionItems[neighborId];
+        }
+        specialCard.used = true;
+        specialCard.targetId = neighborId;
+        return { card: specialCard, trait, action: specialCard.effect, targetId: neighborId };
+    }
 
     if (specialCard.effect === "increase_capacity") {
         const previousCapacity = room.capacity;
@@ -1530,17 +1600,16 @@ function useSpecialCard(room, playerId, targetId) {
     if (myValue === undefined || targetValue === undefined) return { error: "Этой характеристики нет у выбранного игрока." };
 
     if (specialCard.effect === "take_backpack") {
-        if (targetValue === "рюкзак забран") return { error: "У этого игрока уже забрали предмет из рюкзака." };
+        if (/^(?:рюкзак забран|багаж пуст)$/i.test(String(targetValue || "").trim())) return { error: "У этого игрока багаж уже пуст." };
         room.playerExtraBaggage = room.playerExtraBaggage || {};
         room.playerExtraBaggage[playerId] = [...(room.playerExtraBaggage[playerId] || []), targetValue];
-        room.cards[targetId][specialCard.trait] = "рюкзак забран";
-        if (Object.prototype.hasOwnProperty.call(room.revealed[targetId] || {}, specialCard.trait)) {
-            room.revealed[targetId][specialCard.trait] = room.cards[targetId][specialCard.trait];
-        }
+        room.cards[targetId][specialCard.trait] = "Багаж пуст";
+        room.revealed[targetId] = room.revealed[targetId] || {};
+        room.revealed[targetId][specialCard.trait] = room.cards[targetId][specialCard.trait];
         specialCard.used = true;
         specialCard.targetId = targetId;
         specialCard.item = targetValue;
-        return { card: specialCard, trait: specialCard.trait, action: specialCard.effect, item: targetValue };
+        return { card: specialCard, trait: specialCard.trait, action: specialCard.effect, item: targetValue, targetId };
     }
 
     room.cards[playerId][specialCard.trait] = targetValue;
@@ -1563,6 +1632,11 @@ function calculateUtilityBreakdown(room) {
         let revealedCards = 0;
         for (const [trait, value] of Object.entries(room.revealed[player.id] || {})) {
             totalScore += scoreRevealedCard(room, trait, value);
+            revealedCards += 1;
+        }
+        const backpackTrait = backpackTraitId(room) || "backpack";
+        for (const item of room.playerExtraBaggage?.[player.id] || []) {
+            totalScore += scoreRevealedCard(room, backpackTrait, item);
             revealedCards += 1;
         }
         return {
@@ -2175,9 +2249,11 @@ io.on("connection", (socket) => {
         const result = useSpecialCard(room, socket.id, requiresTarget ? targetId : null);
         if (result.error) return emitError(socket, result.error);
         const player = room.players.find((candidate) => candidate.id === socket.id);
-        const target = room.players.find((candidate) => candidate.id === targetId);
+        const target = room.players.find((candidate) => candidate.id === (result.targetId || targetId));
         const actionLog = result.action === "take_backpack"
             ? player?.nickname + " применяет «" + result.card.name + "» и забирает «" + result.item + "» у " + target?.nickname + " в свой багаж."
+            : result.action === "swap_adjacent_profession"
+                ? player?.nickname + " применяет «" + result.card.name + "» и меняется профессией с соседом " + target?.nickname + "."
             : result.action === "increase_capacity"
                 ? player?.nickname + " применяет «" + result.card.name + "»: мест в бункере " + result.previousCapacity + " → " + result.capacity + "."
                 : result.action === "decrease_capacity" || result.action === "random_capacity"

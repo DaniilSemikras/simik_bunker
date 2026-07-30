@@ -214,9 +214,8 @@ function cardMarkup(trait, value, revealed, canChoose, isRevealing = false, isFi
 
 function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specialTargetAction, canChooseTrait, canRevealProfession) {
     const players = room.players;
-    const baggageFor = (player) => [player.professionItem, ...(Array.isArray(player.extraBaggage) ? player.extraBaggage : [])].filter(Boolean);
-    const baggageText = (player) => baggageFor(player).join(" · ");
-    const hasBaggageItems = players.some((player) => baggageFor(player).length);
+    const professionBaggageFor = (player) => player.professionItem || "";
+    const hasProfessionBaggageItems = players.some((player) => professionBaggageFor(player));
     const hasUsedSpecialCards = players.some((player) => player.usedSpecialCard);
     const playerStatus = (player) => player.left ? "вышел" : player.eliminated ? "исключён" : isFinished ? "победитель" : "в игре";
     const playerState = (player) => player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
@@ -228,14 +227,16 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
             const isMe = player.id === ownPlayerId();
             const hasOwnValue = isMe && Object.prototype.hasOwnProperty.call(myCards, trait);
             const isFinishReveal = isFinished && !player.left && !player.eliminated && Array.isArray(player.finishRevealedTraits) && player.finishRevealedTraits.includes(trait);
-            const value = hasOwnValue ? myCards[trait] : isRevealed ? player.revealed[trait] : "скрыто";
+            const baseValue = hasOwnValue ? myCards[trait] : isRevealed ? player.revealed[trait] : "скрыто";
+            const extraBaggage = trait === "backpack" && Array.isArray(player.extraBaggage) ? player.extraBaggage : [];
+            const value = extraBaggage.length ? [baseValue, ...extraBaggage].filter(Boolean).join(" · ") : baseValue;
             const canRevealHere = isMe && !isRevealed && (canChooseTrait || (canRevealProfession && trait === room.currentTrait));
             const visibilityClass = isFinishReveal ? "is-finish-reveal-value" : isRevealed ? "is-revealed-value" : hasOwnValue ? "is-private-value" : "is-hidden-value";
             return `<td class="${visibilityClass} ${playerState(player)}"><div class="table-cell-content ${canRevealHere ? "has-reveal-control" : ""}"><span class="table-cell-value" title="${escaped(value)}">${escaped(value)}</span>${canRevealHere ? `<button class="table-reveal-button" type="button" data-reveal-trait="${trait}" title="Раскрыть: ${escaped(traitName(trait))}" aria-label="Раскрыть: ${escaped(traitName(trait))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.8"></circle></svg></button>` : ""}</div></td>`;
         }).join("")
     )).join("");
     const extraRows = [
-        hasBaggageItems ? traitRow("Багаж", players.map((player) => `<td class="table-extra ${baggageFor(player).length ? "is-revealed-value" : ""} ${playerState(player)}"><span class="table-cell-value" title="${escaped(baggageText(player) || "—")}">${baggageText(player) ? escaped(baggageText(player)) : "—"}</span></td>`).join("")) : "",
+        hasProfessionBaggageItems ? traitRow("Багаж от профессии", players.map((player) => `<td class="table-extra ${professionBaggageFor(player) ? "is-revealed-value" : ""} ${playerState(player)}"><span class="table-cell-value" title="${escaped(professionBaggageFor(player) || "—")}">${professionBaggageFor(player) ? escaped(professionBaggageFor(player)) : "—"}</span></td>`).join("")) : "",
         hasUsedSpecialCards ? traitRow("Спецкарта", players.map((player) => `<td class="table-extra ${player.usedSpecialCard ? "is-revealed-value" : ""} ${playerState(player)}"><span class="table-cell-value" title="${escaped(player.usedSpecialCard?.name || "—")}">${player.usedSpecialCard ? escaped(player.usedSpecialCard.name) : "—"}</span></td>`).join("")) : ""
     ].join("");
     const showVotes = isVoting || players.some((player) => (room.voteMarkers?.[player.id] || []).length);
@@ -284,6 +285,7 @@ function updateGame() {
     const canUseWeapon = Boolean(myWeaponStatus?.hasWeapon && !myWeaponStatus?.used && myWeaponStatus?.canEvict && me && !me.eliminated && room.phase === "reveal" && isMyTurn);
     const specialNeedsTarget = ["swap_random_trait", "take_backpack"].includes(mySpecialCard?.effect);
     const specialTraitLabel = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать предмет из рюкзака"
+        : mySpecialCard.effect === "swap_adjacent_profession" ? "Случайно обменяться профессией с соседом"
         : mySpecialCard.effect === "increase_capacity" ? "Добавить 1 место в бункере"
             : mySpecialCard.effect === "decrease_capacity" ? "Убрать 1 место в бункере"
                 : mySpecialCard.effect === "random_capacity" ? "Случайно: +1 или −1 место"
@@ -351,34 +353,37 @@ function updateGame() {
     $("#actionHint").textContent = isFinished ? "Игра завершена." : isStory ? (isHost() ? "Подтвердите начало, когда все прочитали историю." : "Ждём подтверждения ведущего.") : me?.eliminated ? "Вы исключены, но можете наблюдать за игрой." : specialTargetMode ? `Выберите игрока: ${specialTargetAction.toLocaleLowerCase("ru")}.` : isVoting && hasVoted ? "Ваш голос принят. Ждём остальных." : isVoting ? "Голосуйте до окончания таймера." : hasRevealedThisRound ? "Карта раскрыта. Ждём остальных." : isMyTurn && canChooseTrait ? "Ваш ход: нажмите на любую ещё нераскрытую карточку." : isMyTurn ? "Ваш ход: раскройте профессию." : turnPlayer ? `Сейчас ходит ${turnPlayer.nickname}.` : "";
 
     const cardOrder = room.categoryOrder?.length ? room.categoryOrder : Object.keys(myCards);
-    const personalCards = cardOrder.filter((name) => name in myCards).map((name) => cardMarkup(
-        name,
-        myCards[name],
-        Boolean(myRevealed[name]),
-        canChooseTrait && !myRevealed[name],
-        isNewReveal(ownPlayerId(), name),
-        isFinished && Array.isArray(me?.finishRevealedTraits) && me.finishRevealedTraits.includes(name)
-    )).join("");
+    const personalCards = cardOrder.filter((name) => name in myCards).map((name) => {
+        const extraBaggage = name === "backpack" && Array.isArray(me?.extraBaggage) ? me.extraBaggage : [];
+        const value = extraBaggage.length ? [myCards[name], ...extraBaggage].filter(Boolean).join(" · ") : myCards[name];
+        return cardMarkup(
+            name,
+            value,
+            Boolean(myRevealed[name]),
+            canChooseTrait && !myRevealed[name],
+            isNewReveal(ownPlayerId(), name),
+            isFinished && Array.isArray(me?.finishRevealedTraits) && me.finishRevealedTraits.includes(name)
+        );
+    }).join("");
     const professionBaggage = me?.professionItem
         ? '<article class="my-card is-revealed profession-item-card"><span>Багаж от профессии</span><strong>' + escaped(me.professionItem) + '</strong><em>получен</em></article>'
         : "";
-    const extraBaggageCards = (Array.isArray(me?.extraBaggage) ? me.extraBaggage : []).map((item) => (
-        '<article class="my-card is-revealed profession-item-card"><span>Багаж</span><strong>' + escaped(item) + '</strong><em>добавлен</em></article>'
-    )).join("");
     const weaponActionCard = myWeaponStatus?.hasWeapon
         ? '<' + (canUseWeapon ? 'button type="button" data-use-bunker-weapon' : 'article') + ' class="my-card weapon-action-card ' + (myWeaponStatus?.used ? 'is-used' : '') + (canUseWeapon ? ' is-choice' : '') + '"><span>Предмет в багаже</span><strong>Оружие</strong><small>Выгнать жителя и освободить 1 место</small><em>' + (myWeaponStatus?.used ? 'житель выгнан' : !myWeaponStatus?.canEvict ? 'жителей нет' : canUseWeapon ? 'нажмите, чтобы применить' : 'доступно в ваш ход') + '</em></' + (canUseWeapon ? 'button' : 'article') + '>'
         : '';
     const specialCardInHand = mySpecialCard
         ? '<' + (canUseSpecialCard ? 'button type="button" data-use-special' : 'article') + ' class="my-card special-card-hand ' + (mySpecialCard.used ? 'is-used' : '') + (canUseSpecialCard ? ' is-choice' : '') + '"><span>Специальная карта</span><strong>' + escaped(mySpecialCard.name) + '</strong><small>' + escaped(specialTraitLabel) + '</small><em>' + (mySpecialCard.used ? 'использована' : specialTargetMode ? 'выберите игрока' : canUseSpecialCard ? 'нажмите, чтобы применить' : 'доступна в ваш ход') + '</em></' + (canUseSpecialCard ? 'button' : 'article') + '>'
         : "";
-    $("#myCards").innerHTML = personalCards + professionBaggage + extraBaggageCards + weaponActionCard + specialCardInHand;
+    $("#myCards").innerHTML = personalCards + professionBaggage + weaponActionCard + specialCardInHand;
     const playerCardsMarkup = room.players.map((player, playerIndex) => {
         const playerCards = cardOrder.map((name) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, name);
             const isMe = player.id === ownPlayerId();
             const hasOwnValue = isMe && Object.prototype.hasOwnProperty.call(myCards, name);
             const isFinishReveal = isFinished && !player.left && !player.eliminated && Array.isArray(player.finishRevealedTraits) && player.finishRevealedTraits.includes(name);
-            const value = hasOwnValue ? myCards[name] : isRevealed ? player.revealed[name] : "скрыто";
+            const baseValue = hasOwnValue ? myCards[name] : isRevealed ? player.revealed[name] : "скрыто";
+            const extraBaggage = name === "backpack" && Array.isArray(player.extraBaggage) ? player.extraBaggage : [];
+            const value = extraBaggage.length ? [baseValue, ...extraBaggage].filter(Boolean).join(" · ") : baseValue;
             const canRevealHere = isMe && !isRevealed && (canChooseTrait || (canRevealProfession && name === room.currentTrait));
             const visibilityClass = isFinishReveal ? "is-finish-reveal-card" : isRevealed ? "" : hasOwnValue ? "is-private-card" : "is-hidden-card";
             const revealControl = canRevealHere
@@ -387,7 +392,6 @@ function updateGame() {
             return `<div class="public-card ${visibilityClass} ${canRevealHere ? "has-reveal-control" : ""} ${isNewReveal(player.id, name) ? "is-revealing" : ""}"><b>${escaped(traitName(name))}:</b> <span class="public-card-value">${escaped(value)}</span>${revealControl}</div>`;
         }).join("")
             + (player.professionItem ? `<span class="public-card profession-item"><b>Багаж:</b> ${escaped(player.professionItem)}</span>` : "")
-            + (Array.isArray(player.extraBaggage) ? player.extraBaggage.map((item) => `<span class="public-card profession-item"><b>Багаж:</b> ${escaped(item)}</span>`).join("") : "")
             + (player.usedSpecialCard ? `<span class="public-card special-card-used"><b>Спецкарта:</b> ${escaped(player.usedSpecialCard.name)}</span>` : "");
         const canVote = isVoting && !hasVoted && !me?.eliminated && !player.left && !player.eliminated && player.id !== ownPlayerId();
         const canSelectSpecialTarget = specialTargetMode && !player.left && !player.eliminated && player.id !== ownPlayerId();
@@ -607,6 +611,8 @@ socket.on("residentEvicted", ({ nickname: name, capacity }) => {
 socket.on("specialCardUsed", ({ nickname: name, targetNickname, cardName, trait, action, item, capacity }) => {
     const message = action === "take_backpack"
         ? name + " применяет «" + cardName + "» и забирает «" + item + "» у " + targetNickname + " в багаж."
+        : action === "swap_adjacent_profession"
+            ? name + " применяет «" + cardName + "» и меняется профессией с соседом " + targetNickname + "."
         : action === "increase_capacity"
             ? name + " применяет «" + cardName + "»: мест в бункере стало " + capacity + "."
         : action === "decrease_capacity" || action === "random_capacity"
