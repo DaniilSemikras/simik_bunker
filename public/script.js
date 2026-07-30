@@ -340,8 +340,11 @@ function updateGame() {
     $("#phaseTitle").textContent = isFinished ? "Игра завершена" : isStory ? "История катастрофы" : isVoting ? "Голосование" : "Раскрытие карт";
     $("#resultsBanner").classList.toggle("hidden", !isFinished);
     $("#resultsBanner").innerHTML = isFinished ? `
-        <div class="result-copy"><span class="result-kicker">ПОБЕДИТЕЛИ БУНКЕРА</span><h3>${winners.length ? "В бункере остались" : "Выживших не осталось"}</h3></div>
-        <div class="winner-list">${winners.map((player) => `<span class="winner-chip">${avatarMarkup(player)}<strong>${escaped(player.nickname)}</strong></span>`).join("")}</div>
+        <div class="result-summary">
+            <span class="result-emblem" aria-hidden="true">✦</span>
+            <div class="result-copy"><span class="result-kicker">ИГРА ЗАВЕРШЕНА</span><h3>${winners.length ? "В бункер попали не все…" : "В бункер никто не попал"}</h3><p>${winners.length ? "Поздравьте тех, кому удалось попасть внутрь." : "В этот раз бункер не спас никого."}</p></div>
+        </div>
+        ${winners.length ? `<div class="winner-section"><span class="winner-label">В БУНКЕРЕ ОСТАЛИСЬ</span><div class="winner-list">${winners.map((player) => `<span class="winner-chip">${avatarMarkup(player)}<strong>${escaped(player.nickname)}</strong></span>`).join("")}</div></div>` : ""}
         ${utilityRows ? `<div class="utility-breakdown"><span class="utility-kicker">ПОЛЕЗНОСТЬ ВЫЖИВШИХ</span><div class="utility-list">${utilityRows}</div></div>` : ""}
     ` : "";
     const bunkerChance = isFinished && typeof room.bunkerSurvivalChance === "number"

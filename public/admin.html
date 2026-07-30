@@ -3,17 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#101716">
     <meta name="robots" content="noindex">
     <title>Бункер — настройки игры</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="admin.css?v=20260730-custom-scroll">
+    <link rel="stylesheet" href="admin.css?v=20260730-admin-theme">
 </head>
 <body>
     <main class="admin-shell">
         <header class="admin-header">
             <a href="/" class="back-link">← К игре</a>
             <div><p class="eyebrow">АДМИН-ПАНЕЛЬ</p><h1>Настройки игры</h1></div>
-            <button id="logout" class="text-button hidden">Выйти</button>
+            <div class="admin-header-actions">
+                <div id="themeControl" class="theme-control">
+                    <button id="themeToggle" class="theme-toggle" type="button" title="Выбрать цветовую тему" aria-label="Выбрать цветовую тему" aria-expanded="false"><span id="themeIcon" aria-hidden="true">☀</span><span>Тема</span><span class="theme-chevron" aria-hidden="true">⌄</span></button>
+                    <div id="themeMenu" class="theme-menu hidden" role="menu" aria-label="Цветовая тема">
+                        <span class="theme-menu-title">Цветовая тема</span>
+                        <button type="button" class="theme-option" data-theme-choice="amber" role="menuitem"><i class="theme-swatch amber" aria-hidden="true"></i><span><strong>Янтарь</strong><small>классический бункер</small></span><b aria-hidden="true">✓</b></button>
+                        <button type="button" class="theme-option" data-theme-choice="radiation" role="menuitem"><i class="theme-swatch radiation" aria-hidden="true"></i><span><strong>Радиация</strong><small>токсичный зелёный свет</small></span><b aria-hidden="true">✓</b></button>
+                        <button type="button" class="theme-option" data-theme-choice="frost" role="menuitem"><i class="theme-swatch frost" aria-hidden="true"></i><span><strong>Ночной лёд</strong><small>холодный режим</small></span><b aria-hidden="true">✓</b></button>
+                    </div>
+                </div>
+                <button id="logout" class="text-button hidden">Выйти</button>
+            </div>
         </header>
 
         <section id="loginView" class="login-card">
@@ -69,6 +81,6 @@
         </section>
     </main>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="admin.js?v=20260730-neighbor-card-variants"></script>
+    <script src="admin.js?v=20260730-admin-theme"></script>
 </body>
 </html>

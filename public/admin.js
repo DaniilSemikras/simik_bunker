@@ -1,11 +1,41 @@
 const $ = (selector) => document.querySelector(selector);
 const TOKEN_KEY = "bunker-admin-token";
+const THEME_STORAGE_KEY = "bunker-color-theme";
+const COLOR_THEMES = [
+    { id: "amber", label: "Янтарь", icon: "☀", color: "#f1a84e" },
+    { id: "radiation", label: "Радиация", icon: "☢", color: "#7ee58d" },
+    { id: "frost", label: "Ночной лёд", icon: "✦", color: "#8abaff" }
+];
 let config = null;
 let avatars = [];
 let hiddenAvatars = [];
 let adminSocket = null;
 let isDirty = false;
 let pendingRemoteConfig = null;
+
+function applyColorTheme(themeId) {
+    const theme = COLOR_THEMES.find((item) => item.id === themeId) || COLOR_THEMES[0];
+    document.documentElement.dataset.theme = theme.id === "amber" ? "" : theme.id;
+    localStorage.setItem(THEME_STORAGE_KEY, theme.id);
+    $("#themeIcon").textContent = theme.icon;
+    $("#themeToggle").setAttribute("aria-label", `Тема: ${theme.label}. Открыть выбор темы.`);
+    document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.themeChoice === theme.id);
+    });
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme.color);
+}
+
+function closeThemeMenu() {
+    $("#themeMenu").classList.add("hidden");
+    $("#themeToggle").setAttribute("aria-expanded", "false");
+}
+
+function toggleThemeMenu() {
+    const menu = $("#themeMenu");
+    const willOpen = menu.classList.contains("hidden");
+    menu.classList.toggle("hidden", !willOpen);
+    $("#themeToggle").setAttribute("aria-expanded", String(willOpen));
+}
 
 function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]);
@@ -549,6 +579,18 @@ $("#logout").addEventListener("click", () => {
     $("#loginView").classList.remove("hidden");
     $("#logout").classList.add("hidden");
 });
+
+$("#themeToggle").addEventListener("click", toggleThemeMenu);
+document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+    button.addEventListener("click", () => {
+        applyColorTheme(button.dataset.themeChoice);
+        closeThemeMenu();
+    });
+});
+document.addEventListener("click", (event) => {
+    if (!event.target.closest(".theme-control")) closeThemeMenu();
+});
+applyColorTheme(localStorage.getItem(THEME_STORAGE_KEY) || "amber");
 
 if (token()) {
     loadEditor().catch(() => localStorage.removeItem(TOKEN_KEY));
