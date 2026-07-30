@@ -65,7 +65,8 @@ let renderedRevealAnimation = null;
 let mySpecialCard = null;
 let myWeaponStatus = { hasWeapon: false, used: false, canEvict: false };
 let specialTargetMode = false;
-let playersView = localStorage.getItem("bunker-players-view") === "table" ? "table" : "cards";
+const canUsePlayerTable = () => window.matchMedia("(min-width: 721px)").matches;
+let playersView = canUsePlayerTable() && localStorage.getItem("bunker-players-view") === "table" ? "table" : "cards";
 
 function show(screen) {
     ["#menu", "#lobby", "#game"].forEach((id) => $(id).classList.toggle("hidden", id !== screen));
@@ -332,6 +333,12 @@ function updateGame() {
     $("#survivorCount").textContent = `${active.length} в игре`;
     const categoryCount = room.categoryOrder?.length || Object.keys(myCards).length;
     const revealRoundCount = room.revealRounds || categoryCount;
+    const tableViewAvailable = canUsePlayerTable();
+    if (!tableViewAvailable && playersView === "table") {
+        playersView = "cards";
+        localStorage.setItem("bunker-players-view", playersView);
+    }
+    $("#playerViewToggle").hidden = !tableViewAvailable;
     $("#playerViewToggle").textContent = playersView === "table" ? "▤ Карточки" : "▦ Таблица";
     $("#playerViewToggle").setAttribute("aria-pressed", String(playersView === "table"));
     $(".round-panel").classList.toggle("hidden", isStory);
@@ -417,8 +424,8 @@ function updateGame() {
             ${player.id === room.hostId ? '<span class="host-star" aria-label="Ведущий" title="Ведущий">★</span>' : ""}
         </article>`;
     }).join("");
-    $("#gamePlayers").classList.toggle("players-table-view", playersView === "table");
-    $("#gamePlayers").innerHTML = playersView === "table"
+    $("#gamePlayers").classList.toggle("players-table-view", tableViewAvailable && playersView === "table");
+    $("#gamePlayers").innerHTML = tableViewAvailable && playersView === "table"
         ? playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specialTargetAction, canChooseTrait, canRevealProfession)
         : playerCardsMarkup;
     const logEntries = Array.isArray(room.actionLog) ? room.actionLog : [];
@@ -473,6 +480,16 @@ $("#playerViewToggle").addEventListener("click", () => {
     localStorage.setItem("bunker-players-view", playersView);
     if (room?.phase !== "lobby") updateGame();
 });
+const playerTableMedia = window.matchMedia("(min-width: 721px)");
+const refreshPlayersViewForViewport = () => {
+    if (!playerTableMedia.matches) {
+        playersView = "cards";
+        localStorage.setItem("bunker-players-view", playersView);
+    }
+    if (room?.phase !== "lobby") updateGame();
+};
+if (playerTableMedia.addEventListener) playerTableMedia.addEventListener("change", refreshPlayersViewForViewport);
+else playerTableMedia.addListener(refreshPlayersViewForViewport);
 $("#revealButton").addEventListener("click", () => {
     socket.emit("revealTrait", room?.currentTrait);
     playSound("reveal");
