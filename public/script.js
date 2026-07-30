@@ -79,15 +79,23 @@ function applyColorTheme(themeId) {
     document.documentElement.dataset.theme = theme.id === "amber" ? "" : theme.id;
     localStorage.setItem(THEME_STORAGE_KEY, theme.id);
     $("#themeIcon").textContent = theme.icon;
-    $("#themeLabel").textContent = theme.label;
-    $("#themeToggle").setAttribute("aria-label", "Тема: " + theme.label + ". Нажмите, чтобы сменить.");
+    $("#themeToggle").setAttribute("aria-label", "Тема: " + theme.label + ". Открыть выбор темы.");
+    document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.themeChoice === theme.id);
+    });
     document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme.color);
 }
 
-function cycleColorTheme() {
-    const current = document.documentElement.dataset.theme || "amber";
-    const index = COLOR_THEMES.findIndex((theme) => theme.id === current);
-    applyColorTheme(COLOR_THEMES[(index + 1) % COLOR_THEMES.length].id);
+function closeThemeMenu() {
+    $("#themeMenu").classList.add("hidden");
+    $("#themeToggle").setAttribute("aria-expanded", "false");
+}
+
+function toggleThemeMenu() {
+    const menu = $("#themeMenu");
+    const willOpen = menu.classList.contains("hidden");
+    menu.classList.toggle("hidden", !willOpen);
+    $("#themeToggle").setAttribute("aria-expanded", String(willOpen));
 }
 
 function show(screen) {
@@ -527,7 +535,16 @@ $("#soundToggle").addEventListener("click", () => {
     updateSoundToggle();
     if (soundsEnabled) playSound("accepted");
 });
-$("#themeToggle").addEventListener("click", cycleColorTheme);
+$("#themeToggle").addEventListener("click", toggleThemeMenu);
+document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+    button.addEventListener("click", () => {
+        applyColorTheme(button.dataset.themeChoice);
+        closeThemeMenu();
+    });
+});
+document.addEventListener("click", (event) => {
+    if (!event.target.closest(".theme-control")) closeThemeMenu();
+});
 $("#leaveLobby").addEventListener("click", () => socket.emit("leaveRoom"));
 $("#leaveGame").addEventListener("click", () => socket.emit("leaveRoom"));
 $("#copyCode").addEventListener("click", async () => {
