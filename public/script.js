@@ -324,10 +324,17 @@ function updateGame() {
     const utilityRows = utilityBreakdown.map((entry) => {
         const player = room.players.find((candidate) => candidate.id === entry.playerId);
         if (!player) return "";
-        const contributions = Array.isArray(entry.contributions) ? entry.contributions : [];
-        const contributionItems = contributions.length
-            ? contributions.map((contribution) => '<li><b>' + escaped(contribution.source) + '</b><span>' + escaped(contribution.reason) + '</span></li>').join("")
-            : '<li class="utility-neutral">Нет дополнительного бонуса от условий этого бункера.</li>';
+        const professionReasons = Array.isArray(entry.professionReasons) ? entry.professionReasons.join("; ") : "";
+        const professionBonus = Number(entry.professionBonus) || 0;
+        const itemReasons = Array.isArray(entry.professionItemReasons) ? entry.professionItemReasons.join("; ") : "";
+        const itemBonus = Number(entry.professionItemBonus) || 0;
+        const professionLine = professionBonus
+            ? '<li><b>Бонус профессии: +' + professionBonus + '%</b><span>' + escaped(professionReasons) + '</span></li>'
+            : '<li class="utility-neutral"><b>Бонус профессии: +0%</b><span>для этого бункера нет особого бонуса.</span></li>';
+        const additionalLine = itemBonus
+            ? '<li><b>Дополнительно: +' + itemBonus + '%</b><span>' + escaped(entry.professionItem || "профессиональный багаж") + ' — ' + escaped(itemReasons) + '</span></li>'
+            : '<li class="utility-neutral"><b>Дополнительно</b><span>нет бонуса от профессионального багажа.</span></li>';
+        const contributionItems = professionLine + additionalLine;
         return '<article class="utility-player">' + avatarMarkup(player) + '<div class="utility-copy"><div class="utility-player-heading"><strong>' + escaped(player.nickname) + '</strong><b>' + entry.utility + '%</b></div><small>Итоговая полезность</small><ul class="utility-contributions">' + contributionItems + '</ul></div></article>';
     }).join("");
     const myRevealed = me?.revealed || {};

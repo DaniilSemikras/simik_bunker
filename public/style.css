@@ -110,10 +110,10 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .utility-player-heading > b { margin-left:auto; flex:0 0 auto; color:#9df0b2; font-size:16px; letter-spacing:-.04em; }
 .utility-player small { color:#b9cdbd; font-size:9px; }
 .utility-contributions { display:grid; gap:3px; margin:5px 0 0; padding:0; list-style:none; }
-.utility-contributions li { display:flex; align-items:baseline; gap:4px; min-width:0; color:#f0e3c8; font-size:9px; line-height:1.3; }
+.utility-contributions li { display:flex; align-items:flex-start; gap:4px; min-width:0; color:#f0e3c8; font-size:9px; line-height:1.3; }
 .utility-contributions li::before { content:"•"; flex:0 0 auto; color:var(--accent); }
 .utility-contributions li b { flex:0 1 auto; overflow:hidden; color:#ffd69b; font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
-.utility-contributions li span { overflow:hidden; color:#cbd9cd; text-overflow:ellipsis; white-space:nowrap; }
+.utility-contributions li span { min-width:0; color:#cbd9cd; }
 .utility-contributions .utility-neutral { color:#aab7ac; font-style:italic; }
 .sound-button { border:1px solid var(--line); border-radius:8px; padding:7px 10px; color:var(--ink); background:rgba(15,11,10,.35); font-size:12px; font-weight:700; }
 .sound-button[aria-pressed="false"] { color:var(--muted); }
