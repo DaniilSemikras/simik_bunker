@@ -159,7 +159,7 @@ const WATER_DURATION_SEED_VERSION = 1;
 const BACKPACK_WATER_SEED_VERSION = 1;
 const GENDER_OPTIONS_SEED_VERSION = 1;
 const HEALTH_CATEGORY_SEED_VERSION = 1;
-const SPECIAL_CARD_LIBRARY_SEED_VERSION = 3;
+const SPECIAL_CARD_LIBRARY_SEED_VERSION = 4;
 const DISASTER_DURATION_SEED_VERSION = 1;
 const CONTENT_FILL_SEED_VERSION = 1;
 const WEAPON_BACKPACK_OPTION = { value: "Оружие", score: 70, chance: 10 };
@@ -861,10 +861,16 @@ function seedSpecialCardLibrary(rawConfig) {
     ));
     const adjacentSwap = DEFAULT_GAME_CONFIG.specialCards.find((card) => card.effect === "swap_adjacent_profession");
     const hasAdjacentSwap = specialCards.some((card) => card?.effect === "swap_adjacent_profession" || /сосед|лев|прав/.test(`${card?.id || ""} ${card?.name || ""}`.toLocaleLowerCase("ru")));
+    const capacityCards = DEFAULT_GAME_CONFIG.specialCards.filter((card) => ["increase_capacity", "decrease_capacity", "random_capacity"].includes(card.effect));
+    const missingCapacityCards = capacityCards.filter((defaultCard) => !specialCards.some((card) => card?.effect === defaultCard.effect));
     return {
         config: {
             ...source,
-            specialCards: hasAdjacentSwap ? specialCards : [...specialCards, clone(adjacentSwap)],
+            specialCards: [
+                ...specialCards,
+                ...(hasAdjacentSwap ? [] : [clone(adjacentSwap)]),
+                ...missingCapacityCards.map(clone)
+            ],
             specialCardLibrarySeedVersion: SPECIAL_CARD_LIBRARY_SEED_VERSION
         },
         changed: true
