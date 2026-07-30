@@ -65,6 +65,7 @@ let renderedRevealAnimation = null;
 let mySpecialCard = null;
 let myWeaponStatus = { hasWeapon: false, used: false, canEvict: false };
 let specialTargetMode = false;
+let specialDirectionMode = false;
 const canUsePlayerTable = () => window.matchMedia("(min-width: 721px)").matches;
 let playersView = canUsePlayerTable() && localStorage.getItem("bunker-players-view") === "table" ? "table" : "cards";
 
@@ -290,14 +291,17 @@ function updateGame() {
     const canUseWeapon = Boolean(myWeaponStatus?.hasWeapon && !myWeaponStatus?.used && myWeaponStatus?.canEvict && me && !me.eliminated && room.phase === "reveal" && isMyTurn);
     const specialNeedsTarget = ["swap_random_trait", "take_backpack"].includes(mySpecialCard?.effect);
     const specialTraitLabel = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать предмет из рюкзака"
-        : mySpecialCard.effect === "swap_adjacent_profession" ? "Случайно обменяться профессией с соседом"
+        : mySpecialCard.effect === "swap_adjacent_profession" ? "Обменяться профессией с соседом"
         : mySpecialCard.effect === "increase_capacity" ? "Добавить 1 место в бункере"
             : mySpecialCard.effect === "decrease_capacity" ? "Убрать 1 место в бункере"
                 : mySpecialCard.effect === "random_capacity" ? "Случайно: +1 или −1 место"
                     : mySpecialCard.effect === "reroll_own_trait" ? `Переролл: ${traitName(mySpecialCard.trait)}`
                         : `Обмен: ${traitName(mySpecialCard.trait)}`;
     const specialTargetAction = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать предмет" : `Обменяться: ${traitName(mySpecialCard.trait)}`;
-    if (!canUseSpecialCard) specialTargetMode = false;
+    if (!canUseSpecialCard) {
+        specialTargetMode = false;
+        specialDirectionMode = false;
+    }
 
     $("#gameCode").textContent = room.code;
     $("#phaseTitle").textContent = isFinished ? "Игра завершена" : isStory ? "История катастрофы" : isVoting ? "Голосование" : "Раскрытие карт";
@@ -361,7 +365,7 @@ function updateGame() {
     $("#revealButton").classList.toggle("hidden", !canRevealProfession);
     $("#revealButton").textContent = canRevealProfession ? `Раскрыть: ${traitName(trait)}` : "";
     $("#skipVoteButton").classList.toggle("hidden", !canSkipVote);
-    $("#actionHint").textContent = isFinished ? "Игра завершена." : isStory ? (isHost() ? "Подтвердите начало, когда все прочитали историю." : "Ждём подтверждения ведущего.") : me?.eliminated ? "Вы исключены, но можете наблюдать за игрой." : specialTargetMode ? `Выберите игрока: ${specialTargetAction.toLocaleLowerCase("ru")}.` : isVoting && hasVoted ? "Ваш голос принят. Ждём остальных." : isVoting ? "Голосуйте до окончания таймера." : hasRevealedThisRound ? "Карта раскрыта. Ждём остальных." : isMyTurn && canChooseTrait ? "Ваш ход: нажмите на любую ещё нераскрытую карточку." : isMyTurn ? "Ваш ход: раскройте профессию." : turnPlayer ? `Сейчас ходит ${turnPlayer.nickname}.` : "";
+    $("#actionHint").textContent = isFinished ? "Игра завершена." : isStory ? (isHost() ? "Подтвердите начало, когда все прочитали историю." : "Ждём подтверждения ведущего.") : me?.eliminated ? "Вы исключены, но можете наблюдать за игрой." : specialDirectionMode ? "Выберите соседа: слева, справа или случайно." : specialTargetMode ? `Выберите игрока: ${specialTargetAction.toLocaleLowerCase("ru")}.` : isVoting && hasVoted ? "Ваш голос принят. Ждём остальных." : isVoting ? "Голосуйте до окончания таймера." : hasRevealedThisRound ? "Карта раскрыта. Ждём остальных." : isMyTurn && canChooseTrait ? "Ваш ход: нажмите на любую ещё нераскрытую карточку." : isMyTurn ? "Ваш ход: раскройте профессию." : turnPlayer ? `Сейчас ходит ${turnPlayer.nickname}.` : "";
 
     const cardOrder = room.categoryOrder?.length ? room.categoryOrder : Object.keys(myCards);
     const personalCards = cardOrder.filter((name) => name in myCards).map((name) => {
@@ -383,9 +387,12 @@ function updateGame() {
         ? '<' + (canUseWeapon ? 'button type="button" data-use-bunker-weapon' : 'article') + ' class="my-card weapon-action-card ' + (myWeaponStatus?.used ? 'is-used' : '') + (canUseWeapon ? ' is-choice' : '') + '"><span>Предмет в багаже</span><strong>Оружие</strong><small>Выгнать жителя и освободить 1 место</small><em>' + (myWeaponStatus?.used ? 'житель выгнан' : !myWeaponStatus?.canEvict ? 'жителей нет' : canUseWeapon ? 'нажмите, чтобы применить' : 'доступно в ваш ход') + '</em></' + (canUseWeapon ? 'button' : 'article') + '>'
         : '';
     const specialCardInHand = mySpecialCard
-        ? '<' + (canUseSpecialCard ? 'button type="button" data-use-special' : 'article') + ' class="my-card special-card-hand ' + (mySpecialCard.used ? 'is-used' : '') + (canUseSpecialCard ? ' is-choice' : '') + '"><span>Специальная карта</span><strong>' + escaped(mySpecialCard.name) + '</strong><small>' + escaped(specialTraitLabel) + '</small><em>' + (mySpecialCard.used ? 'использована' : specialTargetMode ? 'выберите игрока' : canUseSpecialCard ? 'нажмите, чтобы применить' : 'доступна в ваш ход') + '</em></' + (canUseSpecialCard ? 'button' : 'article') + '>'
+        ? '<' + (canUseSpecialCard ? 'button type="button" data-use-special' : 'article') + ' class="my-card special-card-hand ' + (mySpecialCard.used ? 'is-used' : '') + (canUseSpecialCard ? ' is-choice' : '') + '"><span>Специальная карта</span><strong>' + escaped(mySpecialCard.name) + '</strong><small>' + escaped(specialTraitLabel) + '</small><em>' + (mySpecialCard.used ? 'использована' : specialDirectionMode ? 'выберите сторону' : specialTargetMode ? 'выберите игрока' : canUseSpecialCard ? 'нажмите, чтобы применить' : 'доступна в ваш ход') + '</em></' + (canUseSpecialCard ? 'button' : 'article') + '>'
         : "";
-    $("#myCards").innerHTML = personalCards + professionBaggage + weaponActionCard + specialCardInHand;
+    const specialDirectionChoices = specialDirectionMode && mySpecialCard?.effect === "swap_adjacent_profession"
+        ? '<div class="special-direction-choices"><span>С кем обменяться?</span><button type="button" data-special-direction="left">Слева</button><button type="button" data-special-direction="right">Справа</button><button type="button" data-special-direction="random">Случайно</button></div>'
+        : "";
+    $("#myCards").innerHTML = personalCards + professionBaggage + weaponActionCard + specialCardInHand + specialDirectionChoices;
     const playerCardsMarkup = room.players.map((player, playerIndex) => {
         const playerCards = cardOrder.map((name) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, name);
@@ -541,11 +548,23 @@ $("#myCards").addEventListener("click", (event) => {
     if (event.target.closest("[data-use-special]")) {
         if (["swap_random_trait", "take_backpack"].includes(mySpecialCard?.effect)) {
             specialTargetMode = !specialTargetMode;
+            specialDirectionMode = false;
+            updateGame();
+        } else if (mySpecialCard?.effect === "swap_adjacent_profession") {
+            specialDirectionMode = !specialDirectionMode;
+            specialTargetMode = false;
             updateGame();
         } else {
             socket.emit("useSpecialCard");
             playSound("accepted");
         }
+        return;
+    }
+    const specialDirection = event.target.closest("[data-special-direction]");
+    if (specialDirection) {
+        specialDirectionMode = false;
+        socket.emit("useSpecialCard", { direction: specialDirection.dataset.specialDirection });
+        playSound("accepted");
         return;
     }
     const card = event.target.closest("[data-reveal-trait]");
@@ -578,6 +597,7 @@ socket.on("leftRoom", () => {
     mySpecialCard = null;
     myWeaponStatus = { hasWeapon: false, used: false, canEvict: false };
     specialTargetMode = false;
+    specialDirectionMode = false;
     currentCode = "";
     clearSavedSession();
     $("#roomCode").value = "";
@@ -595,6 +615,7 @@ socket.on("roomExpired", () => {
     mySpecialCard = null;
     myWeaponStatus = { hasWeapon: false, used: false, canEvict: false };
     specialTargetMode = false;
+    specialDirectionMode = false;
     currentCode = "";
     clearSavedSession();
     $("#roomCode").value = "";
@@ -604,6 +625,7 @@ socket.on("roomExpired", () => {
 socket.on("yourCards", (cards) => { myCards = cards; if (room?.phase !== "lobby") updateGame(); });
 socket.on("yourSpecialCard", (card) => {
     mySpecialCard = card || null;
+    if (card?.used) specialDirectionMode = false;
     if (room?.phase !== "lobby") updateGame();
 });
 socket.on("yourWeaponStatus", (status) => {
@@ -629,11 +651,12 @@ socket.on("residentEvicted", ({ nickname: name, capacity }) => {
     toast(name + " выгоняет жителя из бункера. Мест для игроков: " + capacity + ".");
     playSound("accepted");
 });
-socket.on("specialCardUsed", ({ nickname: name, targetNickname, cardName, trait, action, item, capacity }) => {
+socket.on("specialCardUsed", ({ nickname: name, targetNickname, cardName, trait, action, item, capacity, direction }) => {
+    specialDirectionMode = false;
     const message = action === "take_backpack"
         ? name + " применяет «" + cardName + "» и забирает «" + item + "» у " + targetNickname + " в багаж."
         : action === "swap_adjacent_profession"
-            ? name + " применяет «" + cardName + "» и меняется профессией с соседом " + targetNickname + "."
+            ? name + " применяет «" + cardName + "» и меняется профессией с соседом " + (direction === "left" ? "слева" : direction === "right" ? "справа" : "случайно") + ": " + targetNickname + "."
         : action === "increase_capacity"
             ? name + " применяет «" + cardName + "»: мест в бункере стало " + capacity + "."
         : action === "decrease_capacity" || action === "random_capacity"

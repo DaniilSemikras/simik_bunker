@@ -159,7 +159,7 @@ const WATER_DURATION_SEED_VERSION = 1;
 const BACKPACK_WATER_SEED_VERSION = 1;
 const GENDER_OPTIONS_SEED_VERSION = 1;
 const HEALTH_CATEGORY_SEED_VERSION = 1;
-const SPECIAL_CARD_LIBRARY_SEED_VERSION = 1;
+const SPECIAL_CARD_LIBRARY_SEED_VERSION = 2;
 const DISASTER_DURATION_SEED_VERSION = 1;
 const CONTENT_FILL_SEED_VERSION = 1;
 const WEAPON_BACKPACK_OPTION = { value: "Оружие", score: 70, chance: 10 };
@@ -313,7 +313,7 @@ const DEFAULT_GAME_CONFIG = {
         {
             id: "swap_adjacent_profession",
             name: "Соседский обмен профессией",
-            description: "Один раз случайно выберите соседа слева или справа и обменяйтесь с ним профессиями.",
+            description: "Один раз выберите соседа слева, справа или случайно и обменяйтесь с ним профессиями.",
             effect: "swap_adjacent_profession"
         },
         {
@@ -851,7 +851,11 @@ function seedSpecialCardLibrary(rawConfig) {
     if (Number(source.specialCardLibrarySeedVersion) >= SPECIAL_CARD_LIBRARY_SEED_VERSION) {
         return { config: source, changed: false };
     }
-    const specialCards = Array.isArray(source.specialCards) ? [...source.specialCards] : [];
+    const specialCards = (Array.isArray(source.specialCards) ? source.specialCards : []).map((card) => (
+        card?.effect === "swap_adjacent_profession" && card.description === "Один раз случайно выберите соседа слева или справа и обменяйтесь с ним профессиями."
+            ? { ...card, description: "Один раз выберите соседа слева, справа или случайно и обменяйтесь с ним профессиями." }
+            : card
+    ));
     const adjacentSwap = DEFAULT_GAME_CONFIG.specialCards.find((card) => card.effect === "swap_adjacent_profession");
     const hasAdjacentSwap = specialCards.some((card) => card?.effect === "swap_adjacent_profession" || /сосед|лев|прав/.test(`${card?.id || ""} ${card?.name || ""}`.toLocaleLowerCase("ru")));
     return {
@@ -1569,25 +1573,27 @@ function giveProfessionItem(room, playerId) {
     return item;
 }
 
-function adjacentPlayerId(room, playerId) {
+function adjacentPlayerId(room, playerId, direction = "random") {
     const players = activePlayers(room);
     const index = players.findIndex((player) => player.id === playerId);
     if (index < 0 || players.length < 2) return null;
-    const candidates = [...new Set([
-        players[(index - 1 + players.length) % players.length]?.id,
-        players[(index + 1) % players.length]?.id
-    ])].filter((candidateId) => candidateId && candidateId !== playerId);
+    const leftId = players[(index - 1 + players.length) % players.length]?.id;
+    const rightId = players[(index + 1) % players.length]?.id;
+    if (direction === "left") return leftId && leftId !== playerId ? leftId : null;
+    if (direction === "right") return rightId && rightId !== playerId ? rightId : null;
+    const candidates = [...new Set([leftId, rightId])].filter((candidateId) => candidateId && candidateId !== playerId);
     return candidates.length ? randomItem(candidates) : null;
 }
 
-function useSpecialCard(room, playerId, targetId) {
+function useSpecialCard(room, playerId, targetId, direction = "random") {
     const specialCard = room.playerSpecialCards?.[playerId];
     if (!specialCard || specialCard.used) return { error: "Эта спецкарта уже использована." };
     if (!["swap_random_trait", "swap_adjacent_profession", "take_backpack", "increase_capacity", "decrease_capacity", "random_capacity", "reroll_own_trait"].includes(specialCard.effect)) return { error: "Неизвестный эффект спецкарты." };
     if (!room.cards[playerId]) return { error: "Не удалось найти ваши карточки." };
 
     if (specialCard.effect === "swap_adjacent_profession") {
-        const neighborId = adjacentPlayerId(room, playerId);
+        if (!["left", "right", "random"].includes(direction)) return { error: "Выберите соседа слева, справа или случайно." };
+        const neighborId = adjacentPlayerId(room, playerId, direction);
         if (!neighborId || !room.cards[neighborId]) return { error: "Для обмена нужен хотя бы один сосед в игре." };
         const trait = "profession";
         const myValue = room.cards[playerId][trait];
@@ -1606,7 +1612,8 @@ function useSpecialCard(room, playerId, targetId) {
         }
         specialCard.used = true;
         specialCard.targetId = neighborId;
-        return { card: specialCard, trait, action: specialCard.effect, targetId: neighborId };
+        specialCard.direction = direction;
+        return { card: specialCard, trait, action: specialCard.effect, targetId: neighborId, direction };
     }
 
     if (specialCard.effect === "increase_capacity") {
@@ -2306,24 +2313,26 @@ io.on("connection", (socket) => {
         });
     });
 
-    socket.on("useSpecialCard", (targetId) => {
+    socket.on("useSpecialCard", (payload) => {
         const room = roomFor(socket);
         if (!room || room.phase !== "reveal" || room.eliminated.includes(socket.id) || currentTurnPlayerId(room) !== socket.id) {
             return emitError(socket, "Спецкарту можно применить только в свой ход.");
         }
         const specialCard = room.playerSpecialCards?.[socket.id];
+        const targetId = typeof payload === "string" ? payload : payload?.targetId;
+        const direction = typeof payload === "object" && payload ? payload.direction : "random";
         const requiresTarget = ["swap_random_trait", "take_backpack"].includes(specialCard?.effect);
         if (requiresTarget && (targetId === socket.id || !activePlayers(room).some((player) => player.id === targetId))) {
             return emitError(socket, "Выберите другого игрока, который ещё в игре.");
         }
-        const result = useSpecialCard(room, socket.id, requiresTarget ? targetId : null);
+        const result = useSpecialCard(room, socket.id, requiresTarget ? targetId : null, direction);
         if (result.error) return emitError(socket, result.error);
         const player = room.players.find((candidate) => candidate.id === socket.id);
         const target = room.players.find((candidate) => candidate.id === (result.targetId || targetId));
         const actionLog = result.action === "take_backpack"
             ? player?.nickname + " применяет «" + result.card.name + "» и забирает «" + result.item + "» у " + target?.nickname + " в свой багаж."
             : result.action === "swap_adjacent_profession"
-                ? player?.nickname + " применяет «" + result.card.name + "» и меняется профессией с соседом " + target?.nickname + "."
+                ? player?.nickname + " применяет «" + result.card.name + "» и меняется профессией с соседом " + (result.direction === "left" ? "слева" : result.direction === "right" ? "справа" : "случайно") + ": " + target?.nickname + "."
             : result.action === "increase_capacity"
                 ? player?.nickname + " применяет «" + result.card.name + "»: мест в бункере " + result.previousCapacity + " → " + result.capacity + "."
                 : result.action === "decrease_capacity" || result.action === "random_capacity"
@@ -2340,6 +2349,7 @@ io.on("connection", (socket) => {
             cardName: result.card.name,
             trait: result.trait,
             action: result.action,
+            direction: result.direction || null,
             item: result.item || null,
             capacity: result.capacity || null,
             previousCapacity: result.previousCapacity || null
