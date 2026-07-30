@@ -89,7 +89,7 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim().replace(/\/+$
 const SUPABASE_SECRET_KEY = String(process.env.SUPABASE_SECRET_KEY || "").trim();
 const adminSessions = new Map();
 const ADMIN_ROOM = "admin-editors";
-const BUNKER_TRAITS_SEED_VERSION = 1;
+const BUNKER_TRAITS_SEED_VERSION = 2;
 const BACKPACK_WEAPON_SEED_VERSION = 1;
 const WATER_TRAIT_LABEL_SEED_VERSION = 1;
 const WATER_OPTIONS_SEED_VERSION = 1;
@@ -167,6 +167,28 @@ const DEFAULT_BUNKER_TRAITS = [
             { value: "Вентиляция исправна", chance: 45 },
             { value: "Фильтры на исходе", chance: 30 },
             { value: "Вентиляция сломана — нужен ремонт", chance: 25 }
+        ]
+    },
+    {
+        id: "condition",
+        name: "Состояние бункера",
+        options: [
+            { value: "Полностью исправен", chance: 35 },
+            { value: "Нужен косметический ремонт", chance: 25 },
+            { value: "Повреждены жилые модули", chance: 25 },
+            { value: "Критическое состояние — нужен срочный ремонт", chance: 15 }
+        ]
+    },
+    {
+        id: "specialization",
+        name: "Назначение бункера",
+        options: [
+            { value: "Обычный гражданский бункер", chance: 25 },
+            { value: "Технический бункер", chance: 18 },
+            { value: "Научная лаборатория", chance: 16 },
+            { value: "Фермерский бункер", chance: 16 },
+            { value: "Медицинский бункер", chance: 13 },
+            { value: "Склад снабжения", chance: 12 }
         ]
     },
     {
@@ -316,6 +338,8 @@ function bunkerTraitMatchesDefault(trait, defaultTrait) {
         food: ["food", "ед", "пищ"],
         electricity: ["electric", "электр", "свет"],
         ventilation: ["ventilat", "вентил"],
+        condition: ["condition", "состояни", "ремонт", "поврежд"],
+        specialization: ["specialization", "назначен", "специализ", "техническ", "лаборатор", "ферм"],
         previous_residents: ["previous", "предыдущ", "жител", "бомж"]
     };
     return (aliases[defaultTrait.id] || [defaultTrait.id]).some((term) => text.includes(term));
@@ -518,6 +542,8 @@ function bunkerContentTemplate(trait) {
     if (/food|ед|пищ/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "food").options);
     if (/electric|электр|свет/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "electricity").options);
     if (/ventilat|вентил/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "ventilation").options);
+    if (/condition|состояни|ремонт|поврежд/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "condition").options);
+    if (/specialization|назначен|специализ|техническ|лаборатор|ферм/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "specialization").options);
     if (/previous|предыдущ|жител|бомж/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "previous_residents").options);
     return [
         { value: "Полностью исправно", chance: 40, occupiedSlots: 0 },
@@ -1200,12 +1226,34 @@ function pickWeightedOption(options) {
     return pickWeightedEntry(options).value;
 }
 
+function isHealthTrait(traitId, traitName = "") {
+    return /health|здоров/.test(`${traitId || ""} ${traitName || ""}`.toLocaleLowerCase("ru"));
+}
+
+function healthBase(value) {
+    return String(value || "").replace(/\s*[—-]\s*стади[яи]\s*[1-5]\s*\/\s*5\s*$/i, "").trim();
+}
+
+function healthStage(value) {
+    const match = String(value || "").match(/стади[яи]\s*([1-5])\s*\/\s*5/i);
+    return match ? Number(match[1]) : 0;
+}
+
+function healthNeedsStage(value) {
+    return /(астм|диабет|мигрен|бессон|паническ|гипертони|эпилепс|онколог|депресс)/.test(healthBase(value).toLocaleLowerCase("ru"));
+}
+
+function cardValueForCategory(category, value) {
+    if (!isHealthTrait(category?.id, category?.name) || !healthNeedsStage(value)) return value;
+    return `${value} — стадия ${Math.floor(Math.random() * 5) + 1}/5`;
+}
+
 function assignCards(players, categories) {
     return Object.fromEntries(players.map((player) => [
         player.id,
         Object.fromEntries(categories.map((category) => {
             const option = pickWeightedOption(category.options);
-            return [category.id, category.id === "profession" ? option + " — " + randomItem(PROFESSION_RANKS) : option];
+            return [category.id, category.id === "profession" ? option + " — " + randomItem(PROFESSION_RANKS) : cardValueForCategory(category, option)];
         }))
     ]));
 }
@@ -1403,8 +1451,12 @@ function addActionLog(room, text, type = "system") {
 }
 
 function scoreRevealedCard(room, trait, value) {
-    const configuredScore = room.cardScores?.[trait]?.[trait === "profession" ? professionBase(value) : value];
-    return cleanScore(configuredScore, defaultOptionScore(trait, value));
+    const isHealth = isHealthTrait(trait, room.categoryNames?.[trait]);
+    const scoreKey = trait === "profession" ? professionBase(value) : isHealth ? healthBase(value) : value;
+    const configuredScore = room.cardScores?.[trait]?.[scoreKey];
+    const score = cleanScore(configuredScore, defaultOptionScore(trait, scoreKey));
+    const stage = isHealth ? healthStage(value) : 0;
+    return stage ? Math.max(0, score - (stage - 1) * 8) : score;
 }
 
 function giveProfessionItem(room, playerId) {
@@ -1453,8 +1505,11 @@ function useSpecialCard(room, playerId, targetId) {
         if (!room.traitOrder.includes(specialCard.trait)) return { error: "Для этой спецкарты в игре нет нужной категории." };
         const options = room.cardOptionsByTrait?.[specialCard.trait] || [];
         const previousValue = room.cards[playerId][specialCard.trait];
-        const differentOptions = options.filter((option) => option.value !== previousValue);
-        const nextValue = pickWeightedOption(differentOptions.length ? differentOptions : options);
+        const isHealth = isHealthTrait(specialCard.trait, room.categoryNames?.[specialCard.trait]);
+        const previousBaseValue = isHealth ? healthBase(previousValue) : previousValue;
+        const differentOptions = options.filter((option) => option.value !== previousBaseValue);
+        const nextBaseValue = pickWeightedOption(differentOptions.length ? differentOptions : options);
+        const nextValue = isHealth ? cardValueForCategory({ id: specialCard.trait, name: room.categoryNames?.[specialCard.trait] }, nextBaseValue) : nextBaseValue;
         if (!nextValue) return { error: "Для этой характеристики не хватает вариантов." };
         room.cards[playerId][specialCard.trait] = nextValue;
         if (Object.prototype.hasOwnProperty.call(room.revealed[playerId] || {}, specialCard.trait)) {
