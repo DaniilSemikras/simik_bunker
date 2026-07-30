@@ -6,11 +6,11 @@
     <meta name="theme-color" content="#101716">
     <title>Бункер — игра для друзей</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="style.css?v=20260730-compact-round-toast">
+    <link rel="stylesheet" href="style.css?v=20260730-theme-layout">
 </head>
 <body>
     <div class="bunker-backdrop" aria-hidden="true"></div>
-    <div class="theme-control">
+    <div id="themeControl" class="theme-control">
         <button id="themeToggle" class="theme-toggle" type="button" title="Выбрать цветовую тему" aria-label="Выбрать цветовую тему" aria-expanded="false"><span id="themeIcon" aria-hidden="true">☀</span><span>Тема</span><span class="theme-chevron" aria-hidden="true">⌄</span></button>
         <div id="themeMenu" class="theme-menu hidden" role="menu" aria-label="Цветовая тема">
             <span class="theme-menu-title">Цветовая тема</span>
@@ -88,6 +88,6 @@
 
     <div id="toast" class="toast" role="status"></div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="script.js?v=20260730-theme-menu"></script>
+    <script src="script.js?v=20260730-theme-layout"></script>
 </body>
 </html>

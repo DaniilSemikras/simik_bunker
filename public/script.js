@@ -103,6 +103,13 @@ function show(screen) {
     document.body.classList.toggle("in-menu", screen === "#menu");
     document.body.classList.toggle("in-lobby", screen === "#lobby");
     document.body.classList.toggle("in-game", screen === "#game");
+    const themeControl = $("#themeControl");
+    if (screen === "#game") {
+        $(".game-actions").prepend(themeControl);
+    } else if (themeControl.parentElement !== document.body) {
+        document.body.insertBefore(themeControl, $(".app-shell"));
+    }
+    closeThemeMenu();
 }
 
 function toast(message) {

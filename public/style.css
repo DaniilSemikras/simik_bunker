@@ -24,6 +24,7 @@ button { cursor:pointer; }
 .brand-mark { color:var(--accent); font-size:24px; line-height:12px; }
 .panel { background:var(--panel-bg); border:1px solid var(--line); border-radius:20px; box-shadow:0 18px 60px rgba(0,0,0,.34); backdrop-filter:blur(7px); }
 .theme-control { position:fixed; z-index:8; top:16px; right:18px; }
+body.in-game .theme-control { position:relative; z-index:5; top:auto; right:auto; }
 .theme-toggle { display:flex; align-items:center; gap:7px; border:1px solid color-mix(in srgb,var(--accent) 55%,transparent); border-radius:100px; padding:8px 11px; color:var(--ink); background:color-mix(in srgb,var(--deep) 74%,transparent); box-shadow:0 8px 24px rgba(0,0,0,.26); backdrop-filter:blur(9px); font-size:11px; font-weight:850; letter-spacing:.02em; transition:transform .16s ease,border-color .16s ease,background .16s ease; }
 .theme-toggle:hover,.theme-toggle[aria-expanded="true"] { transform:translateY(-2px); border-color:var(--accent); background:color-mix(in srgb,var(--panel-2) 88%,transparent); }
 .theme-toggle > span:first-child { display:grid; place-items:center; width:18px; height:18px; border-radius:50%; color:var(--accent-dark); background:var(--accent); font-size:12px; }
@@ -326,4 +327,4 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 @media (max-width:720px) { .results-banner { padding:16px 14px 18px; } .winner-list { gap:11px 14px; } .winner-chip .avatar { flex-basis:48px; width:48px; height:48px; } }
 @media (max-width:720px) { .round-panel .round-copy { grid-column:1; grid-row:auto; } }
 @media (max-width:720px) { .round-panel.is-finished #roundLabel,.round-panel.is-finished .action-timer { grid-column:1; grid-row:auto; align-self:auto; justify-self:start; margin:0; } }
-@media (max-width:720px) { .theme-control { top:10px; right:10px; } .theme-toggle { padding:7px 9px; font-size:10px; } .theme-menu { width:210px; } }
+@media (max-width:720px) { .theme-control { top:10px; right:10px; } body.in-game .theme-control { top:auto; right:auto; } .theme-toggle { padding:7px 9px; font-size:10px; } .theme-menu { width:210px; } }
