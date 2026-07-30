@@ -89,7 +89,7 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim().replace(/\/+$
 const SUPABASE_SECRET_KEY = String(process.env.SUPABASE_SECRET_KEY || "").trim();
 const adminSessions = new Map();
 const ADMIN_ROOM = "admin-editors";
-const BUNKER_TRAITS_SEED_VERSION = 2;
+const BUNKER_TRAITS_SEED_VERSION = 3;
 const BACKPACK_WEAPON_SEED_VERSION = 1;
 const WATER_TRAIT_LABEL_SEED_VERSION = 1;
 const WATER_OPTIONS_SEED_VERSION = 1;
@@ -131,6 +131,18 @@ const DEFAULT_HEALTH_CATEGORY = {
     ]
 };
 const DEFAULT_BUNKER_TRAITS = [
+    {
+        id: "specialization",
+        name: "Назначение бункера",
+        options: [
+            { value: "Обычный гражданский бункер", chance: 25 },
+            { value: "Технический бункер", chance: 18 },
+            { value: "Научная лаборатория", chance: 16 },
+            { value: "Фермерский бункер", chance: 16 },
+            { value: "Медицинский бункер", chance: 13 },
+            { value: "Склад снабжения", chance: 12 }
+        ]
+    },
     {
         id: "water",
         name: "Наличие воды",
@@ -177,18 +189,6 @@ const DEFAULT_BUNKER_TRAITS = [
             { value: "Нужен косметический ремонт", chance: 25 },
             { value: "Повреждены жилые модули", chance: 25 },
             { value: "Критическое состояние — нужен срочный ремонт", chance: 15 }
-        ]
-    },
-    {
-        id: "specialization",
-        name: "Назначение бункера",
-        options: [
-            { value: "Обычный гражданский бункер", chance: 25 },
-            { value: "Технический бункер", chance: 18 },
-            { value: "Научная лаборатория", chance: 16 },
-            { value: "Фермерский бункер", chance: 16 },
-            { value: "Медицинский бункер", chance: 13 },
-            { value: "Склад снабжения", chance: 12 }
         ]
     },
     {
@@ -352,10 +352,14 @@ function seedDefaultBunkerTraits(rawConfig) {
     }
     const existing = Array.isArray(source.bunkerTraits) ? source.bunkerTraits : [];
     const missing = DEFAULT_BUNKER_TRAITS.filter((defaultTrait) => !existing.some((trait) => bunkerTraitMatchesDefault(trait, defaultTrait)));
+    const traits = [...existing, ...clone(missing)];
+    const specializationTrait = DEFAULT_BUNKER_TRAITS.find((trait) => trait.id === "specialization");
+    const specialization = traits.filter((trait) => bunkerTraitMatchesDefault(trait, specializationTrait));
+    const otherTraits = traits.filter((trait) => !bunkerTraitMatchesDefault(trait, specializationTrait));
     return {
         config: {
             ...source,
-            bunkerTraits: [...existing, ...clone(missing)],
+            bunkerTraits: [...specialization, ...otherTraits],
             bunkerTraitsSeedVersion: BUNKER_TRAITS_SEED_VERSION
         },
         changed: true
