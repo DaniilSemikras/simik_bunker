@@ -255,7 +255,7 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
             : canVote ? `<button class="vote-button" data-vote="${player.id}">Исключить</button>` : "—";
         return `<td class="table-action-cell ${playerState(player)}">${action}</td>`;
     }).join(""), "table-action-row") : "";
-    const playerHeaders = players.map((player) => `<th scope="col" class="${playerState(player)}"><span class="table-player-head">${avatarMarkup(player)}<strong title="${escaped(player.nickname)}">${escaped(player.nickname)}${player.id === ownPlayerId() ? " (вы)" : ""}</strong><small>${playerStatus(player)}</small></span></th>`).join("");
+    const playerHeaders = players.map((player, index) => `<th scope="col" class="${playerState(player)}"><span class="table-player-head">${avatarMarkup(player)}<strong title="${escaped(player.nickname)}">${escaped(player.nickname)}${player.id === ownPlayerId() ? " (вы)" : ""}</strong><small>№ ${index + 1} · ${playerStatus(player)}</small></span></th>`).join("");
     return `<div class="players-table-scroll"><table class="players-table"><thead><tr><th><span class="table-header-value" title="Характеристика">Характеристика</span></th>${playerHeaders}</tr></thead><tbody>${traitRows}${extraRows}${voteRow}${actionRow}</tbody></table></div>`;
 }
 
@@ -372,7 +372,7 @@ function updateGame() {
         ? '<' + (canUseSpecialCard ? 'button type="button" data-use-special' : 'article') + ' class="my-card special-card-hand ' + (mySpecialCard.used ? 'is-used' : '') + (canUseSpecialCard ? ' is-choice' : '') + '"><span>Специальная карта</span><strong>' + escaped(mySpecialCard.name) + '</strong><small>' + escaped(specialTraitLabel) + '</small><em>' + (mySpecialCard.used ? 'использована' : specialTargetMode ? 'выберите игрока' : canUseSpecialCard ? 'нажмите, чтобы применить' : 'доступна в ваш ход') + '</em></' + (canUseSpecialCard ? 'button' : 'article') + '>'
         : "";
     $("#myCards").innerHTML = personalCards + professionBaggage + extraBaggageCards + weaponActionCard + specialCardInHand;
-    const playerCardsMarkup = room.players.map((player) => {
+    const playerCardsMarkup = room.players.map((player, playerIndex) => {
         const playerCards = cardOrder.map((name) => {
             const isRevealed = Object.prototype.hasOwnProperty.call(player.revealed || {}, name);
             const isMe = player.id === ownPlayerId();
@@ -407,7 +407,7 @@ function updateGame() {
         const playerState = player.left ? "left-player" : player.eliminated ? "eliminated" : isFinished ? "survivor" : "active-player";
         const playerStatus = player.left ? "вышел" : player.eliminated ? "исключён" : isFinished ? "победитель" : "в игре";
         return `<article class="game-player ${playerState}${voters.length ? " has-votes" : ""}${playerActions ? " has-actions" : ""}">
-            <div class="player-name">${avatarMarkup(player)}<div><strong>${escaped(player.nickname)}${player.id === ownPlayerId() ? " (вы)" : ""}</strong><small>${playerStatus}</small></div>${voteMarkerMarkup}</div>
+            <div class="player-name"><span class="player-number" aria-label="Номер участника">№ ${playerIndex + 1}</span>${avatarMarkup(player)}<div><strong>${escaped(player.nickname)}${player.id === ownPlayerId() ? " (вы)" : ""}</strong><small>${playerStatus}</small></div>${voteMarkerMarkup}</div>
             <div class="public-cards">${playerCards || '<span class="muted">карты ещё не раскрыты</span>'}</div>
             ${playerActions ? `<div class="player-actions">${playerActions}</div>` : ""}
             ${player.id === room.hostId ? '<span class="host-star" aria-label="Ведущий" title="Ведущий">★</span>' : ""}

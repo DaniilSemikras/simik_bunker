@@ -247,6 +247,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .game-player.eliminated::before,.game-player.left-player::before { background:#6e625c; box-shadow:none; }
 .player-name { grid-area:identity; display:flex; align-items:center; justify-content:flex-start; gap:10px; min-width:0; padding:13px 18px 13px 20px; border-bottom:1px solid rgba(244,238,232,.1); background:rgba(6,7,6,.12); }
 .player-name > div { min-width:0; }
+.player-number { display:grid; flex:0 0 auto; place-items:center; min-width:29px; height:24px; border:1px solid rgba(255,202,116,.48); border-radius:7px; padding:0 5px; color:#ffd796; background:rgba(121,73,28,.3); font-size:10px; font-weight:900; letter-spacing:.02em; font-variant-numeric:tabular-nums; }
 .game-player .avatar { flex-basis:48px; width:48px; height:48px; border:2px solid rgba(255,228,190,.55); box-shadow:0 0 0 4px rgba(241,168,78,.1),0 8px 15px rgba(0,0,0,.28); font-size:18px; }
 .game-player.active-player .avatar { border-color:#a8f4b4; box-shadow:0 0 0 4px rgba(103,223,128,.12),0 8px 16px rgba(0,0,0,.3); }
 .player-name strong, .player-name small { display:block; }

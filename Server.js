@@ -97,6 +97,7 @@ const WATER_RANDOM_PERCENT_SEED_VERSION = 1;
 const WATER_DURATION_SEED_VERSION = 1;
 const BACKPACK_WATER_SEED_VERSION = 1;
 const GENDER_OPTIONS_SEED_VERSION = 1;
+const HEALTH_CATEGORY_SEED_VERSION = 1;
 const DISASTER_DURATION_SEED_VERSION = 1;
 const CONTENT_FILL_SEED_VERSION = 1;
 const WEAPON_BACKPACK_OPTION = { value: "Оружие", score: 70, chance: 10 };
@@ -111,6 +112,22 @@ const DEFAULT_GENDER_CATEGORY = {
     options: [
         { value: "Мужчина", score: 50, chance: 50 },
         { value: "Женщина", score: 50, chance: 50 }
+    ]
+};
+const DEFAULT_HEALTH_CATEGORY = {
+    id: "health",
+    name: "Здоровье",
+    options: [
+        { value: "Полностью здоров", score: 95, chance: 20 },
+        { value: "Сильный иммунитет", score: 90, chance: 10 },
+        { value: "Аллергия на пыль", score: 55, chance: 10 },
+        { value: "Астма под контролем", score: 50, chance: 10 },
+        { value: "Диабет под контролем", score: 45, chance: 10 },
+        { value: "Близорукость", score: 65, chance: 10 },
+        { value: "Хроническая мигрень", score: 35, chance: 10 },
+        { value: "Бессонница", score: 35, chance: 8 },
+        { value: "Перелом руки срастается", score: 30, chance: 6 },
+        { value: "Панические атаки", score: 30, chance: 6 }
     ]
 };
 const DEFAULT_BUNKER_TRAITS = [
@@ -187,7 +204,7 @@ const DEFAULT_GAME_CONFIG = {
             { value: "строитель", score: 90, chance: 20 },
             { value: "механик", score: 88, chance: 20 }
         ]
-    }],
+    }, DEFAULT_HEALTH_CATEGORY],
     disasters: DISASTERS,
     bunkerTraits: DEFAULT_BUNKER_TRAITS,
     bunkerTraitsSeedVersion: BUNKER_TRAITS_SEED_VERSION,
@@ -198,6 +215,7 @@ const DEFAULT_GAME_CONFIG = {
     waterDurationSeedVersion: WATER_DURATION_SEED_VERSION,
     backpackWaterSeedVersion: BACKPACK_WATER_SEED_VERSION,
     genderOptionsSeedVersion: GENDER_OPTIONS_SEED_VERSION,
+    healthCategorySeedVersion: HEALTH_CATEGORY_SEED_VERSION,
     disasterDurationSeedVersion: DISASTER_DURATION_SEED_VERSION,
     contentFillSeedVersion: CONTENT_FILL_SEED_VERSION,
     specialCards: [
@@ -708,6 +726,27 @@ function seedNormalGenderOptions(rawConfig) {
     };
 }
 
+function seedHealthCategory(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.healthCategorySeedVersion) >= HEALTH_CATEGORY_SEED_VERSION) {
+        return { config: source, changed: false };
+    }
+    const categories = Array.isArray(source.categories) ? [...source.categories] : [];
+    const healthIndex = categories.findIndex((category) => /health|здоров/.test(`${category?.id || ""} ${category?.name || ""}`.toLocaleLowerCase("ru")));
+    if (healthIndex < 0) {
+        const professionIndex = categories.findIndex((category) => String(category?.id || "").toLocaleLowerCase("ru") === "profession");
+        categories.splice(Math.max(0, professionIndex + 1), 0, clone(DEFAULT_HEALTH_CATEGORY));
+    }
+    return {
+        config: {
+            ...source,
+            categories,
+            healthCategorySeedVersion: HEALTH_CATEGORY_SEED_VERSION
+        },
+        changed: true
+    };
+}
+
 function seedGameConfig(rawConfig) {
     const bunkerSeed = seedDefaultBunkerTraits(rawConfig);
     const waterLabelSeed = seedWaterTraitLabel(bunkerSeed.config);
@@ -718,10 +757,11 @@ function seedGameConfig(rawConfig) {
     const backpackSeed = seedBackpackWeapon(contentSeed.config);
     const backpackWaterSeed = seedBackpackWater(backpackSeed.config);
     const genderSeed = seedNormalGenderOptions(backpackWaterSeed.config);
-    const disasterSeed = seedDisasterDurations(genderSeed.config);
+    const healthSeed = seedHealthCategory(genderSeed.config);
+    const disasterSeed = seedDisasterDurations(healthSeed.config);
     return {
         config: disasterSeed.config,
-        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || waterDurationSeed.changed || backpackSeed.changed || backpackWaterSeed.changed || genderSeed.changed || disasterSeed.changed || contentSeed.changed
+        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || waterDurationSeed.changed || backpackSeed.changed || backpackWaterSeed.changed || genderSeed.changed || healthSeed.changed || disasterSeed.changed || contentSeed.changed
     };
 }
 
@@ -863,13 +903,16 @@ function normalizeGameConfig(rawConfig) {
     const genderOptionsSeedVersion = Number(rawConfig?.genderOptionsSeedVersion) >= GENDER_OPTIONS_SEED_VERSION
         ? GENDER_OPTIONS_SEED_VERSION
         : 0;
+    const healthCategorySeedVersion = Number(rawConfig?.healthCategorySeedVersion) >= HEALTH_CATEGORY_SEED_VERSION
+        ? HEALTH_CATEGORY_SEED_VERSION
+        : 0;
     const disasterDurationSeedVersion = Number(rawConfig?.disasterDurationSeedVersion) >= DISASTER_DURATION_SEED_VERSION
         ? DISASTER_DURATION_SEED_VERSION
         : 0;
     const contentFillSeedVersion = Number(rawConfig?.contentFillSeedVersion) >= CONTENT_FILL_SEED_VERSION
         ? CONTENT_FILL_SEED_VERSION
         : 0;
-    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, waterDurationSeedVersion, backpackWaterSeedVersion, genderOptionsSeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, hiddenAvatars, revision };
+    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, waterDurationSeedVersion, backpackWaterSeedVersion, genderOptionsSeedVersion, healthCategorySeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, hiddenAvatars, revision };
 }
 
 function loadGameConfig() {
