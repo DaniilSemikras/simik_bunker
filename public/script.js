@@ -67,6 +67,28 @@ let myWeaponStatus = { hasWeapon: false, used: false, canEvict: false };
 let specialTargetMode = false;
 const canUsePlayerTable = () => window.matchMedia("(min-width: 721px)").matches;
 let playersView = canUsePlayerTable() && localStorage.getItem("bunker-players-view") === "table" ? "table" : "cards";
+const THEME_STORAGE_KEY = "bunker-color-theme";
+const COLOR_THEMES = [
+    { id: "amber", label: "Янтарь", icon: "☀", color: "#f1a84e" },
+    { id: "radiation", label: "Радиация", icon: "☢", color: "#7ee58d" },
+    { id: "frost", label: "Ночной лёд", icon: "✦", color: "#8abaff" }
+];
+
+function applyColorTheme(themeId) {
+    const theme = COLOR_THEMES.find((item) => item.id === themeId) || COLOR_THEMES[0];
+    document.documentElement.dataset.theme = theme.id === "amber" ? "" : theme.id;
+    localStorage.setItem(THEME_STORAGE_KEY, theme.id);
+    $("#themeIcon").textContent = theme.icon;
+    $("#themeLabel").textContent = theme.label;
+    $("#themeToggle").setAttribute("aria-label", "Тема: " + theme.label + ". Нажмите, чтобы сменить.");
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme.color);
+}
+
+function cycleColorTheme() {
+    const current = document.documentElement.dataset.theme || "amber";
+    const index = COLOR_THEMES.findIndex((theme) => theme.id === current);
+    applyColorTheme(COLOR_THEMES[(index + 1) % COLOR_THEMES.length].id);
+}
 
 function show(screen) {
     ["#menu", "#lobby", "#game"].forEach((id) => $(id).classList.toggle("hidden", id !== screen));
@@ -505,6 +527,7 @@ $("#soundToggle").addEventListener("click", () => {
     updateSoundToggle();
     if (soundsEnabled) playSound("accepted");
 });
+$("#themeToggle").addEventListener("click", cycleColorTheme);
 $("#leaveLobby").addEventListener("click", () => socket.emit("leaveRoom"));
 $("#leaveGame").addEventListener("click", () => socket.emit("leaveRoom"));
 $("#copyCode").addEventListener("click", async () => {
@@ -662,6 +685,7 @@ socket.on("connect", tryResumeSession);
 clearInterval(countdownTimer);
 countdownTimer = setInterval(updateActionTimer, 250);
 updateSoundToggle();
+applyColorTheme(localStorage.getItem(THEME_STORAGE_KEY) || "amber");
 document.addEventListener("pointerdown", unlockSound, { once: true });
 document.addEventListener("keydown", unlockSound, { once: true });
 if (socket.connected) tryResumeSession();

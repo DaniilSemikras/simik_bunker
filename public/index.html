@@ -6,10 +6,11 @@
     <meta name="theme-color" content="#101716">
     <title>Бункер — игра для друзей</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="style.css?v=20260730-custom-scroll">
+    <link rel="stylesheet" href="style.css?v=20260730-theme-switcher">
 </head>
 <body>
     <div class="bunker-backdrop" aria-hidden="true"></div>
+    <button id="themeToggle" class="theme-toggle" type="button" title="Сменить цветовую тему" aria-label="Сменить цветовую тему"><span id="themeIcon" aria-hidden="true">☀</span><span id="themeLabel">Янтарь</span></button>
     <main class="app-shell">
         <section id="menu" class="panel menu-panel">
             <p class="eyebrow">ИГРА ДЛЯ СИМИКОВ И МИМИКОВ</p>
@@ -79,6 +80,6 @@
 
     <div id="toast" class="toast" role="status"></div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="script.js?v=20260730-neighbor-card-variants"></script>
+    <script src="script.js?v=20260730-theme-switcher"></script>
 </body>
 </html>
