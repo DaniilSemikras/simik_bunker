@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#101716">
     <title>Бункер — игра для друзей</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="style.css?v=20260730-survivor-contributions">
+    <link rel="stylesheet" href="style.css?v=20260730-game-id">
 </head>
 <body>
     <div class="bunker-backdrop" aria-hidden="true"></div>
@@ -36,6 +36,7 @@
         <section id="lobby" class="panel hidden">
             <div class="panel-topline"><p class="eyebrow">КОМНАТА</p><button id="leaveLobby" class="text-button">Выйти</button></div>
             <div class="room-code"><span id="roomTitle"></span><button id="copyCode" class="copy-button" title="Скопировать код">⧉</button></div>
+            <p id="roomGameId" class="room-game-id" title="Служебный номер игры. Вход в комнату остаётся по коду выше."></p>
             <p id="hostNote" class="hint"></p>
             <div class="lobby-heading"><h2>Игроки</h2><span id="playerCount" class="count"></span></div>
             <div id="players" class="players-list"></div>
@@ -47,7 +48,7 @@
 
         <section id="game" class="game-view hidden">
             <div class="game-header">
-                <div><p class="eyebrow">Бункер · <span id="gameCode"></span></p><h2 id="phaseTitle">Подготовка</h2></div>
+                <div><p class="eyebrow">Бункер · <span id="gameCode"></span><span id="gameId" class="game-id" title="Служебный номер игры"> </span></p><h2 id="phaseTitle">Подготовка</h2></div>
                 <div class="game-actions"><button id="soundToggle" class="sound-button" type="button" aria-pressed="true">🔊 Звук</button><button id="leaveGame" class="text-button">Покинуть</button></div>
             </div>
             <section id="resultsBanner" class="results-banner hidden" aria-live="polite"></section>
@@ -91,6 +92,6 @@
 
     <div id="toast" class="toast" role="status"></div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="script.js?v=20260730-survivor-contributions"></script>
+    <script src="script.js?v=20260730-game-id"></script>
 </body>
 </html>

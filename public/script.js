@@ -230,6 +230,7 @@ function playerPayload() {
 function updateLobby() {
     if (!room) return;
     $("#roomTitle").textContent = room.code;
+    $("#roomGameId").textContent = room.gameId ? `Игра №${room.gameId}` : "";
     const playerTotal = activePlayers().length;
     $("#playerCount").textContent = `${playerTotal}/12`;
     $("#hostNote").textContent = isHost() ? "Вы ведущий. Когда все подключатся, запускайте игру." : "Ожидайте, пока ведущий начнёт игру.";
@@ -350,6 +351,7 @@ function updateGame() {
     if (!canUseSpecialCard) specialTargetMode = false;
 
     $("#gameCode").textContent = room.code;
+    $("#gameId").textContent = room.gameId ? ` · №${room.gameId}` : "";
     $("#phaseTitle").textContent = isFinished ? "Игра завершена" : isStory ? "История катастрофы" : isVoting ? "Голосование" : "Раскрытие карт";
     $("#resultsBanner").classList.toggle("hidden", !isFinished);
     $("#resultsBanner").innerHTML = isFinished ? `

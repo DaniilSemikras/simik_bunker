@@ -18,6 +18,7 @@ app.use(express.static("public", {
 }));
 
 const rooms = Object.create(null);
+let nextGameId = 1;
 const TRAITS = {
     profession: ["врач скорой помощи", "инженер-энергетик", "фермер", "повар", "психолог", "строитель", "программист", "военный", "биолог", "механик", "учитель", "ветеринар"],
     health: ["полностью здоров", "аллергия на пыль", "астма", "бессонница", "диабет под контролем", "идеальное зрение", "хроническая мигрень", "перелом руки срастается", "сильный иммунитет", "панические атаки", "донор крови", "близорукость"],
@@ -1277,6 +1278,10 @@ function broadcastAdminAvatars() {
     io.to(ADMIN_ROOM).emit("admin:avatars-updated", avatarLibraryResponse());
 }
 
+function broadcastAdminRooms() {
+    io.to(ADMIN_ROOM).emit("admin:rooms-updated", { rooms: adminRoomSummaries() });
+}
+
 function getAdminToken(request) {
     const authorization = request.get("authorization") || "";
     return authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
@@ -1301,6 +1306,17 @@ app.post("/api/admin/login", (request, response) => {
 });
 
 app.get("/api/admin/config", requireAdmin, (_request, response) => response.json(gameConfig));
+
+app.get("/api/admin/rooms", requireAdmin, (_request, response) => {
+    response.json({ rooms: adminRoomSummaries() });
+});
+
+app.get("/api/admin/rooms/:gameId", requireAdmin, (request, response) => {
+    const gameId = String(request.params.gameId || "");
+    const room = Object.values(rooms).find((candidate) => candidate.gameId === gameId);
+    if (!room) return response.status(404).json({ message: "Игра уже закрыта или не найдена." });
+    response.json({ room: adminRoomSummary(room), state: publicState(room) });
+});
 
 app.put("/api/admin/config", requireAdmin, async (request, response) => {
     try {
@@ -1384,6 +1400,12 @@ function generateCode() {
         code = Array.from({ length: 4 }, () => randomItem(chars)).join("");
     } while (rooms[code]);
     return code;
+}
+
+function generateGameId() {
+    const gameId = String(nextGameId).padStart(7, "0");
+    nextGameId += 1;
+    return gameId;
 }
 
 function cleanNickname(value) {
@@ -1612,6 +1634,7 @@ function closeRoom(room, notifyPlayers = true) {
     for (const player of room.players) cancelPendingLeave(player);
     if (notifyPlayers) io.to(room.code).emit("roomExpired");
     delete rooms[room.code];
+    broadcastAdminRooms();
 }
 
 function scheduleRoomClose(room, deadline) {
@@ -1877,6 +1900,7 @@ function publicState(room) {
     }, {});
     return {
         code: room.code,
+        gameId: room.gameId,
         serverNow: Date.now(),
         hostId: room.host,
         phase: room.phase,
@@ -1924,6 +1948,33 @@ function publicState(room) {
     };
 }
 
+function adminRoomSummary(room) {
+    const active = activePlayers(room);
+    const currentPlayer = room.players.find((player) => player.id === currentTurnPlayerId(room));
+    const lastAction = room.actionLog?.[room.actionLog.length - 1] || null;
+    return {
+        gameId: room.gameId,
+        code: room.code,
+        phase: room.phase,
+        playerCount: active.length,
+        totalPlayerCount: room.players.filter((player) => !player.left).length,
+        capacity: room.capacity,
+        round: room.round + 1,
+        createdAt: room.createdAt || null,
+        isSoloTest: Boolean(room.isSoloTest),
+        disaster: room.disaster || null,
+        currentPlayer: currentPlayer?.nickname || null,
+        lastAction: lastAction?.text || null,
+        updatedAt: lastAction?.at || room.createdAt || null
+    };
+}
+
+function adminRoomSummaries() {
+    return Object.values(rooms)
+        .map(adminRoomSummary)
+        .sort((first, second) => Number(second.gameId) - Number(first.gameId));
+}
+
 function emitRoom(room) {
     io.to(room.code).emit("roomState", publicState(room));
     for (const player of room.players) {
@@ -1937,6 +1988,7 @@ function emitRoom(room) {
             canEvict: (room.bunkerTraits || []).some((trait) => cleanOccupiedSlots(trait.occupiedSlots) > 0)
         });
     }
+    broadcastAdminRooms();
 }
 
 function emitError(socket, message) {
@@ -2229,7 +2281,7 @@ io.on("connection", (socket) => {
         const token = String(payload?.token || "");
         if (!hasActiveAdminSession(token)) return socket.emit("admin:unauthorized");
         socket.join(ADMIN_ROOM);
-        socket.emit("admin:ready", { revision: gameConfig.revision });
+        socket.emit("admin:ready", { revision: gameConfig.revision, rooms: adminRoomSummaries() });
     });
 
     socket.on("createRoom", (rawPayload = {}) => {
@@ -2241,6 +2293,8 @@ io.on("connection", (socket) => {
         const code = generateCode();
         rooms[code] = {
             code,
+            gameId: generateGameId(),
+            createdAt: Date.now(),
             host: socket.id,
             players: [{ id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(), left: false, isBot: false }],
             phase: "lobby",

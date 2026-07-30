@@ -7,7 +7,7 @@
     <meta name="robots" content="noindex">
     <title>Бункер — настройки игры</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="admin.css?v=20260730-admin-theme">
+    <link rel="stylesheet" href="admin.css?v=20260730-game-monitor">
 </head>
 <body>
     <main class="admin-shell">
@@ -44,6 +44,7 @@
                 <button class="admin-tab is-active" type="button" role="tab" aria-selected="true" data-editor-tab="players">Карточки игроков</button>
                 <button class="admin-tab" type="button" role="tab" aria-selected="false" data-editor-tab="bunker">Характеристики бункера</button>
                 <button class="admin-tab" type="button" role="tab" aria-selected="false" data-editor-tab="special">Специальные карты</button>
+                <button class="admin-tab" type="button" role="tab" aria-selected="false" data-editor-tab="games">Активные игры <span id="adminGamesCount" class="admin-tab-count">0</span></button>
             </div>
             <section class="editor-tab-panel" data-editor-panel="players">
             <div class="section-head"><div><p class="eyebrow">КАТЕГОРИИ</p><h2>Карточки игроков</h2></div><button id="addCategory" class="secondary">+ Добавить категорию</button></div>
@@ -77,10 +78,16 @@
                 <div id="specialCards" class="categories special-cards-editor"></div>
             </section>
 
+            <section class="editor-tab-panel hidden" data-editor-panel="games">
+                <div class="section-head"><div><p class="eyebrow">МОНИТОРИНГ</p><h2>Активные игры</h2><p class="section-hint">Номера игр служебные: обычные игроки по ним не подключаются. Нажмите «Наблюдать», чтобы посмотреть состояние комнаты без входа в неё.</p></div><button id="refreshAdminGames" class="secondary" type="button">Обновить</button></div>
+                <div id="adminGames" class="admin-games"></div>
+                <section id="adminGameDetails" class="admin-game-details hidden" aria-live="polite"></section>
+            </section>
+
             <div class="save-bar"><p id="saveMessage" class="message" role="status"></p><button id="reloadLatest" class="secondary hidden" type="button">Загрузить свежую версию</button><button id="save" class="primary">Сохранить настройки</button></div>
         </section>
     </main>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="admin.js?v=20260730-admin-theme"></script>
+    <script src="admin.js?v=20260730-game-monitor"></script>
 </body>
 </html>

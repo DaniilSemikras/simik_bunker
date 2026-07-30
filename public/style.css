@@ -74,6 +74,8 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .text-button:hover { color:var(--ink); }
 .room-code { display:flex; align-items:center; gap:8px; margin:7px 0 20px; font-size:35px; font-weight:900; letter-spacing:.08em; }
 .copy-button { border:1px solid var(--line); border-radius:8px; padding:4px 8px; color:var(--accent); background:transparent; font-size:20px; }
+.room-game-id { display:inline-flex; margin:-12px 0 0; border:1px solid color-mix(in srgb,var(--accent) 34%,transparent); border-radius:100px; padding:4px 8px; color:var(--muted); background:color-mix(in srgb,var(--accent) 8%,transparent); font-size:10px; font-weight:800; letter-spacing:.06em; }
+.game-id { margin-left:4px; color:var(--muted); font-size:10px; font-weight:750; letter-spacing:.06em; }
 .lobby-heading { margin-top:26px; }
 .count { border:1px solid var(--line); border-radius:100px; padding:4px 8px; color:var(--muted); font-size:12px; }
 .players-list { display:grid; gap:8px; margin-top:12px; }

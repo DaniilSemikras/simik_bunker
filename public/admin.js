@@ -12,6 +12,8 @@ let hiddenAvatars = [];
 let adminSocket = null;
 let isDirty = false;
 let pendingRemoteConfig = null;
+let adminRooms = [];
+let selectedAdminGameId = "";
 
 function applyColorTheme(themeId) {
     const theme = COLOR_THEMES.find((item) => item.id === themeId) || COLOR_THEMES[0];
@@ -39,6 +41,85 @@ function toggleThemeMenu() {
 
 function escapeHtml(value) {
     return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]);
+}
+
+function gamePhaseLabel(phase) {
+    return ({ lobby: "Лобби", story: "История", reveal: "Раскрытие", voting: "Голосование", finished: "Итоги" })[phase] || "Подготовка";
+}
+
+function formatGameTime(value) {
+    const date = Number(value) ? new Date(Number(value)) : null;
+    return date && !Number.isNaN(date.getTime()) ? date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "—";
+}
+
+function adminPlayerAvatar(player) {
+    const firstLetter = String(player?.nickname || "?").trim().charAt(0).toUpperCase() || "?";
+    return `<span class="admin-game-player-avatar">${player?.avatarUrl ? `<img src="${escapeHtml(player.avatarUrl)}" alt="">` : escapeHtml(firstLetter)}</span>`;
+}
+
+function renderAdminGameDetails(room, state) {
+    if (!room || !state) {
+        $("#adminGameDetails").classList.add("hidden");
+        $("#adminGameDetails").innerHTML = "";
+        return;
+    }
+    const currentPlayer = state.players?.find((player) => player.id === state.turnPlayerId)?.nickname || room.currentPlayer || "—";
+    const players = Array.isArray(state.players) ? state.players : [];
+    const bunkerTraits = Array.isArray(state.bunkerTraits) && state.bunkerTraits.length
+        ? state.bunkerTraits.map((trait) => `${trait.name}: ${trait.value}`).join(" · ")
+        : "ещё не выбраны";
+    $("#adminGameDetails").innerHTML = `
+        <div class="admin-game-details-top"><div><p class="eyebrow">ПРОСМОТР ИГРЫ</p><h3>Игра №${escapeHtml(room.gameId)}</h3><p>Код комнаты: <strong>${escapeHtml(room.code)}</strong> · создана в ${formatGameTime(room.createdAt)}</p></div><span class="admin-game-phase">${escapeHtml(gamePhaseLabel(room.phase))}</span></div>
+        <div class="admin-game-detail-grid">
+            <div class="admin-game-detail-stat"><span>Игроки</span><strong>${room.playerCount}/${room.capacity || "—"}</strong></div>
+            <div class="admin-game-detail-stat"><span>Раунд</span><strong>${room.phase === "lobby" ? "ожидание" : room.round}</strong></div>
+            <div class="admin-game-detail-stat"><span>Ход</span><strong>${escapeHtml(currentPlayer)}</strong></div>
+        </div>
+        <div><p class="eyebrow">УЧАСТНИКИ</p><ul class="admin-game-players">${players.map((player) => `<li class="${player.left ? "is-left" : ""} ${player.eliminated ? "is-eliminated" : ""}">${adminPlayerAvatar(player)}<span>${escapeHtml(player.nickname)}<small>${player.left ? "вышел" : player.eliminated ? "исключён" : player.isBot ? "тест-бот" : "в игре"}</small></span></li>`).join("") || "<li>Игроков пока нет.</li>"}</ul></div>
+        <div><p class="eyebrow">БУНКЕР</p><p>${escapeHtml(bunkerTraits)}</p></div>
+        ${room.disaster ? `<div><p class="eyebrow">КАТАСТРОФА</p><p>${escapeHtml(room.disaster)}</p></div>` : ""}
+        ${room.lastAction ? `<div><p class="eyebrow">ПОСЛЕДНЕЕ СОБЫТИЕ</p><p>${escapeHtml(room.lastAction)}</p></div>` : ""}
+    `;
+    $("#adminGameDetails").classList.remove("hidden");
+}
+
+function renderAdminRooms() {
+    const count = adminRooms.length;
+    $("#adminGamesCount").textContent = String(count);
+    $("#adminGames").innerHTML = count ? adminRooms.map((room) => `
+        <article class="admin-game-card ${room.gameId === selectedAdminGameId ? "is-selected" : ""}">
+            <span class="admin-game-number">№${escapeHtml(room.gameId)}</span>
+            <div class="admin-game-copy"><div><strong>${escapeHtml(gamePhaseLabel(room.phase))}</strong> <span class="admin-game-phase">${room.isSoloTest ? "тест" : "игра"}</span></div><div class="admin-game-meta"><span>код ${escapeHtml(room.code)}</span><span>${room.playerCount} игроков</span><span>${room.capacity ? `${room.capacity} мест` : "места определяются"}</span><span>${room.currentPlayer ? `ходит ${escapeHtml(room.currentPlayer)}` : `создана ${formatGameTime(room.createdAt)}`}</span></div></div>
+            <button class="admin-game-watch" type="button" data-watch-game="${escapeHtml(room.gameId)}">Наблюдать</button>
+        </article>
+    `).join("") : '<p class="admin-games-empty">Сейчас нет активных комнат. Они появятся здесь сразу после создания.</p>';
+    if (selectedAdminGameId && !adminRooms.some((room) => room.gameId === selectedAdminGameId)) {
+        selectedAdminGameId = "";
+        renderAdminGameDetails(null, null);
+    }
+}
+
+function setAdminRooms(rooms) {
+    adminRooms = Array.isArray(rooms) ? rooms : [];
+    renderAdminRooms();
+}
+
+async function watchAdminGame(gameId) {
+    selectedAdminGameId = String(gameId || "");
+    renderAdminRooms();
+    $("#adminGameDetails").classList.remove("hidden");
+    $("#adminGameDetails").innerHTML = '<p class="admin-games-empty">Загружаю состояние игры…</p>';
+    try {
+        const response = await request(`/api/admin/rooms/${encodeURIComponent(selectedAdminGameId)}`);
+        if (selectedAdminGameId !== String(response.room?.gameId || "")) return;
+        renderAdminGameDetails(response.room, response.state);
+    } catch (error) {
+        if (selectedAdminGameId !== String(gameId || "")) return;
+        selectedAdminGameId = "";
+        renderAdminRooms();
+        renderAdminGameDetails(null, null);
+        showMessage("#saveMessage", error.message, "error");
+    }
 }
 
 function token() {
@@ -72,7 +153,14 @@ function connectAdminSocket() {
     adminSocket?.disconnect();
     adminSocket = window.io();
     adminSocket.on("connect", () => adminSocket.emit("admin:subscribe", { token: token() }));
+    adminSocket.on("admin:ready", ({ rooms } = {}) => setAdminRooms(rooms));
     adminSocket.on("admin:config-updated", ({ config: nextConfig } = {}) => applyRemoteConfig(nextConfig));
+    adminSocket.on("admin:rooms-updated", ({ rooms } = {}) => {
+        setAdminRooms(rooms);
+        if (selectedAdminGameId && adminRooms.some((room) => room.gameId === selectedAdminGameId)) {
+            watchAdminGame(selectedAdminGameId);
+        }
+    });
     adminSocket.on("admin:avatars-updated", (library = {}) => {
         if (!Array.isArray(library.avatars)) return;
         avatars = library.avatars;
@@ -286,10 +374,11 @@ function collectConfig() {
 }
 
 async function loadEditor() {
-    const [nextConfig, avatarResponse] = await Promise.all([request("/api/admin/config"), request("/api/admin/avatars")]);
+    const [nextConfig, avatarResponse, roomsResponse] = await Promise.all([request("/api/admin/config"), request("/api/admin/avatars"), request("/api/admin/rooms")]);
     config = nextConfig;
     avatars = avatarResponse.avatars;
     hiddenAvatars = avatarResponse.hiddenAvatars || [];
+    setAdminRooms(roomsResponse.rooms);
     renderCategories();
     renderBunkerTraits();
     renderSpecialCards();
@@ -339,6 +428,19 @@ $("#password").addEventListener("keydown", (event) => { if (event.key === "Enter
 $("#addCategory").addEventListener("click", makeCategory);
 $("#addBunkerTrait").addEventListener("click", makeBunkerTrait);
 $("#addSpecialCard").addEventListener("click", makeSpecialCard);
+$("#refreshAdminGames").addEventListener("click", async () => {
+    try {
+        const response = await request("/api/admin/rooms");
+        setAdminRooms(response.rooms);
+        if (selectedAdminGameId) await watchAdminGame(selectedAdminGameId);
+    } catch (error) {
+        showMessage("#saveMessage", error.message, "error");
+    }
+});
+$("#adminGames").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-watch-game]");
+    if (button) watchAdminGame(button.dataset.watchGame);
+});
 $("#addDisaster").addEventListener("click", () => {
     config.disasters.push({ text: "Новый сценарий катастрофы.", shelterDuration: "Бессрочно" });
     markDirty();
@@ -575,6 +677,10 @@ $("#logout").addEventListener("click", () => {
     config = null;
     isDirty = false;
     pendingRemoteConfig = null;
+    adminRooms = [];
+    selectedAdminGameId = "";
+    renderAdminRooms();
+    renderAdminGameDetails(null, null);
     $("#editorView").classList.add("hidden");
     $("#loginView").classList.remove("hidden");
     $("#logout").classList.add("hidden");
