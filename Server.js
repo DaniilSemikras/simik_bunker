@@ -59,6 +59,67 @@ function professionRating(value) {
     return PROFESSION_RATINGS.find((rating) => rating.terms.some((term) => text.includes(term))) || { score: 0, role: null };
 }
 
+function includesAny(text, terms) {
+    return terms.some((term) => text.includes(term));
+}
+
+function professionBunkerFit(room, professionValue) {
+    const profession = professionBase(professionValue).toLocaleLowerCase("ru");
+    const bunkerTraits = room?.bunkerTraits || [];
+    const traitText = (terms) => bunkerTraits
+        .filter((trait) => includesAny(`${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru"), terms))
+        .map((trait) => String(trait?.value || "").toLocaleLowerCase("ru"))
+        .join(" ");
+    const technical = includesAny(profession, ["электрик", "энергетик", "инженер", "электрон", "механик", "строител", "программист"]);
+    const electrician = includesAny(profession, ["электрик", "энергетик", "электрон"]);
+    const builder = includesAny(profession, ["инженер", "механик", "строител"]);
+    const scientist = includesAny(profession, ["биолог", "химик", "учен", "лаборант", "врач", "медик", "фармацевт"]);
+    const farmer = includesAny(profession, ["фермер", "агроном", "садовод"]);
+    const foodExpert = includesAny(profession, ["фермер", "агроном", "садовод", "повар", "кулинар", "биолог", "ветеринар"]);
+    const waterExpert = includesAny(profession, ["инженер", "электрик", "механик", "химик", "биолог", "гидролог", "сантехник"]);
+    const medic = includesAny(profession, ["врач", "медик", "фельдшер", "хирург", "медсестр", "ветеринар", "психолог"]);
+    const warehouseExpert = includesAny(profession, ["логист", "кладов", "военн", "охран", "механик", "строител", "повар"]);
+    const reasons = [];
+    let bonus = 0;
+    const addBonus = (amount, reason) => {
+        if (!amount || bonus >= 45) return;
+        const applied = Math.min(amount, 45 - bonus);
+        bonus += applied;
+        reasons.push(`${reason} +${applied}`);
+    };
+    const specialization = traitText(["specialization", "назначен", "специализ"]);
+    if (/технич/.test(specialization) && technical) addBonus(18, "подходит техническому бункеру");
+    if (/(лаборатор|научн)/.test(specialization) && scientist) addBonus(18, "полезна для лаборатории");
+    if (/ферм/.test(specialization) && foodExpert) addBonus(18, "полезна для фермы");
+    if (/медицин/.test(specialization) && medic) addBonus(18, "полезна для медблока");
+    if (/(склад|снабжен)/.test(specialization) && warehouseExpert) addBonus(18, "полезна для склада снабжения");
+
+    const electricity = traitText(["electricity", "электр"]);
+    if (/(поврежден|слом|нужен электрик|аварийн)/.test(electricity)) {
+        if (electrician) addBonus(30, "может восстановить электрику");
+        else if (technical) addBonus(14, "поможет с ремонтом электрики");
+    }
+    const ventilation = traitText(["ventilation", "вентиляц"]);
+    if (/(слом|исход|нужен ремонт|аварийн)/.test(ventilation)) {
+        if (technical) addBonus(24, "может наладить вентиляцию");
+        else if (scientist) addBonus(10, "разберётся с фильтрацией воздуха");
+    }
+    const condition = traitText(["condition", "состояни"]);
+    if (/(критическ|поврежден|срочн.*ремонт|ремонт)/.test(condition) && builder) {
+        addBonus(22, "нужна для ремонта бункера");
+    }
+    const food = traitText(["food", "еда", "питани"]);
+    if (/(еды нет|3 дня|недел)/.test(food)) {
+        if (farmer) addBonus(24, "поможет наладить запасы еды");
+        else if (foodExpert) addBonus(14, "поможет с питанием");
+    }
+    const water = traitText(["water", "вод"]);
+    if (/(воды нет|3 дня|недел)/.test(water) && waterExpert) {
+        addBonus(12, "поможет с очисткой и поиском воды");
+    }
+    return { bonus, reasons };
+}
+
 function defaultOptionScore(trait, value) {
     const text = String(value || "").toLocaleLowerCase("ru");
     if (trait === "profession") return Math.round(50 + professionRating(value).score * 45);
@@ -1495,6 +1556,7 @@ function scoreRevealedCard(room, trait, value) {
     const scoreKey = trait === "profession" ? professionBase(value) : isHealth ? healthBase(value) : value;
     const configuredScore = room.cardScores?.[trait]?.[scoreKey];
     const score = cleanScore(configuredScore, defaultOptionScore(trait, scoreKey));
+    if (trait === "profession") return Math.min(100, score + professionBunkerFit(room, value).bonus);
     const stage = isHealth ? healthStage(value) : 0;
     return stage ? Math.max(0, score - (stage - 1) * 8) : score;
 }
@@ -1639,11 +1701,19 @@ function calculateUtilityBreakdown(room) {
             totalScore += scoreRevealedCard(room, backpackTrait, item);
             revealedCards += 1;
         }
+        const professionValue = room.cards?.[player.id]?.profession || room.revealed?.[player.id]?.profession || "";
+        const professionScoreKey = professionBase(professionValue);
+        const professionBaseScore = cleanScore(room.cardScores?.profession?.[professionScoreKey], defaultOptionScore("profession", professionScoreKey));
+        const professionScore = scoreRevealedCard(room, "profession", professionValue);
+        const professionBonus = professionValue ? Math.max(0, professionScore - professionBaseScore) : 0;
+        const professionReasons = professionBonus ? professionBunkerFit(room, professionValue).reasons : [];
         return {
             playerId: player.id,
             utility: revealedCards ? Math.round(totalScore / revealedCards) : 0,
             totalScore,
-            revealedCards
+            revealedCards,
+            professionBonus,
+            professionReasons
         };
     });
 }
@@ -1699,7 +1769,7 @@ function publicState(room) {
         voteCanBeSkipped: voteCanBeSkipped(room),
         bunkerSurvivalChance: room.phase === "finished" ? calculateBunkerSurvivalChance(room) : null,
         utilityBreakdown: room.phase === "finished"
-            ? calculateUtilityBreakdown(room).map(({ playerId, utility, revealedCards }) => ({ playerId, utility, revealedCards }))
+            ? calculateUtilityBreakdown(room).map(({ playerId, utility, revealedCards, professionBonus, professionReasons }) => ({ playerId, utility, revealedCards, professionBonus, professionReasons }))
             : [],
         roomCloseDeadline: room.roomCloseDeadline || null,
         actionLog: room.actionLog || [],

@@ -274,7 +274,11 @@ function updateGame() {
     const utilityRows = utilityBreakdown.map((entry) => {
         const player = room.players.find((candidate) => candidate.id === entry.playerId);
         if (!player) return "";
-        return '<span class="utility-player">' + avatarMarkup(player) + '<span><strong>' + escaped(player.nickname) + '</strong><small>' + entry.revealedCards + ' карт</small></span><b>' + entry.utility + '%</b></span>';
+        const professionReason = Array.isArray(entry.professionReasons) ? entry.professionReasons.join("; ") : "";
+        const professionFit = entry.professionBonus
+            ? '<small class="utility-profession-fit" title="' + escaped(professionReason) + '">Профессия: +' + entry.professionBonus + ' · ' + escaped(professionReason) + '</small>'
+            : "";
+        return '<span class="utility-player">' + avatarMarkup(player) + '<span><strong>' + escaped(player.nickname) + '</strong><small>' + entry.revealedCards + ' карт</small>' + professionFit + '</span><b>' + entry.utility + '%</b></span>';
     }).join("");
     const myRevealed = me?.revealed || {};
     const hasRevealedThisRound = Boolean(room.revealedThisRound?.[ownPlayerId()]);
