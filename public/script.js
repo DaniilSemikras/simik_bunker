@@ -70,6 +70,9 @@ let myWeaponStatus = { hasWeapon: false, revealed: false, used: false, canEvict:
 let specialTargetMode = false;
 let lastAppliedRoomTheme = "";
 let disasterExpanded = false;
+let testModeAvailable = false;
+let testServerState = null;
+let testPanelOpen = false;
 const canUsePlayerTable = () => window.matchMedia("(min-width: 721px)").matches;
 let playersView = canUsePlayerTable() && localStorage.getItem("bunker-players-view") === "table" ? "table" : "cards";
 const THEME_STORAGE_KEY = "bunker-color-theme";
@@ -256,6 +259,45 @@ function updateActionTimer() {
     extendButton.classList.toggle("hidden", room.phase !== "finished");
 }
 
+function renderIntegratedTestAdmin() {
+    const canControl = Boolean(room?.isTestRoom && isHost());
+    $("#testPanelToggle").classList.toggle("hidden", !canControl);
+    if (!canControl) {
+        testPanelOpen = false;
+        $("#testPanel").classList.add("hidden");
+        $("#testPanelToggle").setAttribute("aria-expanded", "false");
+        return;
+    }
+    $("#testPanel").classList.toggle("hidden", !testPanelOpen);
+    $("#testPanelToggle").setAttribute("aria-expanded", String(testPanelOpen));
+    $("#testAdminSummary").textContent = `${room.code} · ${room.phase} · раунд ${room.round || 0}/${room.revealRounds || 0}${testServerState?.testPaused ? " · ПАУЗА" : ""}`;
+    $("#testLobbyControls").classList.toggle("hidden", room.phase !== "lobby");
+    $("#testGameControls").classList.toggle("hidden", room.phase === "lobby");
+    $("#testPauseButton").textContent = testServerState?.testPaused ? "Продолжить" : "Пауза";
+    $("#testPhase").value = ["story", "reveal", "voting", "finished"].includes(room.phase) ? room.phase : "story";
+    $("#testRound").value = Math.max(1, Number(room.round) || 1);
+    $("#testRound").max = Math.max(1, Number(room.revealRounds) || 1);
+    if (!testServerState) {
+        $("#testAdminPlayers").innerHTML = '<p class="hint">Состояние игроков загружается…</p>';
+        return;
+    }
+    const traits = testServerState.traitOrder || room.categoryOrder || [];
+    const names = testServerState.categoryNames || room.categoryNames || {};
+    const healthTrait = traits.find((trait) => trait === "health" || /здоров/i.test(names[trait] || ""));
+    $("#testAdminPlayers").innerHTML = room.players.map((player, index) => {
+        const values = testServerState.cards?.[player.id] || {};
+        const revealed = player.revealed || {};
+        const isCurrent = room.turnPlayerId === player.id;
+        const avatar = player.avatarUrl ? `<img src="${escaped(player.avatarUrl)}" alt="">` : escaped((player.nickname || "?").charAt(0).toUpperCase());
+        const cards = traits.map((trait) => {
+            const isOpen = Object.prototype.hasOwnProperty.call(revealed, trait);
+            return `<div class="test-admin-card ${isOpen ? "is-open" : ""}"><div><span>${escaped(names[trait] || trait)}</span><strong title="${escaped(values[trait] ?? "—")}">${escaped(values[trait] ?? "—")}</strong></div><button type="button" data-test-reveal data-player="${escaped(player.id)}" data-trait="${escaped(trait)}" data-revealed="${isOpen ? "false" : "true"}">${isOpen ? "Скрыть" : "Открыть"}</button></div>`;
+        }).join("");
+        return `<article class="test-admin-player ${player.eliminated ? "is-out" : ""} ${isCurrent ? "is-current" : ""}"><div class="test-admin-player-head"><div class="test-admin-avatar">${avatar}</div><div><small>№${index + 1}${player.isBot ? " · БОТ" : ""}</small><strong>${escaped(player.nickname)}</strong><em>${player.eliminated ? "исключён" : isCurrent ? "текущий ход" : "в игре"}</em></div><div class="test-admin-player-actions"><button type="button" data-test-turn data-player="${escaped(player.id)}">Дать ход</button>${healthTrait ? `<button type="button" data-test-health="improve" data-player="${escaped(player.id)}">Здоровье +</button><button type="button" data-test-health="worsen" data-player="${escaped(player.id)}">Здоровье −</button>` : ""}<button type="button" class="${player.eliminated ? "" : "test-danger"}" data-test-eliminate data-player="${escaped(player.id)}" data-eliminated="${player.eliminated ? "false" : "true"}">${player.eliminated ? "Вернуть" : "Исключить"}</button></div></div><div class="test-admin-cards">${cards || '<span class="hint">Карты появятся после запуска.</span>'}</div></article>`;
+    }).join("");
+    $("#testAdminState").textContent = JSON.stringify(testServerState, null, 2);
+}
+
 function nickname() {
     return $("#nickname").value.trim();
 }
@@ -288,7 +330,7 @@ function updateLobby() {
     $("#startGame").classList.toggle("hidden", !isHost());
     $("#closeLobby").classList.toggle("hidden", !isHost());
     $("#startHint").textContent = playerTotal === 1 && isHost()
-        ? "Для обычного старта нужно минимум 3 игрока. Тестовые игроки доступны только на странице /test."
+        ? room.isTestRoom ? "Добавьте тестовых игроков и управляйте ими через тест-панель." : "Для обычного старта нужно минимум 3 игрока."
         : playerTotal < 3
         ? "Для обычного старта нужно минимум 3 игрока."
         : isHost() ? "После старта половина игроков сможет остаться в бункере." : "";
@@ -601,6 +643,7 @@ function renderRoom() {
         show("#game");
         updateGame();
     }
+    renderIntegratedTestAdmin();
 }
 
 function enterRoom({ code, playerToken, playerId }) {
@@ -627,12 +670,43 @@ function tryResumeSession(force = false) {
 }
 
 $("#createRoom").addEventListener("click", () => socket.emit("createRoom", playerPayload()));
+$("#createTestRoom").addEventListener("click", () => socket.emit("test:createRoom", { nickname: nickname() }));
 $("#joinRoom").addEventListener("click", () => socket.emit("joinRoom", { roomCode: $("#roomCode").value, ...playerPayload() }));
 $("#nickname").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#createRoom").click(); });
 $("#roomCode").addEventListener("input", (event) => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
 $("#startGame").addEventListener("click", () => socket.emit("startGame"));
 $("#closeLobby").addEventListener("click", () => {
     if (window.confirm("Закрыть лобби для всех участников?")) socket.emit("closeLobby");
+});
+$("#testPanelToggle").addEventListener("click", () => {
+    testPanelOpen = !testPanelOpen;
+    renderIntegratedTestAdmin();
+});
+$("#testPanelClose").addEventListener("click", () => {
+    testPanelOpen = false;
+    renderIntegratedTestAdmin();
+});
+$("#testPanel").addEventListener("click", (event) => {
+    const reveal = event.target.closest("[data-test-reveal]");
+    if (reveal) return socket.emit("test:setReveal", { targetId: reveal.dataset.player, trait: reveal.dataset.trait, revealed: reveal.dataset.revealed === "true" });
+    const health = event.target.closest("[data-test-health]");
+    if (health) return socket.emit("test:applyHealth", { targetId: health.dataset.player, direction: health.dataset.testHealth, amount: 1 });
+    const turn = event.target.closest("[data-test-turn]");
+    if (turn) return socket.emit("test:setTurn", { targetId: turn.dataset.player });
+    const eliminate = event.target.closest("[data-test-eliminate]");
+    if (eliminate) return socket.emit("test:setEliminated", { targetId: eliminate.dataset.player, eliminated: eliminate.dataset.eliminated === "true" });
+    const action = event.target.closest("[data-test-action]")?.dataset.testAction;
+    if (!action) return;
+    if (action === "players") socket.emit("test:setPlayers", { count: Number($("#testPlayerCount").value) });
+    if (action === "start") socket.emit("test:start");
+    if (action === "pause") socket.emit("test:togglePause");
+    if (action === "advance") socket.emit("test:advance");
+    if (action === "previous") socket.emit("test:previous");
+    if (action === "phase") socket.emit("test:setPhase", { phase: $("#testPhase").value });
+    if (action === "round") socket.emit("test:setRound", { round: Number($("#testRound").value) });
+    if (action === "vote") socket.emit("test:openVoting");
+    if (action === "tie") socket.emit("test:forceTie");
+    if (action === "finish") socket.emit("test:finish");
 });
 $("#playerViewToggle").addEventListener("click", () => {
     playersView = playersView === "table" ? "cards" : "table";
@@ -743,13 +817,16 @@ socket.on("roomState", (state) => {
     const turnKey = `${state.code}:${state.round}:${state.turnPlayerId || ""}:${state.turnDeadline || ""}`;
     const isMyTurn = state.phase === "reveal" && state.turnPlayerId === ownPlayerId();
     const justFinished = state.phase === "finished" && (!room || room.code !== state.code || room.phase !== "finished");
+    const enteringTestRoom = Boolean(state.isTestRoom && (!room || room.code !== state.code));
     if (Number.isFinite(Number(state.serverNow))) serverTimeOffset = Number(state.serverNow) - Date.now();
     if (state.visualTheme && state.visualTheme !== lastAppliedRoomTheme && (!room || room.code !== state.code)) {
         applyColorTheme(state.visualTheme);
         lastAppliedRoomTheme = state.visualTheme;
     }
     room = state;
+    if (enteringTestRoom) testPanelOpen = true;
     renderRoom();
+    if (state.isTestRoom && state.hostId === ownPlayerId()) socket.emit("test:state");
     if (justFinished) {
         requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }));
     }
@@ -758,6 +835,8 @@ socket.on("roomState", (state) => {
 });
 socket.on("leftRoom", () => {
     room = null;
+    testServerState = null;
+    testPanelOpen = false;
     myCards = {};
     myPlayerId = "";
     mySpecialCard = null;
@@ -775,6 +854,8 @@ socket.on("resumeFailed", () => {
 });
 socket.on("roomExpired", () => {
     room = null;
+    testServerState = null;
+    testPanelOpen = false;
     myCards = {};
     myPlayerId = "";
     mySpecialCard = null;
@@ -788,6 +869,8 @@ socket.on("roomExpired", () => {
 });
 socket.on("lobbyClosed", ({ reason } = {}) => {
     room = null;
+    testServerState = null;
+    testPanelOpen = false;
     myCards = {};
     myPlayerId = "";
     currentCode = "";
@@ -797,6 +880,16 @@ socket.on("lobbyClosed", ({ reason } = {}) => {
     toast(reason || "Лобби закрыто.");
 });
 socket.on("yourCards", (cards) => { myCards = cards; if (room?.phase !== "lobby") updateGame(); });
+socket.on("test:ready", () => {
+    testPanelOpen = true;
+    renderIntegratedTestAdmin();
+});
+socket.on("test:state", (state) => {
+    testServerState = state;
+    renderIntegratedTestAdmin();
+});
+socket.on("test:healthApplied", ({ value } = {}) => toast(`Тест: здоровье изменено — ${value}.`));
+socket.on("test:specialApplied", ({ value } = {}) => toast(value ? `Тест: ${value}.` : "Тестовая спецкарта применена."));
 socket.on("yourSpecialCard", (card) => {
     mySpecialCard = card || null;
     if (room?.phase !== "lobby") updateGame();
@@ -883,6 +976,13 @@ clearInterval(countdownTimer);
 countdownTimer = setInterval(updateActionTimer, 250);
 updateSoundToggle();
 applyColorTheme(localStorage.getItem(THEME_STORAGE_KEY) || "amber");
+fetch("/api/game-options", { cache: "no-store" })
+    .then((response) => response.ok ? response.json() : {})
+    .then((options) => {
+        testModeAvailable = Boolean(options.testMode);
+        $("#createTestRoom").classList.toggle("hidden", !testModeAvailable);
+    })
+    .catch(() => {});
 $("#returnRoom").classList.toggle("hidden", !savedSession);
 document.addEventListener("pointerdown", unlockSound, { once: true });
 document.addEventListener("keydown", unlockSound, { once: true });

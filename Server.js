@@ -1449,11 +1449,6 @@ app.get("/api/game-options", (_request, response) => {
         testMode: ENABLE_TEST_MODE
     });
 });
-app.get("/test", (_request, response) => {
-    if (!ENABLE_TEST_MODE) return response.status(404).send("Not Found");
-    response.sendFile(path.join(__dirname, "public", "test.html"));
-});
-
 app.post("/api/admin/login", (request, response) => {
     if (String(request.body?.password || "") !== ADMIN_PASSWORD) {
         return response.status(401).json({ message: "Неверный пароль." });
@@ -2410,6 +2405,8 @@ function publicState(room) {
         rematchReadyIds: room.rematchReadyIds || [],
         rematchDeclinedIds: room.rematchDeclinedIds || [],
         rematchResolved: Boolean(room.rematchResolved),
+        isTestRoom: Boolean(room.isTestRoom),
+        testPaused: Boolean(room.testPaused),
         actionLog: room.actionLog || [],
         players: room.players.map((player) => ({
             id: player.id,
