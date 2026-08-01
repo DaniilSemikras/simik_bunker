@@ -222,7 +222,7 @@ const gameHistoryStore = new GameHistoryStore({
 });
 const adminSessions = new Map();
 const ADMIN_ROOM = "admin-editors";
-const BUNKER_TRAITS_SEED_VERSION = 4;
+const BUNKER_TRAITS_SEED_VERSION = 5;
 const BACKPACK_WEAPON_SEED_VERSION = 1;
 const WATER_TRAIT_LABEL_SEED_VERSION = 1;
 const WATER_OPTIONS_SEED_VERSION = 1;
@@ -528,21 +528,32 @@ function bunkerTraitMatchesDefault(trait, defaultTrait) {
     return (aliases[defaultTrait.id] || [defaultTrait.id]).some((term) => text.includes(term));
 }
 
+function restoreMissingBunkerTraits(existingTraits, defaults = DEFAULT_BUNKER_TRAITS) {
+    const existing = Array.isArray(existingTraits) ? existingTraits : [];
+    const missing = defaults.filter((defaultTrait) => !existing.some((trait) => bunkerTraitMatchesDefault(trait, defaultTrait)));
+    const traits = [...existing, ...clone(missing)];
+    const specializationTrait = DEFAULT_BUNKER_TRAITS.find((trait) => trait.id === "specialization");
+    const specialization = traits.filter((trait) => bunkerTraitMatchesDefault(trait, specializationTrait));
+    const otherTraits = traits.filter((trait) => !bunkerTraitMatchesDefault(trait, specializationTrait));
+    return [...specialization, ...otherTraits];
+}
+
 function seedDefaultBunkerTraits(rawConfig) {
     const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
     if (Number(source.bunkerTraitsSeedVersion) >= BUNKER_TRAITS_SEED_VERSION) {
         return { config: source, changed: false };
     }
-    const existing = Array.isArray(source.bunkerTraits) ? source.bunkerTraits : [];
-    const missing = DEFAULT_BUNKER_TRAITS.filter((defaultTrait) => !existing.some((trait) => bunkerTraitMatchesDefault(trait, defaultTrait)));
-    const traits = [...existing, ...clone(missing)];
-    const specializationTrait = DEFAULT_BUNKER_TRAITS.find((trait) => trait.id === "specialization");
-    const specialization = traits.filter((trait) => bunkerTraitMatchesDefault(trait, specializationTrait));
-    const otherTraits = traits.filter((trait) => !bunkerTraitMatchesDefault(trait, specializationTrait));
+    const supplyDefaults = DEFAULT_BUNKER_TRAITS.filter((trait) => ["water", "food"].includes(trait.id));
+    const presets = Array.isArray(source.presets)
+        ? source.presets.map((preset) => Array.isArray(preset?.bunkerTraits)
+            ? { ...preset, bunkerTraits: restoreMissingBunkerTraits(preset.bunkerTraits, supplyDefaults) }
+            : preset)
+        : source.presets;
     return {
         config: {
             ...source,
-            bunkerTraits: [...specialization, ...otherTraits],
+            bunkerTraits: restoreMissingBunkerTraits(source.bunkerTraits),
+            presets,
             bunkerTraitsSeedVersion: BUNKER_TRAITS_SEED_VERSION
         },
         changed: true
