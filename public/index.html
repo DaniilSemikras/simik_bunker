@@ -6,12 +6,12 @@
     <meta name="theme-color" content="#101716">
     <title>Бункер — игра для друзей</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="style.css?v=20260801-docked-test-admin">
+    <link rel="stylesheet" href="style.css?v=20260801-private-test-admin">
 </head>
 <body>
     <div class="bunker-backdrop" aria-hidden="true"></div>
     <div id="themeControl" class="theme-control">
-        <button id="themeToggle" class="theme-toggle" type="button" title="Выбрать цветовую тему" aria-label="Выбрать цветовую тему" aria-expanded="false"><span id="themeIcon" aria-hidden="true">☀</span><span>Тема</span><span class="theme-chevron" aria-hidden="true">⌄</span></button>
+        <button id="themeToggle" class="theme-toggle" type="button" title="Выбрать цветовую тему" aria-label="Выбрать цветовую тему" aria-expanded="false"><span id="themeIcon" aria-hidden="true">☀</span><span>Тема</span><span class="theme-chevron" aria-hidden="true"></span></button>
         <div id="themeMenu" class="theme-menu hidden" role="menu" aria-label="Цветовая тема">
             <span class="theme-menu-title">Цветовая тема</span>
             <button type="button" class="theme-option" data-theme-choice="amber" role="menuitem"><i class="theme-swatch amber" aria-hidden="true"></i><span><strong>Янтарь</strong><small>классический бункер</small></span><b aria-hidden="true">✓</b></button>
@@ -91,7 +91,7 @@
 
     <button id="testPanelToggle" class="test-panel-toggle hidden" type="button" aria-expanded="false">⚙ Тест-панель</button>
     <aside id="testPanel" class="test-admin-panel hidden" aria-label="Панель управления тестовой игрой">
-        <header class="test-admin-header"><div><span>DEV CONTROL</span><h2>Управление игрой</h2><p id="testAdminSummary">Тестовая комната</p></div><button id="testPanelClose" type="button" aria-label="Закрыть тест-панель">×</button></header>
+        <header class="test-admin-header"><div><span>ТЕСТ-ПАНЕЛЬ</span><h2>Управление игрой</h2><p id="testAdminSummary">Тестовая комната</p></div><button id="testPanelClose" type="button" aria-label="Закрыть тест-панель">×</button></header>
         <section id="testLobbyControls" class="test-admin-section">
             <h3>Подготовка лобби</h3>
             <div class="test-admin-actions"><label>Всего игроков<input id="testPlayerCount" type="number" min="1" max="12" value="6"></label><button type="button" data-test-action="players">Установить состав</button><button type="button" data-test-action="start">Начать игру</button></div>
@@ -108,6 +108,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"><span id="toastMessage"></span><button id="toastClose" type="button" aria-label="Закрыть уведомление">×</button></div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="script.js?v=20260801-docked-test-admin"></script>
+    <script src="script.js?v=20260801-private-test-admin"></script>
 </body>
 </html>

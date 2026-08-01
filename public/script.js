@@ -671,7 +671,7 @@ function tryResumeSession(force = false) {
 }
 
 $("#createRoom").addEventListener("click", () => socket.emit("createRoom", playerPayload()));
-$("#createTestRoom").addEventListener("click", () => socket.emit("test:createRoom", { nickname: nickname() }));
+$("#createTestRoom").addEventListener("click", () => socket.emit("test:createRoom", { nickname: nickname(), adminToken: localStorage.getItem("bunker-admin-token") || "" }));
 $("#joinRoom").addEventListener("click", () => socket.emit("joinRoom", { roomCode: $("#roomCode").value, ...playerPayload() }));
 $("#nickname").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#createRoom").click(); });
 $("#roomCode").addEventListener("input", (event) => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
@@ -977,7 +977,10 @@ clearInterval(countdownTimer);
 countdownTimer = setInterval(updateActionTimer, 250);
 updateSoundToggle();
 applyColorTheme(localStorage.getItem(THEME_STORAGE_KEY) || "amber");
-fetch("/api/game-options", { cache: "no-store" })
+fetch("/api/admin/test-access", {
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${localStorage.getItem("bunker-admin-token") || ""}` }
+})
     .then((response) => response.ok ? response.json() : {})
     .then((options) => {
         testModeAvailable = Boolean(options.testMode);

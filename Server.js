@@ -1445,8 +1445,7 @@ app.get("/admin", (_request, response) => response.sendFile(path.join(__dirname,
 app.get("/api/game-options", (_request, response) => {
     response.json({
         presets: (gameConfig.presets || []).map((preset) => ({ id: preset.id, name: preset.name })),
-        activePresetId: gameConfig.activePresetId || "classic",
-        testMode: ENABLE_TEST_MODE
+        activePresetId: gameConfig.activePresetId || "classic"
     });
 });
 app.post("/api/admin/login", (request, response) => {
@@ -1459,6 +1458,7 @@ app.post("/api/admin/login", (request, response) => {
 });
 
 app.get("/api/admin/config", requireAdmin, (_request, response) => response.json(gameConfig));
+app.get("/api/admin/test-access", requireAdmin, (_request, response) => response.json({ testMode: ENABLE_TEST_MODE }));
 
 app.get("/api/admin/rooms", requireAdmin, (_request, response) => {
     response.json({ rooms: adminRoomSummaries() });
@@ -3027,8 +3027,9 @@ io.on("connection", (socket) => {
         socket.emit("admin:ready", { revision: gameConfig.revision, rooms: adminRoomSummaries(), history: gameHistoryStore.list() });
     });
 
-    socket.on("test:createRoom", ({ nickname: rawNickname } = {}) => {
+    socket.on("test:createRoom", ({ nickname: rawNickname, adminToken } = {}) => {
         if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        if (!hasActiveAdminSession(String(adminToken || ""))) return emitError(socket, "Тестовая игра доступна только авторизованному администратору.");
         if (roomFor(socket)) return emitError(socket, "Вы уже состоите в комнате.");
         const nickname = cleanNickname(rawNickname) || "Тестировщик";
         const code = generateCode();
