@@ -5,9 +5,11 @@ const assert = require("node:assert/strict");
 const {
     appendBackpackItem,
     applyHealthStageChange,
+    calculateSupplyCoverage,
     formatHealthState,
     getEliminationsPerRound,
     hasRevealedProfession,
+    parseDurationDays,
     selectRematchPlayers,
     parseHealthState
 } = require("../lib/game-rules");
@@ -22,6 +24,15 @@ test("спецкарта становится доступна только по
     assert.equal(hasRevealedProfession({}, "profession"), false);
     assert.equal(hasRevealedProfession({ health: "Полностью здоров" }, "profession"), false);
     assert.equal(hasRevealedProfession({ profession: "Электрик" }, "profession"), true);
+});
+
+test("запасы оцениваются относительно срока жизни в бункере", () => {
+    assert.equal(parseDurationDays("Запас питьевой воды на месяц"), 30);
+    assert.equal(parseDurationDays("Изоляция: 2 недели"), 14);
+    assert.equal(parseDurationDays("1 год"), 365);
+    assert.equal(calculateSupplyCoverage("1 месяц", "вода на 1 месяц", 18).bonus, 18);
+    assert.equal(calculateSupplyCoverage("1 месяц", "вода на 2 недели", 18).bonus, 8);
+    assert.equal(calculateSupplyCoverage("1 год", "вода на 1 месяц", 18).bonus, 1);
 });
 
 test("улучшение здоровья уменьшает стадию и не уходит ниже нуля", () => {

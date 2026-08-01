@@ -434,16 +434,22 @@ function updateGame() {
         const player = room.players.find((candidate) => candidate.id === entry.playerId);
         if (!player) return "";
         const professionReasons = Array.isArray(entry.professionReasons) ? entry.professionReasons.join("; ") : "";
-        const professionBonus = Number(entry.professionBonus) || 0;
+        const professionImpact = Number(entry.professionImpact) || 0;
         const itemReasons = Array.isArray(entry.professionItemReasons) ? entry.professionItemReasons.join("; ") : "";
-        const itemBonus = Number(entry.professionItemBonus) || 0;
-        const professionLine = professionBonus
-            ? '<li><b>Бонус профессии: +' + professionBonus + '%</b><span>' + escaped(professionReasons) + '</span></li>'
-            : '<li class="utility-neutral"><b>Бонус профессии: +0%</b><span>для этого бункера нет особого бонуса.</span></li>';
-        const additionalLine = itemBonus
-            ? '<li><b>Дополнительно: +' + itemBonus + '%</b><span>' + escaped(entry.professionItem || "профессиональный багаж") + ' — ' + escaped(itemReasons) + '</span></li>'
-            : '<li class="utility-neutral"><b>Дополнительно</b><span>нет бонуса от профессионального багажа.</span></li>';
-        const contributionItems = professionLine + additionalLine;
+        const itemImpact = Number(entry.professionItemImpact) || 0;
+        const supplyBonus = Number(entry.supplyBonus) || 0;
+        const supplyReasons = Array.isArray(entry.supplyReasons) ? entry.supplyReasons.join("; ") : "";
+        const baseLine = '<li><b>Основа: ' + (Number(entry.baseUtility) || 0) + '%</b><span>профессия и остальные характеристики.</span></li>';
+        const professionLine = professionImpact
+            ? '<li><b>Условия бункера: +' + professionImpact + '%</b><span>' + escaped(professionReasons) + '</span></li>'
+            : '<li class="utility-neutral"><b>Условия бункера: +0%</b><span>у профессии нет особого совпадения.</span></li>';
+        const additionalLine = itemImpact
+            ? '<li><b>Проф. багаж: +' + itemImpact + '%</b><span>' + escaped(entry.professionItem || "профессиональный багаж") + (itemReasons ? ' — ' + escaped(itemReasons) : '') + '</span></li>'
+            : '<li class="utility-neutral"><b>Проф. багаж: +0%</b><span>нет подходящего профессионального предмета.</span></li>';
+        const supplyLine = supplyBonus
+            ? '<li><b>Личные запасы: +' + supplyBonus + '%</b><span>' + escaped(supplyReasons) + '</span></li>'
+            : '<li class="utility-neutral"><b>Личные запасы: +0%</b><span>нет запасов, покрывающих срок изоляции.</span></li>';
+        const contributionItems = baseLine + professionLine + additionalLine + supplyLine;
         return '<article class="utility-player">' + avatarMarkup(player) + '<div class="utility-copy"><div class="utility-player-heading"><strong>' + escaped(player.nickname) + '</strong><b>' + entry.utility + '%</b></div><small>Итоговая полезность</small><ul class="utility-contributions">' + contributionItems + '</ul></div></article>';
     }).join("");
     const myRevealed = me?.revealed || {};

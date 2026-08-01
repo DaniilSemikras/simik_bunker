@@ -7,10 +7,12 @@ const { Server } = require("socket.io");
 const {
     appendBackpackItem,
     applyHealthStageChange,
+    calculateSupplyCoverage,
     formatHealthState,
     getEliminationsPerRound,
     hasRevealedProfession,
     normalizeHealthState,
+    parseDurationDays,
     parseHealthState,
     selectRematchPlayers
 } = require("./lib/game-rules");
@@ -1781,7 +1783,7 @@ function useBunkerWeapon(room, playerId) {
 
 function specialCardContext(players, traitOrder, bunkerCapacity, categoryNames = {}) {
     const backpackTrait = traitOrder.find((trait) => trait === "backpack" || isBackpackCategory({ id: trait, name: categoryNames[trait] })) || null;
-    const exchangeTraits = traitOrder.filter((trait) => trait !== "profession" && trait !== backpackTrait);
+    const exchangeTraits = traitOrder.filter((trait) => trait !== backpackTrait);
     const rerollTraits = traitOrder.filter((trait) => trait !== "profession");
     const healthTrait = traitOrder.find((trait) => isHealthTrait(trait, categoryNames[trait]));
     const canModifyCapacity = Number(bunkerCapacity) > 2;
@@ -2081,10 +2083,11 @@ function scoreRevealedCard(room, trait, value) {
     const isBackpack = /backpack|рюкзак|багаж/.test(`${trait || ""} ${room.categoryNames?.[trait] || ""}`.toLocaleLowerCase("ru"));
     if (isBackpack && /^(?:рюкзак забран|багаж пуст)$/i.test(String(value || "").trim())) return 0;
     const isHealth = isHealthTrait(trait, room.categoryNames?.[trait]);
-    const scoreKey = trait === "profession" ? professionBase(value) : isHealth ? healthBase(value) : value;
+    const isProfession = trait === professionTraitId(room);
+    const scoreKey = isProfession ? professionBase(value) : isHealth ? healthBase(value) : value;
     const configuredScore = room.cardScores?.[trait]?.[scoreKey];
     const score = cleanScore(configuredScore, defaultOptionScore(trait, scoreKey));
-    if (trait === "profession") return Math.min(100, score + professionBunkerFit(room, value).bonus);
+    if (isProfession) return Math.min(100, score + professionBunkerFit(room, value).bonus);
     const stage = isHealth ? healthStage(value) : 0;
     return stage ? Math.max(0, score - (stage - 1) * 8) : score;
 }
@@ -2250,6 +2253,15 @@ function useSpecialCard(room, playerId, targetId) {
 
     room.cards[playerId][specialCard.trait] = targetValue;
     room.cards[targetId][specialCard.trait] = myValue;
+    if (specialCard.trait === professionTraitId(room)) {
+        const myItem = room.playerProfessionItems?.[playerId];
+        const targetItem = room.playerProfessionItems?.[targetId];
+        room.playerProfessionItems = room.playerProfessionItems || {};
+        if (targetItem) room.playerProfessionItems[playerId] = targetItem;
+        else delete room.playerProfessionItems[playerId];
+        if (myItem) room.playerProfessionItems[targetId] = myItem;
+        else delete room.playerProfessionItems[targetId];
+    }
     if (isHealthTrait(specialCard.trait, room.categoryNames?.[specialCard.trait])) {
         const myHealth = normalizeHealthState(room.healthStates?.[playerId], myValue);
         const targetHealth = normalizeHealthState(room.healthStates?.[targetId], targetValue);
@@ -2304,46 +2316,77 @@ function tryBotSpecialCard(room, bot) {
     return result;
 }
 
+function playerSupplyFit(room, playerId) {
+    const requiredDuration = room.disasterDuration || disasterDuration(room.disaster);
+    const values = [
+        ...Object.values(room.cards?.[playerId] || {}),
+        room.playerProfessionItems?.[playerId] || "",
+        ...(room.playerExtraBaggage?.[playerId] || [])
+    ].map((value) => String(value || "").trim()).filter(Boolean);
+    const resources = [
+        { kind: "water", label: "воды", pattern: /вод/, maximumBonus: 18 },
+        { kind: "food", label: "еды", pattern: /ед|питан|консерв|па[ёе]к|сухпа/, maximumBonus: 14 }
+    ];
+    const reasons = [];
+    let bonus = 0;
+    for (const resource of resources) {
+        const supplies = values.filter((value) => resource.pattern.test(value.toLocaleLowerCase("ru")) && parseDurationDays(value));
+        if (!supplies.length) continue;
+        const bestSupply = supplies.sort((first, second) => (parseDurationDays(second) || 0) - (parseDurationDays(first) || 0))[0];
+        const coverage = calculateSupplyCoverage(requiredDuration, bestSupply, resource.maximumBonus);
+        if (!coverage.bonus) continue;
+        bonus += coverage.bonus;
+        const requiredLabel = coverage.requiredDays === Infinity ? "бессрочной изоляции" : `${coverage.requiredDays} дн. изоляции`;
+        const coveredDays = coverage.supplyDays === Infinity ? "бессрочно" : `${coverage.supplyDays} дн.`;
+        reasons.push(`запас ${resource.label} (${coveredDays}) покрывает ${requiredLabel}: +${coverage.bonus}%`);
+    }
+    return { bonus, reasons, requiredDuration };
+}
+
 function calculateUtilityBreakdown(room) {
     const players = activePlayers(room);
     return players.map((player) => {
-        let totalScore = 0;
-        let revealedCards = 0;
-        for (const [trait, value] of Object.entries(room.revealed[player.id] || {})) {
-            totalScore += scoreRevealedCard(room, trait, value);
-            revealedCards += 1;
-        }
-        const backpackTrait = backpackTraitId(room) || "backpack";
-        for (const item of room.playerExtraBaggage?.[player.id] || []) {
-            totalScore += scoreRevealedCard(room, backpackTrait, item);
-            revealedCards += 1;
-        }
-        const professionValue = room.cards?.[player.id]?.profession || room.revealed?.[player.id]?.profession || "";
+        const revealedEntries = Object.entries(room.revealed[player.id] || {});
+        const professionTrait = professionTraitId(room);
+        const otherScores = revealedEntries.filter(([trait]) => trait !== professionTrait).map(([trait, value]) => scoreRevealedCard(room, trait, value));
+        const otherAverage = otherScores.length ? otherScores.reduce((sum, score) => sum + score, 0) / otherScores.length : 50;
+        const revealedCards = revealedEntries.length;
+        const professionValue = room.cards?.[player.id]?.[professionTrait] || room.revealed?.[player.id]?.[professionTrait] || "";
         const professionScoreKey = professionBase(professionValue);
-        const professionBaseScore = cleanScore(room.cardScores?.profession?.[professionScoreKey], defaultOptionScore("profession", professionScoreKey));
-        const professionScore = scoreRevealedCard(room, "profession", professionValue);
-        const professionBonus = professionValue ? Math.max(0, professionScore - professionBaseScore) : 0;
-        const professionReasons = professionBonus ? professionBunkerFit(room, professionValue).reasons : [];
+        const professionBaseScore = cleanScore(room.cardScores?.[professionTrait]?.[professionScoreKey], defaultOptionScore("profession", professionScoreKey));
+        const professionFit = professionValue ? professionBunkerFit(room, professionValue) : { bonus: 0, reasons: [] };
+        const professionBonus = professionFit.bonus;
+        const baseUtility = Math.round(professionValue ? professionBaseScore * 0.45 + otherAverage * 0.55 : otherAverage);
+        const professionImpact = Math.round(professionBonus * 0.55);
+        const professionReasons = professionFit.reasons;
         const professionItem = room.playerProfessionItems?.[player.id] || "";
         const professionItemFit = professionItem ? professionItemBunkerFit(room, professionValue, professionItem) : { bonus: 0, reasons: [] };
-        if (professionItem) {
-            totalScore += Math.min(100, 55 + professionItemFit.bonus);
-            revealedCards += 1;
-        }
+        const professionItemImpact = professionItem ? 4 + Math.round(professionItemFit.bonus * 0.45) : 0;
+        const supplyFit = playerSupplyFit(room, player.id);
+        const utility = Math.min(100, baseUtility + professionImpact + professionItemImpact + supplyFit.bonus);
         const contributions = [
             ...professionReasons.map((reason) => ({ source: professionValue || "Профессия", reason })),
-            ...professionItemFit.reasons.map((reason) => ({ source: professionItem, reason }))
+            ...professionItemFit.reasons.map((reason) => ({ source: professionItem, reason })),
+            ...supplyFit.reasons.map((reason) => ({ source: "Запасы", reason }))
         ];
         return {
             playerId: player.id,
-            utility: revealedCards ? Math.round(totalScore / revealedCards) : 0,
-            totalScore,
+            utility,
+            totalScore: utility,
             revealedCards,
+            baseUtility,
+            otherAverage: Math.round(otherAverage),
+            professionBaseScore: Math.round(professionBaseScore),
             professionBonus,
+            professionImpact,
             professionReasons,
             professionItem,
             professionItemBonus: professionItemFit.bonus,
+            professionItemImpact,
             professionItemReasons: professionItemFit.reasons,
+            supplyBonus: supplyFit.bonus,
+            supplyReasons: supplyFit.reasons,
+            requiredDuration: supplyFit.requiredDuration,
             contributions
         };
     });
@@ -2352,9 +2395,7 @@ function calculateUtilityBreakdown(room) {
 function calculateBunkerSurvivalChance(room) {
     if (!room.capacity) return null;
     const breakdown = calculateUtilityBreakdown(room);
-    const totalScore = breakdown.reduce((sum, player) => sum + player.totalScore, 0);
-    const revealedCards = breakdown.reduce((sum, player) => sum + player.revealedCards, 0);
-    return revealedCards ? Math.round(totalScore / revealedCards) : null;
+    return breakdown.length ? Math.round(breakdown.reduce((sum, player) => sum + player.utility, 0) / breakdown.length) : null;
 }
 
 function synchronizedBunkerTraits(room) {
@@ -2423,7 +2464,7 @@ function publicState(room) {
         voteCanBeSkipped: voteCanBeSkipped(room),
         bunkerSurvivalChance: room.phase === "finished" ? calculateBunkerSurvivalChance(room) : null,
         utilityBreakdown: room.phase === "finished"
-            ? calculateUtilityBreakdown(room).map(({ playerId, utility, revealedCards, professionBonus, professionReasons, professionItem, professionItemBonus, professionItemReasons, contributions }) => ({ playerId, utility, revealedCards, professionBonus, professionReasons, professionItem, professionItemBonus, professionItemReasons, contributions }))
+            ? calculateUtilityBreakdown(room).map(({ playerId, utility, revealedCards, baseUtility, otherAverage, professionBaseScore, professionBonus, professionImpact, professionReasons, professionItem, professionItemBonus, professionItemImpact, professionItemReasons, supplyBonus, supplyReasons, requiredDuration, contributions }) => ({ playerId, utility, revealedCards, baseUtility, otherAverage, professionBaseScore, professionBonus, professionImpact, professionReasons, professionItem, professionItemBonus, professionItemImpact, professionItemReasons, supplyBonus, supplyReasons, requiredDuration, contributions }))
             : [],
         roomCloseDeadline: room.roomCloseDeadline || null,
         lobbyCloseDeadline: room.lobbyCloseDeadline || null,
