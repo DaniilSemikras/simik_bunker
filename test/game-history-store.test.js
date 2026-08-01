@@ -36,3 +36,36 @@ test("история игр сохраняется на диск, ищется �
     assert.equal(restored.list().length, 0);
     assert.deepEqual(JSON.parse(fs.readFileSync(filePath, "utf8")), []);
 });
+
+test("при отсутствии отдельной таблицы история сохраняется в bunker_config", async (context) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bunker-history-fallback-test-"));
+    const filePath = path.join(directory, "history.json");
+    const requests = [];
+    context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    context.mock.method(global, "fetch", async (url, options = {}) => {
+        requests.push({ url: String(url), options });
+        if (String(url).includes("bunker_game_history")) {
+            return { ok: false, status: 404, async json() { return {}; } };
+        }
+        if (!options.method || options.method === "GET") {
+            return { ok: true, status: 200, async json() { return []; } };
+        }
+        return { ok: true, status: 201, async json() { return {}; } };
+    });
+
+    const store = new GameHistoryStore({
+        filePath,
+        supabaseUrl: "https://example.supabase.co",
+        supabaseKey: "secret",
+        logger: { warn() {} }
+    });
+    await store.initialize();
+    await store.append({ gameId: "0000007", roomCode: "SAVE", finishedAt: 7, participants: [] });
+
+    assert.equal(store.remoteBackend, "config-row");
+    const fallbackWrite = requests.find((request) => request.options.method === "POST" && request.url.includes("bunker_config"));
+    assert.ok(fallbackWrite);
+    const payload = JSON.parse(fallbackWrite.options.body);
+    assert.equal(payload.id, 2);
+    assert.equal(payload.config.games[0].gameId, "0000007");
+});

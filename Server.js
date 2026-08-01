@@ -8,9 +8,11 @@ const {
     appendBackpackItem,
     applyHealthStageChange,
     calculateSupplyCoverage,
+    findWeaponSource,
     formatHealthState,
     getEliminationsPerRound,
     hasRevealedProfession,
+    isWeaponItem,
     normalizeHealthState,
     parseDurationDays,
     parseHealthState,
@@ -226,6 +228,7 @@ const WATER_OPTIONS_SEED_VERSION = 1;
 const WATER_RANDOM_PERCENT_SEED_VERSION = 1;
 const WATER_DURATION_SEED_VERSION = 1;
 const BACKPACK_WATER_SEED_VERSION = 1;
+const BACKPACK_FOOD_SEED_VERSION = 1;
 const GENDER_OPTIONS_SEED_VERSION = 2;
 const HEALTH_CATEGORY_SEED_VERSION = 1;
 const SPECIAL_CARD_LIBRARY_SEED_VERSION = 5;
@@ -236,6 +239,11 @@ const WATER_BACKPACK_OPTIONS = [
     { value: "Запас питьевой воды на 3 дня", score: 72, chance: 8 },
     { value: "Канистры воды на 2 недели", score: 84, chance: 7 },
     { value: "Запас питьевой воды на месяц", score: 94, chance: 5 }
+];
+const FOOD_BACKPACK_OPTIONS = [
+    { value: "Сухпаёк на 3 дня", score: 68, chance: 6 },
+    { value: "Запас еды на 2 недели", score: 82, chance: 5 },
+    { value: "Ящик консервов на месяц", score: 94, chance: 4 }
 ];
 const DEFAULT_SUPPLY_DURATIONS = {
     water: [
@@ -401,6 +409,7 @@ const DEFAULT_GAME_CONFIG = {
     waterRandomPercentSeedVersion: WATER_RANDOM_PERCENT_SEED_VERSION,
     waterDurationSeedVersion: WATER_DURATION_SEED_VERSION,
     backpackWaterSeedVersion: BACKPACK_WATER_SEED_VERSION,
+    backpackFoodSeedVersion: BACKPACK_FOOD_SEED_VERSION,
     genderOptionsSeedVersion: GENDER_OPTIONS_SEED_VERSION,
     healthCategorySeedVersion: HEALTH_CATEGORY_SEED_VERSION,
     specialCardLibrarySeedVersion: SPECIAL_CARD_LIBRARY_SEED_VERSION,
@@ -844,10 +853,6 @@ function isBackpackCategory(category) {
     return /backpack|рюкзак|багаж/.test(hint);
 }
 
-function isWeaponItem(value) {
-    return /оруж|пистолет|автомат|винтовк|ружь|дробовик/.test(String(value || "").toLocaleLowerCase("ru"));
-}
-
 function optionsWithWeapon(rawOptions) {
     const source = Array.isArray(rawOptions) ? rawOptions : [];
     const total = source.reduce((sum, option, index) => sum + cleanChance(
@@ -957,6 +962,74 @@ function seedBackpackWater(rawConfig) {
     };
 }
 
+function isTimedFoodSupplyItem(value) {
+    const text = String(value || "").toLocaleLowerCase("ru");
+    return /ед|питан|консерв|па[ёе]к|сухпа/.test(text) && Boolean(parseDurationDays(text));
+}
+
+function optionsWithFoodSupplies(rawOptions) {
+    const source = Array.isArray(rawOptions) ? rawOptions : [];
+    if (!source.length) return [...clone(DEFAULT_BACKPACK_CATEGORY.options), ...clone(FOOD_BACKPACK_OPTIONS)];
+    if (source.some((option) => isTimedFoodSupplyItem(typeof option === "string" ? option : option?.value))) return source;
+    const foodChance = FOOD_BACKPACK_OPTIONS.reduce((sum, option) => sum + option.chance, 0);
+    const availableChance = 100 - foodChance;
+    const total = source.reduce((sum, option, index) => sum + cleanChance(
+        typeof option === "string" ? undefined : option?.chance,
+        defaultChance(index, source.length)
+    ), 0);
+    let assignedChance = 0;
+    const adjusted = source.map((option, index) => {
+        const rawChance = cleanChance(
+            typeof option === "string" ? undefined : option?.chance,
+            defaultChance(index, source.length)
+        );
+        const chance = index === source.length - 1
+            ? Math.round((availableChance - assignedChance) * 100) / 100
+            : Math.round(((total > 0 ? rawChance / total : 1 / source.length) * availableChance) * 100) / 100;
+        assignedChance += chance;
+        return typeof option === "string" ? { value: option, chance } : { ...option, chance };
+    });
+    return [...adjusted, ...clone(FOOD_BACKPACK_OPTIONS)];
+}
+
+function addFoodSuppliesToCategories(rawCategories) {
+    const categories = Array.isArray(rawCategories) ? clone(rawCategories) : [];
+    const backpackIndex = categories.findIndex(isBackpackCategory);
+    if (backpackIndex < 0) {
+        categories.push({
+            ...clone(DEFAULT_BACKPACK_CATEGORY),
+            options: optionsWithFoodSupplies(DEFAULT_BACKPACK_CATEGORY.options)
+        });
+        return categories;
+    }
+    const category = categories[backpackIndex];
+    categories[backpackIndex] = {
+        ...category,
+        options: optionsWithFoodSupplies(Array.isArray(category.options) ? category.options : category.values),
+        values: undefined
+    };
+    return categories;
+}
+
+function seedBackpackFood(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.backpackFoodSeedVersion) >= BACKPACK_FOOD_SEED_VERSION) {
+        return { config: source, changed: false };
+    }
+    const presets = Array.isArray(source.presets)
+        ? source.presets.map((preset) => ({ ...preset, categories: addFoodSuppliesToCategories(preset?.categories) }))
+        : source.presets;
+    return {
+        config: {
+            ...source,
+            categories: addFoodSuppliesToCategories(source.categories),
+            ...(presets ? { presets } : {}),
+            backpackFoodSeedVersion: BACKPACK_FOOD_SEED_VERSION
+        },
+        changed: true
+    };
+}
+
 function isProfileCategory(category) {
     const id = String(category?.id || "").toLocaleLowerCase("ru");
     const name = String(category?.name || "").toLocaleLowerCase("ru").trim();
@@ -1049,13 +1122,14 @@ function seedGameConfig(rawConfig) {
     const contentSeed = seedPlaceholderContent(waterDurationSeed.config);
     const backpackSeed = seedBackpackWeapon(contentSeed.config);
     const backpackWaterSeed = seedBackpackWater(backpackSeed.config);
-    const profileSeed = seedProfileCategories(backpackWaterSeed.config);
+    const backpackFoodSeed = seedBackpackFood(backpackWaterSeed.config);
+    const profileSeed = seedProfileCategories(backpackFoodSeed.config);
     const healthSeed = seedHealthCategory(profileSeed.config);
     const specialCardSeed = seedSpecialCardLibrary(healthSeed.config);
     const disasterSeed = seedDisasterDurations(specialCardSeed.config);
     return {
         config: disasterSeed.config,
-        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || waterDurationSeed.changed || backpackSeed.changed || backpackWaterSeed.changed || profileSeed.changed || healthSeed.changed || specialCardSeed.changed || disasterSeed.changed || contentSeed.changed
+        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || waterDurationSeed.changed || backpackSeed.changed || backpackWaterSeed.changed || backpackFoodSeed.changed || profileSeed.changed || healthSeed.changed || specialCardSeed.changed || disasterSeed.changed || contentSeed.changed
     };
 }
 
@@ -1200,6 +1274,9 @@ function normalizeGameConfig(rawConfig, includePresets = true) {
     const backpackWaterSeedVersion = Number(rawConfig?.backpackWaterSeedVersion) >= BACKPACK_WATER_SEED_VERSION
         ? BACKPACK_WATER_SEED_VERSION
         : 0;
+    const backpackFoodSeedVersion = Number(rawConfig?.backpackFoodSeedVersion) >= BACKPACK_FOOD_SEED_VERSION
+        ? BACKPACK_FOOD_SEED_VERSION
+        : 0;
     const genderOptionsSeedVersion = Number(rawConfig?.genderOptionsSeedVersion) >= GENDER_OPTIONS_SEED_VERSION
         ? GENDER_OPTIONS_SEED_VERSION
         : 0;
@@ -1223,7 +1300,7 @@ function normalizeGameConfig(rawConfig, includePresets = true) {
         })).filter((duration) => duration.amount > 0);
         return [kind, values.length ? values : clone(DEFAULT_SUPPLY_DURATIONS[kind])];
     }));
-    const baseConfig = { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, waterDurationSeedVersion, backpackWaterSeedVersion, genderOptionsSeedVersion, healthCategorySeedVersion, specialCardLibrarySeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, supplyDurations, hiddenAvatars, revision };
+    const baseConfig = { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, waterDurationSeedVersion, backpackWaterSeedVersion, backpackFoodSeedVersion, genderOptionsSeedVersion, healthCategorySeedVersion, specialCardLibrarySeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, supplyDurations, hiddenAvatars, revision };
     if (!includePresets) return baseConfig;
 
     const defaultPresetNames = [
@@ -1738,12 +1815,12 @@ function backpackTraitId(room) {
 function weaponSourceForPlayer(room, playerId) {
     const backpackTrait = backpackTraitId(room);
     const backpackValue = backpackTrait ? room.cards?.[playerId]?.[backpackTrait] : "";
-    if (isWeaponItem(backpackValue)) return { type: "backpack", trait: backpackTrait, item: backpackValue };
-    const professionItem = room.playerProfessionItems?.[playerId];
-    if (isWeaponItem(professionItem)) return { type: "profession", item: professionItem };
-    const extraBaggage = room.playerExtraBaggage?.[playerId] || [];
-    const item = extraBaggage.find(isWeaponItem);
-    return item ? { type: "extra", item } : null;
+    return findWeaponSource({
+        backpackValue,
+        backpackTrait,
+        professionItem: room.playerProfessionItems?.[playerId],
+        extraBaggage: room.playerExtraBaggage?.[playerId]
+    });
 }
 
 function weaponSourceIsRevealed(room, playerId, source) {
@@ -2201,7 +2278,7 @@ function useSpecialCard(room, playerId, targetId) {
         const trait = healthTraitId(room);
         if (!trait || !targetId || !room.cards?.[targetId]) return { error: "Выберите игрока, здоровье которого нужно изменить." };
         let state = normalizeHealthState(room.healthStates?.[targetId], room.cards[targetId][trait]);
-        if (specialCard.effect === "worsen_health" && state.stage === 0) {
+        if (specialCard.effect === "worsen_health" && state.stage === 0 && !state.diseaseName) {
             const diseaseOptions = (room.cardOptionsByTrait?.[trait] || [])
                 .map((option) => option.value)
                 .filter((value) => parseHealthState(value).stage > 0 && !/смертельно болен/i.test(value));

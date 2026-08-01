@@ -133,6 +133,18 @@ function formatDuration(milliseconds) {
     return totalMinutes >= 60 ? `${Math.floor(totalMinutes / 60)} ч ${totalMinutes % 60} мин` : `${totalMinutes} мин`;
 }
 
+function formatHistoryDate(timestamp) {
+    const date = new Date(Number(timestamp));
+    if (Number.isNaN(date.getTime())) return "Дата неизвестна";
+    return new Intl.DateTimeFormat("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+    }).format(date);
+}
+
 function renderAdminHistoryDetails(game) {
     const target = $("#adminHistoryDetails");
     if (!game) {
@@ -143,7 +155,7 @@ function renderAdminHistoryDetails(game) {
     const participants = Array.isArray(game.participants) ? game.participants : [];
     const bunker = (game.bunkerTraits || []).map((trait) => `${trait.name}: ${trait.value}`).join(" · ") || "—";
     target.innerHTML = `
-        <div class="admin-game-details-top"><div><p class="eyebrow">ЗАВЕРШЁННАЯ ИГРА</p><h3>Игра №${escapeHtml(game.gameId)}</h3><p>Комната <strong>${escapeHtml(game.roomCode)}</strong> · ${new Date(game.finishedAt).toLocaleString("ru-RU")}</p></div><button class="remove-history-game" type="button" data-delete-history="${escapeHtml(game.gameId)}">Удалить лог</button></div>
+        <div class="admin-game-details-top"><div><p class="eyebrow">ЗАВЕРШЁННАЯ ИГРА</p><h3>Игра №${escapeHtml(game.gameId)}</h3><p>Комната <strong>${escapeHtml(game.roomCode)}</strong> · завершена ${escapeHtml(formatHistoryDate(game.finishedAt))}</p></div><button class="remove-history-game" type="button" data-delete-history="${escapeHtml(game.gameId)}">Удалить лог</button></div>
         <div class="admin-game-detail-grid"><div class="admin-game-detail-stat"><span>Длительность</span><strong>${formatDuration(game.durationMs)}</strong></div><div class="admin-game-detail-stat"><span>Раунды / голосования</span><strong>${Number(game.rounds) || 0} / ${Number(game.votingCount) || 0}</strong></div><div class="admin-game-detail-stat"><span>Шанс выживания</span><strong>${Number.isFinite(Number(game.survivalChance)) ? Number(game.survivalChance) + "%" : "—"}</strong></div><div class="admin-game-detail-stat"><span>Пресет / тема</span><strong>${escapeHtml(game.presetName || game.presetId || "Классический")} · ${escapeHtml(game.theme || "amber")}</strong></div><div class="admin-game-detail-stat"><span>Вместимость / причина</span><strong>${Number(game.capacity) || 0} · ${escapeHtml(game.finishReason || "—")}</strong></div></div>
         <div><p class="eyebrow">УЧАСТНИКИ</p><ul class="admin-game-players">${participants.map((player) => `<li class="${player.eliminated ? "is-eliminated" : ""} ${player.left ? "is-left" : ""}">${adminPlayerAvatar(player)}<span>${escapeHtml(player.nickname)}<small>${player.eliminated ? "исключён" : game.winners?.includes(player.nickname) ? "победитель" : player.left ? "вышел" : "участник"}</small></span></li>`).join("")}</ul></div>
         <div><p class="eyebrow">ПОБЕДИТЕЛИ</p><p>${escapeHtml((game.winners || []).join(", ") || "Нет")}</p></div>
@@ -157,8 +169,8 @@ function renderAdminHistory() {
     $("#adminHistoryCount").textContent = String(adminHistory.length);
     $("#adminHistory").innerHTML = adminHistory.length ? adminHistory.map((game) => `
         <article class="admin-game-card ${game.gameId === selectedHistoryGameId ? "is-selected" : ""}">
-            <span class="admin-game-number">№${escapeHtml(game.gameId)}</span>
-            <div class="admin-game-copy"><div><strong>${escapeHtml(game.roomCode)}</strong> <span class="admin-game-phase">${escapeHtml(game.presetName || game.presetId || "Классический")}</span></div><div class="admin-game-meta"><span>${(game.participants || []).length} участников</span><span>${(game.winners || []).length} победителей</span><span>${new Date(game.finishedAt).toLocaleString("ru-RU")}</span><span>${formatDuration(game.durationMs)}</span></div></div>
+            <span class="admin-game-number"><b>№${escapeHtml(game.gameId)}</b><small>${escapeHtml(formatHistoryDate(game.finishedAt))}</small></span>
+            <div class="admin-game-copy"><div><strong>${escapeHtml(game.roomCode)}</strong> <span class="admin-game-phase">${escapeHtml(game.presetName || game.presetId || "Классический")}</span></div><div class="admin-game-meta"><span>${(game.participants || []).length} участников</span><span>${(game.winners || []).length} победителей</span><span>${formatDuration(game.durationMs)}</span></div></div>
             <button class="admin-game-watch" type="button" data-history-game="${escapeHtml(game.gameId)}">Подробности</button>
         </article>`).join("") : '<p class="admin-games-empty">Завершённых игр пока нет.</p>';
 }

@@ -6,6 +6,7 @@ const {
     appendBackpackItem,
     applyHealthStageChange,
     calculateSupplyCoverage,
+    findWeaponSource,
     formatHealthState,
     getEliminationsPerRound,
     hasRevealedProfession,
@@ -18,6 +19,14 @@ test("украденный предмет добавляется в багаж �
     assert.equal(appendBackpackItem("Аптечка", "Оружие"), "Аптечка, Оружие");
     assert.equal(appendBackpackItem("Аптечка, Рация", "Фильтр для воды"), "Аптечка, Рация, Фильтр для воды");
     assert.equal(appendBackpackItem("Багаж пуст", "Генератор"), "Генератор");
+});
+
+test("украденное оружие сразу становится доступным действием", () => {
+    assert.deepEqual(findWeaponSource({
+        backpackValue: "Аптечка, Оружие",
+        backpackTrait: "backpack",
+        extraBaggage: ["Оружие"]
+    }), { type: "extra", item: "Оружие" });
 });
 
 test("спецкарта становится доступна только после раскрытия профессии", () => {
@@ -39,6 +48,14 @@ test("улучшение здоровья уменьшает стадию и н�
     const initial = parseHealthState("Туберкулёз — стадия 3/5");
     assert.equal(formatHealthState(applyHealthStageChange(initial, "improve", 2).state), "Туберкулёз — стадия 1/5");
     assert.equal(formatHealthState(applyHealthStageChange(initial, "improve", 4).state), "Полностью здоров");
+});
+
+test("после полного лечения ухудшение возвращает прежний диагноз", () => {
+    const initial = parseHealthState("Астма — стадия 2/5");
+    const healed = applyHealthStageChange(initial, "improve", 5).state;
+    assert.equal(formatHealthState(healed), "Полностью здоров");
+    assert.equal(healed.diseaseName, "Астма");
+    assert.equal(formatHealthState(applyHealthStageChange(healed, "worsen", 3).state), "Астма — стадия 3/5");
 });
 
 test("улучшение полностью здорового игрока не меняет состояние", () => {

@@ -65,7 +65,9 @@ input:focus,textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px co
 .categories { display:grid; gap:12px; }
 .admin-games { display:grid; gap:10px; }
 .admin-game-card { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:13px; padding:14px; border:1px solid var(--line); border-radius:13px; background:linear-gradient(140deg,color-mix(in srgb,var(--panel) 94%,transparent),color-mix(in srgb,var(--deep) 84%,transparent)); }
-.admin-game-number { display:grid; place-items:center; min-width:82px; min-height:44px; border:1px solid color-mix(in srgb,var(--accent) 48%,transparent); border-radius:10px; color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,transparent); font-size:13px; font-weight:900; letter-spacing:.06em; font-variant-numeric:tabular-nums; }
+.admin-game-number { display:grid; place-items:center; min-width:118px; min-height:48px; border:1px solid color-mix(in srgb,var(--accent) 48%,transparent); border-radius:10px; padding:6px 9px; color:var(--accent); background:color-mix(in srgb,var(--accent) 10%,transparent); font-size:13px; font-weight:900; letter-spacing:.06em; font-variant-numeric:tabular-nums; }
+.admin-game-number b { font:inherit; }
+.admin-game-number small { color:var(--muted); font-size:9px; font-weight:750; letter-spacing:0; white-space:nowrap; }
 .admin-game-copy { display:grid; min-width:0; gap:4px; }
 .admin-game-copy strong { font-size:14px; }
 .admin-game-meta { display:flex; flex-wrap:wrap; gap:5px 8px; color:var(--muted); font-size:11px; }
