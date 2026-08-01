@@ -164,6 +164,7 @@ input:focus,textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px co
 .supply-duration-editor { display:grid; grid-template-columns:1.4fr repeat(4,minmax(120px,1fr)); align-items:end; gap:10px; margin:0 0 18px; padding:16px; border:1px solid var(--line); border-radius:14px; background:var(--soft-bg); }
 .supply-duration-editor h3 { margin-bottom:4px; }
 .supply-duration-editor p { margin-bottom:0; }
+.supply-duration-editor .supply-duration-odds { margin-top:8px; color:var(--accent); font-weight:800; }
 .supply-duration-editor label { display:grid; gap:5px; color:var(--muted); font-size:10px; font-weight:800; }
 .supply-duration-editor input { width:100%; }
 @media (max-width:900px) { .supply-duration-editor { grid-template-columns:repeat(2,minmax(0,1fr)); } .supply-duration-editor > div { grid-column:1/-1; } }

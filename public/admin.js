@@ -331,10 +331,29 @@ function renderSupplyDurations() {
     $("#waterDurationMonths").value = durationValues("water", "month");
     $("#foodDurationDays").value = durationValues("food", "day");
     $("#foodDurationMonths").value = durationValues("food", "month");
+    renderSupplyDurationOdds();
 }
 
 function parseDurationInput(selector, unit) {
     return String($(selector)?.value || "").split(/[;,\s]+/).map(Number).filter((amount) => Number.isInteger(amount) && amount > 0 && amount <= 120).map((amount) => ({ amount, unit }));
+}
+
+function durationOddsText(label, daySelector, monthSelector) {
+    const days = parseDurationInput(daySelector, "day").length;
+    const months = parseDurationInput(monthSelector, "month").length;
+    const total = days + months;
+    if (!total) return `${label}: добавьте хотя бы один срок`;
+    const dayChance = Math.round(days / total * 100);
+    return `${label}: дни ≈ ${dayChance}%, месяцы ≈ ${100 - dayChance}%`;
+}
+
+function renderSupplyDurationOdds() {
+    const target = $("#supplyDurationOdds");
+    if (!target) return;
+    target.textContent = [
+        durationOddsText("Вода", "#waterDurationDays", "#waterDurationMonths"),
+        durationOddsText("Еда", "#foodDurationDays", "#foodDurationMonths")
+    ].join(" · ");
 }
 
 function renderSpecialCards() {
@@ -577,7 +596,10 @@ $("#login").addEventListener("click", async () => {
 $("#password").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#login").click(); });
 $("#addCategory").addEventListener("click", makeCategory);
 $("#addBunkerTrait").addEventListener("click", makeBunkerTrait);
-document.querySelector(".supply-duration-editor")?.addEventListener("input", markDirty);
+document.querySelector(".supply-duration-editor")?.addEventListener("input", () => {
+    markDirty();
+    renderSupplyDurationOdds();
+});
 $("#addSpecialCard").addEventListener("click", makeSpecialCard);
 $("#createPreset").addEventListener("click", () => {
     saveEditorIntoActivePreset();
