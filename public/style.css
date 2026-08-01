@@ -193,8 +193,10 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .story-ready { position:relative; z-index:1; width:auto; margin:0 0 0 auto; padding:10px 16px; }
 .story-wait { position:relative; z-index:1; color:#d8c3b5; font-size:13px; }
 .disaster-accordion { position:relative; z-index:1; }
-.disaster-accordion-toggle { display:flex; align-items:center; justify-content:space-between; width:100%; min-height:38px; gap:12px; margin:-8px -10px; border:0; border-radius:9px; padding:8px 10px; color:inherit; background:transparent; cursor:pointer; text-align:left; }
-.disaster-accordion-toggle:hover { background:color-mix(in srgb,var(--accent) 8%,transparent); }
+.disaster-accordion-toggle { display:flex; align-items:center; justify-content:space-between; width:100%; min-height:30px; gap:12px; margin:0; border:0; border-radius:0; padding:2px 0 4px; color:inherit; background:transparent; cursor:pointer; text-align:left; }
+.disaster-accordion-toggle:hover { background:transparent; }
+.disaster-accordion-toggle .eyebrow { transition:color .18s ease,text-shadow .18s ease; }
+.disaster-accordion-toggle:hover .eyebrow { color:color-mix(in srgb,var(--accent) 86%,#fff); text-shadow:0 0 14px color-mix(in srgb,var(--accent) 28%,transparent); }
 .disaster-accordion-toggle:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .accordion-icon { color:var(--accent); font-size:20px; line-height:1; transition:transform .2s ease; }
 .disaster-accordion.is-open .accordion-icon { transform:rotate(180deg); }
