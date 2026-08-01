@@ -79,6 +79,9 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .avatar { display:grid; place-items:center; flex:0 0 30px; width:30px; height:30px; border-radius:50%; color:#2b190b; background:var(--accent); font-weight:900; font-size:13px; }
 .avatar-image { display:block; object-fit:cover; background:var(--panel-2); }
 .host-badge { margin-left:auto; color:var(--accent); font-size:11px; font-weight:700; }
+.lobby-expiry { margin:10px 0 0; padding:9px 12px; border:1px solid color-mix(in srgb,var(--accent) 34%,transparent); border-radius:10px; color:var(--muted); background:color-mix(in srgb,var(--accent) 7%,transparent); font-size:11px; text-align:center; }
+.danger-button { margin-top:8px; border-color:rgba(222,103,83,.48); color:#ffd6cf; background:rgba(87,35,29,.5); }
+.danger-button:hover { border-color:rgba(255,139,119,.82); background:rgba(112,42,34,.68); }
 .game-view { display:grid; width:100%; min-width:0; max-width:100%; gap:16px; }
 .game-header { padding:0 2px; }
 .game-actions { justify-content:flex-end; }

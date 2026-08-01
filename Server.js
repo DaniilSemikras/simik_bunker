@@ -27,7 +27,7 @@ app.use(express.static("public", {
 }));
 
 const rooms = Object.create(null);
-let nextGameId = 1;
+let nextGameId = 0;
 const TRAITS = {
     profession: ["врач скорой помощи", "инженер-энергетик", "фермер", "повар", "психолог", "строитель", "программист", "военный", "биолог", "механик", "учитель", "ветеринар"],
     health: ["полностью здоров", "аллергия на пыль", "астма", "бессонница", "диабет под контролем", "идеальное зрение", "хроническая мигрень", "перелом руки срастается", "сильный иммунитет", "панические атаки", "донор крови", "близорукость"],
@@ -200,6 +200,7 @@ const DISASTERS = [
 ];
 const CONFIG_PATH = path.join(__dirname, "data", "game-config.json");
 const GAME_HISTORY_PATH = path.join(__dirname, "data", "game-history.json");
+const EMPTY_LOBBY_TTL_MS = 3 * 60 * 1000;
 const BUILT_IN_AVATAR_DIRECTORY = path.join(__dirname, "public", "assets", "survivor-avatars");
 const AVATAR_DIRECTORY = path.join(__dirname, "public", "uploads", "avatars");
 const MAX_AVATAR_BYTES = 350 * 1024;
@@ -1485,6 +1486,17 @@ app.get("/api/admin/history/:gameId", requireAdmin, (request, response) => {
     response.json({ game });
 });
 
+app.delete("/api/admin/history", requireAdmin, async (_request, response) => {
+    try {
+        await gameHistoryStore.clear();
+        nextGameId = 0;
+        broadcastAdminHistory();
+        response.json({ cleared: true, nextGameId: "0000000" });
+    } catch (error) {
+        response.status(502).json({ message: error.message || "Не удалось очистить историю." });
+    }
+});
+
 app.delete("/api/admin/history/:gameId", requireAdmin, async (request, response) => {
     const deleted = await gameHistoryStore.delete(request.params.gameId);
     if (!deleted) return response.status(404).json({ message: "Лог завершённой игры не найден." });
@@ -1857,10 +1869,31 @@ function closeRoom(room, notifyPlayers = true) {
     room.closeTimer = null;
     if (room.rematchTimer) clearTimeout(room.rematchTimer);
     room.rematchTimer = null;
+    if (room.lobbyTimer) clearTimeout(room.lobbyTimer);
+    room.lobbyTimer = null;
     for (const player of room.players) cancelPendingLeave(player);
     if (notifyPlayers) io.to(room.code).emit("roomExpired");
     delete rooms[room.code];
     broadcastAdminRooms();
+}
+
+function cancelIdleLobbyClose(room) {
+    if (room?.lobbyTimer) clearTimeout(room.lobbyTimer);
+    if (room) {
+        room.lobbyTimer = null;
+        room.lobbyCloseDeadline = null;
+    }
+}
+
+function scheduleIdleLobbyClose(room) {
+    if (!room || room.isTestRoom || room.phase !== "lobby") return;
+    cancelIdleLobbyClose(room);
+    room.lobbyCloseDeadline = Date.now() + EMPTY_LOBBY_TTL_MS;
+    room.lobbyTimer = setTimeout(() => {
+        if (rooms[room.code] !== room || room.phase !== "lobby" || room.players.some((player) => !player.left && player.id !== room.host)) return;
+        io.to(room.code).emit("lobbyClosed", { reason: "В лобби никто не присоединился за 3 минуты." });
+        closeRoom(room, false);
+    }, EMPTY_LOBBY_TTL_MS);
 }
 
 function scheduleRoomClose(room, deadline) {
@@ -2372,6 +2405,7 @@ function publicState(room) {
             ? calculateUtilityBreakdown(room).map(({ playerId, utility, revealedCards, professionBonus, professionReasons, professionItem, professionItemBonus, professionItemReasons, contributions }) => ({ playerId, utility, revealedCards, professionBonus, professionReasons, professionItem, professionItemBonus, professionItemReasons, contributions }))
             : [],
         roomCloseDeadline: room.roomCloseDeadline || null,
+        lobbyCloseDeadline: room.lobbyCloseDeadline || null,
         rematchDeadline: room.rematchDeadline || null,
         rematchReadyIds: room.rematchReadyIds || [],
         rematchDeclinedIds: room.rematchDeclinedIds || [],
@@ -2506,6 +2540,37 @@ function clearActionTimer(room) {
     room.timerKind = null;
     for (const timer of room.botTimers || []) clearTimeout(timer);
     room.botTimers = [];
+}
+
+function pauseTestRoom(room) {
+    if (!room?.isTestRoom || room.testPaused) return false;
+    const deadline = room.phase === "voting" ? room.voteDeadline : room.phase === "reveal" ? room.turnDeadline : null;
+    room.testPaused = true;
+    room.testPausedTimerKind = room.phase === "voting" ? "vote" : room.phase === "reveal" ? "turn" : null;
+    room.testPausedRemainingMs = deadline ? Math.max(250, deadline - Date.now()) : ACTION_DURATION_MS;
+    clearActionTimer(room);
+    room.turnDeadline = null;
+    room.voteDeadline = null;
+    return true;
+}
+
+function resumeTestRoom(room) {
+    if (!room?.isTestRoom || !room.testPaused) return false;
+    const timerKind = room.testPausedTimerKind;
+    const remaining = Math.max(250, Number(room.testPausedRemainingMs) || ACTION_DURATION_MS);
+    room.testPaused = false;
+    room.testPausedTimerKind = null;
+    room.testPausedRemainingMs = 0;
+    if (timerKind === "vote" && room.phase === "voting") {
+        room.voteDeadline = Date.now() + remaining;
+        room.timerKind = "vote";
+        room.actionTimer = setTimeout(() => resolveVote(room, true), remaining);
+    } else if (timerKind === "turn" && room.phase === "reveal") {
+        room.turnDeadline = Date.now() + remaining;
+        room.timerKind = "turn";
+        room.actionTimer = setTimeout(() => advanceRevealTurn(room, true), remaining);
+    }
+    return true;
 }
 
 function scheduleBotAction(room, callback, delay) {
@@ -2886,11 +2951,16 @@ function createEmptyRoom(code, player, payload = {}) {
         botTimers: [],
         roomCloseDeadline: null,
         closeTimer: null,
+        lobbyCloseDeadline: null,
+        lobbyTimer: null,
         rematchDeadline: null,
         rematchReadyIds: [],
         rematchDeclinedIds: [],
         rematchResolved: false,
         rematchTimer: null,
+        testPaused: false,
+        testPausedTimerKind: null,
+        testPausedRemainingMs: 0,
         actionLog: [],
         actionLogSequence: 0,
         visualTheme: ["amber", "radiation", "frost"].includes(payload.visualTheme) ? payload.visualTheme : "amber",
@@ -2924,7 +2994,8 @@ const TEST_SNAPSHOT_FIELDS = [
     "revealedAtFinish", "revealedThisRound", "eliminated", "eliminationOrder", "votes",
     "playerSpecialCards", "playerProfessionItems", "playerExtraBaggage", "playerResidentEvictions",
     "usedSpecialCards", "turnOrder", "turnIndex", "voteCandidateIds", "pendingEliminationIds",
-    "eliminationsThisVote", "votingCount", "actionLog", "actionLogSequence", "finishReason", "finishedAt"
+    "eliminationsThisVote", "votingCount", "actionLog", "actionLogSequence", "finishReason", "finishedAt",
+    "testPaused", "testPausedTimerKind", "testPausedRemainingMs"
 ];
 
 function rememberTestState(room) {
@@ -2943,6 +3014,11 @@ function restorePreviousTestState(room) {
     Object.assign(room, snapshot);
     room.turnDeadline = null;
     room.voteDeadline = null;
+    if (["reveal", "voting"].includes(room.phase)) {
+        room.testPaused = true;
+        room.testPausedTimerKind = room.phase === "voting" ? "vote" : "turn";
+        room.testPausedRemainingMs = ACTION_DURATION_MS;
+    }
     return true;
 }
 
@@ -3088,6 +3164,107 @@ io.on("connection", (socket) => {
         emitRoom(room);
     });
 
+    socket.on("test:setReveal", ({ targetId, trait, revealed } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase === "lobby") return emitError(socket, "Карточки доступны после запуска тестовой игры.");
+        const target = room.players.find((player) => player.id === targetId);
+        if (!target || !room.traitOrder.includes(trait) || room.cards?.[target.id]?.[trait] === undefined) return emitError(socket, "Карточка не найдена.");
+        rememberTestState(room);
+        room.revealed[target.id] = room.revealed[target.id] || {};
+        if (revealed) {
+            room.revealed[target.id][trait] = room.cards[target.id][trait];
+            if (trait === "profession") giveProfessionItem(room, target.id);
+            addActionLog(room, `[TEST] Открыта «${room.categoryNames?.[trait] || trait}» игрока ${target.nickname}.`, "reveal");
+        } else {
+            delete room.revealed[target.id][trait];
+            if (trait === "profession") delete room.playerProfessionItems[target.id];
+            addActionLog(room, `[TEST] Скрыта «${room.categoryNames?.[trait] || trait}» игрока ${target.nickname}.`, "system");
+        }
+        emitRoom(room);
+    });
+
+    socket.on("test:togglePause", () => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || ["lobby", "finished"].includes(room.phase)) return emitError(socket, "Пауза доступна в запущенной тестовой игре.");
+        rememberTestState(room);
+        if (room.testPaused) resumeTestRoom(room);
+        else pauseTestRoom(room);
+        addActionLog(room, room.testPaused ? "[TEST] Игра поставлена на паузу." : "[TEST] Игра продолжена.", "system");
+        emitRoom(room);
+    });
+
+    socket.on("test:setRound", ({ round } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase === "lobby") return emitError(socket, "Раунд можно изменить после запуска.");
+        rememberTestState(room);
+        room.testPaused = false;
+        room.round = Math.max(0, Math.min((room.revealRounds || room.traitOrder.length || 1) - 1, Math.trunc(Number(round) || 1) - 1));
+        beginRevealRound(room);
+        addActionLog(room, `[TEST] Установлен раунд ${room.round + 1}.`, "system");
+        emitRoom(room);
+    });
+
+    socket.on("test:setPhase", ({ phase } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase === "lobby") return emitError(socket, "Фазу можно изменить после запуска.");
+        if (!["story", "reveal", "voting", "finished"].includes(phase)) return emitError(socket, "Неизвестная фаза.");
+        rememberTestState(room);
+        room.testPaused = false;
+        room.testPausedTimerKind = null;
+        room.testPausedRemainingMs = 0;
+        if (phase === "story") {
+            clearActionTimer(room);
+            room.phase = "story";
+            room.turnDeadline = null;
+            room.voteDeadline = null;
+            emitRoom(room);
+        } else if (phase === "reveal") beginRevealRound(room);
+        else if (phase === "voting") openVoting(room);
+        else endGame(room, "test_forced");
+    });
+
+    socket.on("test:setTurn", ({ targetId } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase === "lobby") return emitError(socket, "Не удалось назначить ход.");
+        const target = activePlayers(room).find((player) => player.id === targetId);
+        if (!target) return emitError(socket, "Не удалось назначить ход.");
+        rememberTestState(room);
+        clearActionTimer(room);
+        room.phase = "reveal";
+        room.testPaused = false;
+        room.turnOrder = activePlayers(room).map((player) => player.id);
+        room.turnIndex = room.turnOrder.indexOf(target.id);
+        delete room.revealedThisRound[target.id];
+        room.turnDeadline = Date.now() + ACTION_DURATION_MS;
+        room.voteDeadline = null;
+        room.timerKind = "turn";
+        room.actionTimer = setTimeout(() => advanceRevealTurn(room, true), ACTION_DURATION_MS);
+        addActionLog(room, `[TEST] Ход передан игроку ${target.nickname}.`, "system");
+        emitRoom(room);
+    });
+
+    socket.on("test:setEliminated", ({ targetId, eliminated } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        const target = room?.players.find((player) => player.id === targetId);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase === "lobby" || !target) return emitError(socket, "Игрок не найден.");
+        rememberTestState(room);
+        if (eliminated) {
+            if (!room.eliminated.includes(target.id)) room.eliminated.push(target.id);
+            if (!room.eliminationOrder.includes(target.id)) room.eliminationOrder.push(target.id);
+        } else {
+            room.eliminated = room.eliminated.filter((id) => id !== target.id);
+            room.eliminationOrder = room.eliminationOrder.filter((id) => id !== target.id);
+        }
+        addActionLog(room, `[TEST] ${target.nickname}: ${eliminated ? "исключён" : "возвращён в игру"}.`, eliminated ? "out" : "system");
+        emitRoom(room);
+    });
+
     socket.on("test:openVoting", () => {
         if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
         const room = roomFor(socket);
@@ -3115,6 +3292,9 @@ io.on("connection", (socket) => {
         const room = roomFor(socket);
         if (!room?.isTestRoom || room.host !== socket.id) return emitError(socket, "Управление доступно только ведущему тестовой комнаты.");
         rememberTestState(room);
+        room.testPaused = false;
+        room.testPausedTimerKind = null;
+        room.testPausedRemainingMs = 0;
         if (room.phase === "story") beginRevealRound(room);
         else if (room.phase === "reveal") {
             room.turnIndex = room.turnOrder.length;
@@ -3187,6 +3367,7 @@ io.on("connection", (socket) => {
         delete serializableRoom.closeTimer;
         delete serializableRoom.botTimers;
         delete serializableRoom.rematchTimer;
+        delete serializableRoom.lobbyTimer;
         delete serializableRoom.testSnapshots;
         serializableRoom.players = room.players.map(({
             token: _token,
@@ -3207,6 +3388,7 @@ io.on("connection", (socket) => {
         const code = generateCode();
         const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(), left: false, isBot: false };
         rooms[code] = createEmptyRoom(code, player, payload);
+        scheduleIdleLobbyClose(rooms[code]);
         socket.join(code);
         socket.emit("roomEntered", { code, playerToken: rooms[code].players[0].token, playerId: socket.id });
         emitRoom(rooms[code]);
@@ -3226,6 +3408,7 @@ io.on("connection", (socket) => {
         }
         const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(room), left: false, isBot: false };
         room.players.push(player);
+        cancelIdleLobbyClose(room);
         socket.join(code);
         socket.emit("roomEntered", { code, playerToken: player.token, playerId: socket.id });
         emitRoom(room);
@@ -3253,6 +3436,7 @@ io.on("connection", (socket) => {
         if (room.launchInProgress) return false;
         room.launchInProgress = true;
         clearActionTimer(room);
+        cancelIdleLobbyClose(room);
         if (room.closeTimer) clearTimeout(room.closeTimer);
         room.closeTimer = null;
         room.roomCloseDeadline = null;
@@ -3262,6 +3446,9 @@ io.on("connection", (socket) => {
         room.rematchReadyIds = [];
         room.rematchDeclinedIds = [];
         room.rematchResolved = false;
+        room.testPaused = false;
+        room.testPausedTimerKind = null;
+        room.testPausedRemainingMs = 0;
         room.isSoloTest = isSoloTest;
         const gameData = gameDataForRoom(room);
         room.presetId = gameData.id || room.presetId || gameConfig.activePresetId || "classic";
@@ -3500,6 +3687,14 @@ io.on("connection", (socket) => {
         resolveVote(room);
     });
 
+    socket.on("closeLobby", () => {
+        const room = roomFor(socket);
+        if (!room || room.phase !== "lobby") return emitError(socket, "Закрыть можно только открытое лобби.");
+        if (room.host !== socket.id) return emitError(socket, "Закрыть лобби может только ведущий.");
+        io.to(room.code).emit("lobbyClosed", { reason: "Ведущий закрыл лобби." });
+        closeRoom(room, false);
+    });
+
     socket.on("leaveRoom", () => {
         const room = roomFor(socket);
         if (!room) return socket.emit("leftRoom");
@@ -3519,7 +3714,8 @@ io.on("connection", (socket) => {
 Promise.all([
     initializeGameConfig(),
     gameHistoryStore.initialize().then(() => {
-        nextGameId = Math.max(nextGameId, gameHistoryStore.maxNumericId() + 1);
+        const storedGames = gameHistoryStore.list();
+        nextGameId = storedGames.length ? gameHistoryStore.maxNumericId() + 1 : 0;
     })
 ]).catch((error) => {
     console.warn("Не удалось полностью инициализировать внешнее хранилище. Сервер продолжит работу с локальными данными.", error.message);

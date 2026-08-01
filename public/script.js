@@ -213,6 +213,14 @@ function traitName(trait) {
 }
 
 function updateActionTimer() {
+    const lobbyExpiry = $("#lobbyExpiry");
+    if (lobbyExpiry) {
+        const lobbySeconds = Math.max(0, Math.ceil(((Number(room?.lobbyCloseDeadline) || 0) - (Date.now() + serverTimeOffset)) / 1000));
+        lobbyExpiry.textContent = room?.lobbyCloseDeadline
+            ? `Если никто не войдёт, лобби закроется через ${String(Math.floor(lobbySeconds / 60)).padStart(2, "0")}:${String(lobbySeconds % 60).padStart(2, "0")}`
+            : "";
+        lobbyExpiry.classList.toggle("hidden", !room?.lobbyCloseDeadline || room?.phase !== "lobby");
+    }
     const rematchTimer = $("#rematchTimer");
     if (rematchTimer) {
         const rematchSeconds = Math.max(0, Math.ceil(((Number(room?.rematchDeadline) || 0) - (Date.now() + serverTimeOffset)) / 1000));
@@ -278,6 +286,7 @@ function updateLobby() {
         <div class="player-row ${player.left ? "left-player" : ""}">${avatarMarkup(player)}<span>${escaped(player.nickname)}</span>${player.left ? '<span class="host-badge">вышел</span>' : player.id === room.hostId ? '<span class="host-badge">ведущий</span>' : ""}</div>
     `).join("");
     $("#startGame").classList.toggle("hidden", !isHost());
+    $("#closeLobby").classList.toggle("hidden", !isHost());
     $("#startHint").textContent = playerTotal === 1 && isHost()
         ? "Для обычного старта нужно минимум 3 игрока. Тестовые игроки доступны только на странице /test."
         : playerTotal < 3
@@ -622,6 +631,9 @@ $("#joinRoom").addEventListener("click", () => socket.emit("joinRoom", { roomCod
 $("#nickname").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#createRoom").click(); });
 $("#roomCode").addEventListener("input", (event) => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
 $("#startGame").addEventListener("click", () => socket.emit("startGame"));
+$("#closeLobby").addEventListener("click", () => {
+    if (window.confirm("Закрыть лобби для всех участников?")) socket.emit("closeLobby");
+});
 $("#playerViewToggle").addEventListener("click", () => {
     playersView = playersView === "table" ? "cards" : "table";
     localStorage.setItem("bunker-players-view", playersView);
@@ -773,6 +785,16 @@ socket.on("roomExpired", () => {
     $("#roomCode").value = "";
     show("#menu");
     toast("Комната закрыта. Спасибо за игру!");
+});
+socket.on("lobbyClosed", ({ reason } = {}) => {
+    room = null;
+    myCards = {};
+    myPlayerId = "";
+    currentCode = "";
+    clearSavedSession();
+    $("#roomCode").value = "";
+    show("#menu");
+    toast(reason || "Лобби закрыто.");
 });
 socket.on("yourCards", (cards) => { myCards = cards; if (room?.phase !== "lobby") updateGame(); });
 socket.on("yourSpecialCard", (card) => {

@@ -632,6 +632,18 @@ $("#adminGames").addEventListener("click", (event) => {
     if (button) watchAdminGame(button.dataset.watchGame);
 });
 $("#refreshAdminHistory").addEventListener("click", () => loadAdminHistory().catch((error) => showMessage("#saveMessage", error.message, "error")));
+$("#clearAdminHistory").addEventListener("click", async () => {
+    if (!window.confirm("Удалить всю историю игр? Следующая сессия получит номер 0000000. Отменить это действие нельзя.")) return;
+    try {
+        await request("/api/admin/history", { method: "DELETE" });
+        selectedHistoryGameId = "";
+        renderAdminHistoryDetails(null);
+        setAdminHistory([]);
+        showMessage("#saveMessage", "История очищена. Нумерация новых сессий начнётся с 0000000.", "success");
+    } catch (error) {
+        showMessage("#saveMessage", error.message, "error");
+    }
+});
 let historySearchTimer = 0;
 [$("#historyRoomSearch"), $("#historyPlayerSearch")].forEach((input) => input.addEventListener("input", () => {
     clearTimeout(historySearchTimer);

@@ -93,7 +93,7 @@
             </section>
 
             <section class="editor-tab-panel hidden" data-editor-panel="history">
-                <div class="section-head"><div><p class="eyebrow">АРХИВ</p><h2>Завершённые игры</h2><p class="section-hint">История сохраняет состав, исключения, победителей, катастрофу, специальные карты и итоговую полезность.</p></div><button id="refreshAdminHistory" class="secondary" type="button">Обновить</button></div>
+                <div class="section-head"><div><p class="eyebrow">АРХИВ</p><h2>Завершённые игры</h2><p class="section-hint">История сохраняет состав, исключения, победителей, катастрофу, специальные карты и итоговую полезность.</p></div><div class="history-actions"><button id="refreshAdminHistory" class="secondary" type="button">Обновить</button><button id="clearAdminHistory" class="history-clear" type="button">Очистить историю</button></div></div>
                 <div class="history-filters"><label>Код комнаты<input id="historyRoomSearch" maxlength="12" placeholder="Например, AB12"></label><label>Ник игрока<input id="historyPlayerSearch" maxlength="30" placeholder="Часть ника"></label></div>
                 <div id="adminHistory" class="admin-games"></div>
                 <section id="adminHistoryDetails" class="admin-game-details hidden" aria-live="polite"></section>
@@ -103,6 +103,6 @@
         </section>
     </main>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="admin.js?v=20260801-complete-game-update"></script>
+    <script src="admin.js?v=20260801-test-control"></script>
 </body>
 </html>

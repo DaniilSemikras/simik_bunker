@@ -29,4 +29,10 @@ test("история игр сохраняется на диск, ищется �
     assert.equal(restored.maxNumericId(), 42);
     assert.equal(await restored.delete("0000042"), true);
     assert.equal(restored.list().length, 0);
+
+    await restored.append({ gameId: "0000043", roomCode: "CD34", finishedAt: 43, participants: [] });
+    await restored.append({ gameId: "0000044", roomCode: "EF56", finishedAt: 44, participants: [] });
+    assert.equal(await restored.clear(), true);
+    assert.equal(restored.list().length, 0);
+    assert.deepEqual(JSON.parse(fs.readFileSync(filePath, "utf8")), []);
 });

@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#101716">
     <title>Бункер — игра для друзей</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="style.css?v=20260801-test-steps">
+    <link rel="stylesheet" href="style.css?v=20260801-test-control">
 </head>
 <body>
     <div class="bunker-backdrop" aria-hidden="true"></div>
@@ -41,6 +41,8 @@
             <div class="lobby-heading"><h2>Игроки</h2><span id="playerCount" class="count"></span></div>
             <div id="players" class="players-list"></div>
             <button id="startGame" class="button primary">Начать игру</button>
+            <div id="lobbyExpiry" class="lobby-expiry hidden" aria-live="polite"></div>
+            <button id="closeLobby" class="button danger-button hidden" type="button">Закрыть лобби</button>
             <p id="startHint" class="hint centered"></p>
         </section>
 
@@ -89,6 +91,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"><span id="toastMessage"></span><button id="toastClose" type="button" aria-label="Закрыть уведомление">×</button></div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="script.js?v=20260801-test-steps"></script>
+    <script src="script.js?v=20260801-test-control"></script>
 </body>
 </html>

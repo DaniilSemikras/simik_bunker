@@ -6,7 +6,7 @@
     <meta name="robots" content="noindex">
     <title>Бункер — тестовый режим</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/test.css?v=20260801-test-steps">
+    <link rel="stylesheet" href="/test.css?v=20260801-full-control">
 </head>
 <body>
     <main>
@@ -22,7 +22,8 @@
             </article>
             <article class="test-step">
                 <div class="step-heading"><span>3</span><div><h2>Запустите игру</h2><p>После запуска переходите по фазам или вернитесь на один шаг.</p></div></div>
-                <div class="step-actions"><button data-action="start">Начать игру</button><button data-action="advance">Следующая фаза</button><button class="secondary-action" data-action="previous">← Предыдущее состояние</button><button class="secondary-action" data-action="notify">Проверить уведомление</button></div>
+                <div class="step-actions"><button data-action="start">Начать игру</button><button id="pauseButton" data-action="pause">Поставить на паузу</button><button data-action="advance">Следующая фаза</button><button class="secondary-action" data-action="previous">← Предыдущее состояние</button></div>
+                <div class="step-actions sub-actions"><label>Фаза<select id="phaseSelect"><option value="story">История</option><option value="reveal">Раскрытие</option><option value="voting">Голосование</option><option value="finished">Финал</option></select></label><button class="secondary-action" data-action="phase">Установить фазу</button><label>Раунд<input id="roundNumber" type="number" min="1" max="20" value="1"></label><button class="secondary-action" data-action="round">Перейти к раунду</button><button class="secondary-action" data-action="notify">Проверить уведомление</button></div>
             </article>
             <article class="test-step">
                 <div class="step-heading"><span>4</span><div><h2>Раскрывайте карточки</h2><p>Автокнопка сначала открывает профессию, а затем случайную закрытую характеристику.</p></div></div>
@@ -42,12 +43,12 @@
                 <div class="step-actions"><button data-action="finish">Сразу финал</button><button data-action="rematch">Играть снова</button><button class="secondary-action" data-action="decline-rematch">Не играю дальше</button><button class="danger-action" data-action="reset">Сбросить партию</button></div>
             </article>
         </section>
-        <section class="summary"><h2>Комната</h2><div id="summary">Не создана</div></section>
-        <section><h2>Игроки</h2><div id="players" class="players"></div></section>
-        <section><h2>Полное серверное состояние</h2><pre id="state">{}</pre></section>
+        <section class="summary"><div><span class="section-kicker">ТЕКУЩЕЕ СОСТОЯНИЕ</span><h2>Комната</h2></div><div id="summary">Не создана</div></section>
+        <section class="player-control-section"><div class="section-title"><div><span class="section-kicker">ПОЛНЫЙ КОНТРОЛЬ</span><h2>Все игроки и карточки</h2></div><p>Здесь видны даже закрытые значения. Любую карточку можно открыть или снова скрыть.</p></div><div id="players" class="players"></div></section>
+        <details class="raw-state"><summary>Техническое состояние сервера</summary><pre id="state">{}</pre></details>
         <div id="notice" role="status"></div>
     </main>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/test.js?v=20260801-test-steps"></script>
+    <script src="/test.js?v=20260801-full-control"></script>
 </body>
 </html>
