@@ -441,7 +441,9 @@ function updateGame() {
     const turnPlayer = room.players.find((player) => player.id === room.turnPlayerId);
     const isMyTurn = room.turnPlayerId === ownPlayerId();
     const hasVoted = room.votedPlayerIds?.includes(ownPlayerId());
-    const canUseSpecialCard = Boolean(mySpecialCard && !mySpecialCard.used && me && !me.eliminated && room.phase === "reveal" && isMyTurn);
+    const professionTrait = (room.categoryOrder?.length ? room.categoryOrder : Object.keys(myCards)).find((name) => name === "profession" || /професси/i.test(`${name} ${traitName(name)}`)) || "profession";
+    const professionRevealed = Boolean(me && Object.prototype.hasOwnProperty.call(me.revealed || {}, professionTrait));
+    const canUseSpecialCard = Boolean(mySpecialCard && !mySpecialCard.used && professionRevealed && me && !me.eliminated && room.phase === "reveal" && isMyTurn);
     const canUseWeapon = Boolean(myWeaponStatus?.hasWeapon && myWeaponStatus?.revealed && !myWeaponStatus?.used && myWeaponStatus?.canEvict && me && !me.eliminated && room.phase === "reveal" && isMyTurn);
     const specialNeedsTarget = ["swap_random_trait", "take_backpack", "improve_health", "worsen_health"].includes(mySpecialCard?.effect);
     const specialTraitLabel = !mySpecialCard ? "" : mySpecialCard.effect === "take_backpack" ? "Забрать предмет из рюкзака"
@@ -573,7 +575,7 @@ function updateGame() {
         ? '<' + (canUseWeapon ? 'button type="button" data-use-bunker-weapon' : 'article') + ' class="my-card weapon-action-card ' + (myWeaponStatus?.used ? 'is-used' : '') + (canUseWeapon ? ' is-choice' : '') + '"><span>Предмет в багаже</span><strong>Оружие</strong><small>Выгнать жителя и освободить 1 место</small><em>' + (myWeaponStatus?.used ? 'житель выгнан' : !myWeaponStatus?.canEvict ? 'жителей нет' : canUseWeapon ? 'нажмите, чтобы применить' : 'доступно в ваш ход') + '</em></' + (canUseWeapon ? 'button' : 'article') + '>'
         : '';
     const specialCardInHand = mySpecialCard
-        ? '<' + (canUseSpecialCard ? 'button type="button" data-use-special' : 'article') + ' class="my-card special-card-hand ' + (mySpecialCard.used ? 'is-used' : '') + (canUseSpecialCard ? ' is-choice' : '') + '"><span>Специальная карта</span><strong>' + escaped(mySpecialCard.name) + '</strong><small>' + escaped(specialTraitLabel) + '</small><em>' + (mySpecialCard.used ? 'использована' : specialTargetMode ? 'выберите игрока' : canUseSpecialCard ? 'нажмите, чтобы применить' : 'доступна в ваш ход') + '</em></' + (canUseSpecialCard ? 'button' : 'article') + '>'
+        ? '<' + (canUseSpecialCard ? 'button type="button" data-use-special' : 'article') + ' class="my-card special-card-hand ' + (mySpecialCard.used ? 'is-used' : '') + (canUseSpecialCard ? ' is-choice' : '') + '"><span>Специальная карта</span><strong>' + escaped(mySpecialCard.name) + '</strong><small>' + escaped(specialTraitLabel) + '</small><em>' + (mySpecialCard.used ? 'использована' : !professionRevealed ? 'сначала раскройте профессию' : specialTargetMode ? 'выберите игрока' : canUseSpecialCard ? 'нажмите, чтобы применить' : 'доступна в ваш ход') + '</em></' + (canUseSpecialCard ? 'button' : 'article') + '>'
         : "";
     $("#myCards").innerHTML = personalCards + professionBaggage + weaponActionCard + specialCardInHand;
     const playerCardMarkup = (player) => {

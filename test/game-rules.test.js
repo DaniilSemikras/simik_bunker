@@ -7,6 +7,7 @@ const {
     applyHealthStageChange,
     formatHealthState,
     getEliminationsPerRound,
+    hasRevealedProfession,
     selectRematchPlayers,
     parseHealthState
 } = require("../lib/game-rules");
@@ -15,6 +16,12 @@ test("украденный предмет добавляется в багаж �
     assert.equal(appendBackpackItem("Аптечка", "Оружие"), "Аптечка, Оружие");
     assert.equal(appendBackpackItem("Аптечка, Рация", "Фильтр для воды"), "Аптечка, Рация, Фильтр для воды");
     assert.equal(appendBackpackItem("Багаж пуст", "Генератор"), "Генератор");
+});
+
+test("спецкарта становится доступна только после раскрытия профессии", () => {
+    assert.equal(hasRevealedProfession({}, "profession"), false);
+    assert.equal(hasRevealedProfession({ health: "Полностью здоров" }, "profession"), false);
+    assert.equal(hasRevealedProfession({ profession: "Электрик" }, "profession"), true);
 });
 
 test("улучшение здоровья уменьшает стадию и не уходит ниже нуля", () => {

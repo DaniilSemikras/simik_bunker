@@ -9,6 +9,7 @@ const {
     applyHealthStageChange,
     formatHealthState,
     getEliminationsPerRound,
+    hasRevealedProfession,
     normalizeHealthState,
     parseHealthState,
     selectRematchPlayers
@@ -2096,6 +2097,10 @@ function giveProfessionItem(room, playerId) {
     return item;
 }
 
+function professionTraitId(room) {
+    return (room.traitOrder || []).find((traitId) => traitId === "profession" || /професси/i.test(`${traitId} ${room.categoryNames?.[traitId] || ""}`)) || "profession";
+}
+
 function adjacentPlayerId(room, playerId, direction = "random") {
     const players = activePlayers(room);
     const index = players.findIndex((player) => player.id === playerId);
@@ -2111,6 +2116,7 @@ function adjacentPlayerId(room, playerId, direction = "random") {
 function useSpecialCard(room, playerId, targetId) {
     const specialCard = room.playerSpecialCards?.[playerId];
     if (!specialCard || specialCard.used) return { error: "Эта спецкарта уже использована." };
+    if (!hasRevealedProfession(room.revealed?.[playerId], professionTraitId(room))) return { error: "Сначала раскройте свою профессию." };
     if (!["swap_random_trait", "swap_adjacent_profession", "take_backpack", "increase_capacity", "decrease_capacity", "random_capacity", "reroll_own_trait", "improve_health", "worsen_health"].includes(specialCard.effect)) return { error: "Неизвестный эффект спецкарты." };
     if (!room.cards[playerId]) return { error: "Не удалось найти ваши карточки." };
 
