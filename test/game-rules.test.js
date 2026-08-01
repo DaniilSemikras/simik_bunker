@@ -11,6 +11,7 @@ const {
     getEliminationsPerRound,
     hasRevealedProfession,
     parseDurationDays,
+    randomizeGenderAge,
     selectRematchPlayers,
     parseHealthState
 } = require("../lib/game-rules");
@@ -42,6 +43,12 @@ test("запасы оцениваются относительно срока ж
     assert.equal(calculateSupplyCoverage("1 месяц", "вода на 1 месяц", 18).bonus, 18);
     assert.equal(calculateSupplyCoverage("1 месяц", "вода на 2 недели", 18).bonus, 8);
     assert.equal(calculateSupplyCoverage("1 год", "вода на 1 месяц", 18).bonus, 1);
+});
+
+test("возраст генерируется независимо от пола в диапазоне 18–120", () => {
+    assert.equal(randomizeGenderAge("Мужчина, 68 лет", () => 0), "Мужчина, 18 лет");
+    assert.equal(randomizeGenderAge("Женщина", () => 0.5), "Женщина, 69 лет");
+    assert.equal(randomizeGenderAge("Мужчина", () => 0.999999), "Мужчина, 120 лет");
 });
 
 test("улучшение здоровья уменьшает стадию и не уходит ниже нуля", () => {

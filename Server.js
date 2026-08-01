@@ -16,6 +16,7 @@ const {
     normalizeHealthState,
     parseDurationDays,
     parseHealthState,
+    randomizeGenderAge,
     selectRematchPlayers
 } = require("./lib/game-rules");
 const { GameHistoryStore } = require("./lib/game-history-store");
@@ -229,7 +230,7 @@ const WATER_RANDOM_PERCENT_SEED_VERSION = 1;
 const WATER_DURATION_SEED_VERSION = 1;
 const BACKPACK_WATER_SEED_VERSION = 1;
 const BACKPACK_FOOD_SEED_VERSION = 1;
-const GENDER_OPTIONS_SEED_VERSION = 2;
+const GENDER_OPTIONS_SEED_VERSION = 3;
 const HEALTH_CATEGORY_SEED_VERSION = 1;
 const SPECIAL_CARD_LIBRARY_SEED_VERSION = 5;
 const DISASTER_DURATION_SEED_VERSION = 1;
@@ -259,18 +260,8 @@ const DEFAULT_GENDER_AGE_CATEGORY = {
     id: "gender_age",
     name: "Пол и возраст",
     options: [
-        { value: "Мужчина, 19 лет", score: 40, chance: 8.33 },
-        { value: "Мужчина, 27 лет", score: 75, chance: 8.33 },
-        { value: "Мужчина, 36 лет", score: 75, chance: 8.33 },
-        { value: "Мужчина, 48 лет", score: 75, chance: 8.33 },
-        { value: "Мужчина, 63 года", score: 10, chance: 8.33 },
-        { value: "Мужчина, 76 лет", score: 10, chance: 8.33 },
-        { value: "Женщина, 18 лет", score: 40, chance: 8.33 },
-        { value: "Женщина, 25 лет", score: 75, chance: 8.33 },
-        { value: "Женщина, 34 года", score: 75, chance: 8.33 },
-        { value: "Женщина, 42 года", score: 75, chance: 8.33 },
-        { value: "Женщина, 55 лет", score: 75, chance: 8.33 },
-        { value: "Женщина, 68 лет", score: 10, chance: 8.37 }
+        { value: "Мужчина", score: 50, chance: 50 },
+        { value: "Женщина", score: 50, chance: 50 }
     ]
 };
 const DEFAULT_CHARACTER_CATEGORY = {
@@ -1043,11 +1034,17 @@ function seedProfileCategories(rawConfig) {
         return { config: source, changed: false };
     }
     const categories = Array.isArray(source.categories) ? clone(source.categories) : [];
-    const profileIndexes = categories.map((category, index) => isProfileCategory(category) ? index : -1).filter((index) => index >= 0);
+    const genderAgeIndexes = categories.map((category, index) => {
+        const hint = `${category?.id || ""} ${category?.name || ""}`.toLocaleLowerCase("ru");
+        return /gender[_-]?age|пол.*возраст|возраст.*пол/.test(hint) || /^(gender|age)$/.test(String(category?.id || "")) || /^(пол|возраст)$/.test(String(category?.name || "").toLocaleLowerCase("ru").trim()) ? index : -1;
+    }).filter((index) => index >= 0);
     const healthIndex = categories.findIndex((category) => /health|здоров/.test(`${category?.id || ""} ${category?.name || ""}`.toLocaleLowerCase("ru")));
-    const insertAt = profileIndexes.length ? profileIndexes[0] : Math.max(0, healthIndex + 1);
-    const remainingCategories = categories.filter((category) => !isProfileCategory(category));
-    remainingCategories.splice(Math.min(insertAt, remainingCategories.length), 0, clone(DEFAULT_GENDER_AGE_CATEGORY), clone(DEFAULT_CHARACTER_CATEGORY));
+    const insertAt = genderAgeIndexes.length ? genderAgeIndexes[0] : Math.max(0, healthIndex + 1);
+    const remainingCategories = categories.filter((_category, index) => !genderAgeIndexes.includes(index));
+    remainingCategories.splice(Math.min(insertAt, remainingCategories.length), 0, clone(DEFAULT_GENDER_AGE_CATEGORY));
+    if (!remainingCategories.some((category) => categoryContentKind(category) === "character")) {
+        remainingCategories.splice(Math.min(insertAt + 1, remainingCategories.length), 0, clone(DEFAULT_CHARACTER_CATEGORY));
+    }
     return {
         config: {
             ...source,
@@ -1717,7 +1714,8 @@ function cardValueForCategory(category, value) {
 function generatedCardValue(category, option, supplyDurations) {
     let value = option;
     const hint = `${category?.id || ""} ${category?.name || ""} ${value || ""}`.toLocaleLowerCase("ru");
-    if (/(запас|канистр|питьев).*вод/.test(hint)) value = materializeSupplyValue(value, "water", supplyDurations);
+    if (/gender[_-]?age|пол.*возраст|возраст.*пол/.test(hint)) value = randomizeGenderAge(value);
+    else if (/(запас|канистр|питьев).*вод/.test(hint)) value = materializeSupplyValue(value, "water", supplyDurations);
     else if (/(запас.*ед|сухпа|консерв)/.test(hint)) value = materializeSupplyValue(value, "food", supplyDurations);
     return cardValueForCategory(category, value);
 }
@@ -2260,7 +2258,8 @@ function useSpecialCard(room, playerId, targetId) {
         const previousBaseValue = isHealth ? healthBase(previousValue) : previousValue;
         const differentOptions = options.filter((option) => option.value !== previousBaseValue);
         const nextBaseValue = pickWeightedOption(differentOptions.length ? differentOptions : options);
-        const nextValue = isHealth ? cardValueForCategory({ id: specialCard.trait, name: room.categoryNames?.[specialCard.trait] }, nextBaseValue) : nextBaseValue;
+        const category = { id: specialCard.trait, name: room.categoryNames?.[specialCard.trait] };
+        const nextValue = isHealth ? cardValueForCategory(category, nextBaseValue) : generatedCardValue(category, nextBaseValue, room.supplyDurations);
         if (!nextValue) return { error: "Для этой характеристики не хватает вариантов." };
         room.cards[playerId][specialCard.trait] = nextValue;
         if (isHealth) {
@@ -2413,9 +2412,10 @@ function playerSupplyFit(room, playerId) {
         const coverage = calculateSupplyCoverage(requiredDuration, bestSupply, resource.maximumBonus);
         if (!coverage.bonus) continue;
         bonus += coverage.bonus;
-        const requiredLabel = coverage.requiredDays === Infinity ? "бессрочной изоляции" : `${coverage.requiredDays} дн. изоляции`;
+        const requiredLabel = coverage.requiredDays === Infinity ? "бессрочный срок" : `${coverage.requiredDays} дн.`;
         const coveredDays = coverage.supplyDays === Infinity ? "бессрочно" : `${coverage.supplyDays} дн.`;
-        reasons.push(`запас ${resource.label} (${coveredDays}) покрывает ${requiredLabel}: +${coverage.bonus}%`);
+        const coveragePercent = Math.round(coverage.ratio * 100);
+        reasons.push(`запас ${resource.label} на ${coveredDays}: покрывает ${coveragePercent}% срока (${requiredLabel}), вклад +${coverage.bonus}%`);
     }
     return { bonus, reasons, requiredDuration };
 }
