@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="robots" content="noindex">
+    <title>Бункер — тестовый режим</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/test.css?v=20260801-complete-game-update">
+</head>
+<body>
+    <main>
+        <header><div><span>DEV ONLY</span><h1>Тестовый режим «Бункера»</h1></div><a href="/">Открыть игру</a></header>
+        <section class="controls">
+            <button data-action="create">Создать тестовую комнату</button>
+            <label>Всего игроков<input id="playerCount" type="number" min="1" max="12" value="6"></label><button data-action="players">Установить состав</button>
+            <label>Боты<input id="botCount" type="number" min="1" max="11" value="5"></label><button data-action="bots">Добавить ботов</button>
+            <button data-action="start">Начать игру</button><button data-action="advance">Следующая фаза</button><button data-action="finish">Сразу финал</button><button data-action="reset">Сбросить партию</button>
+            <button data-action="previous">← Предыдущее состояние</button><button data-action="vote">Открыть голосование</button><button data-action="tie">Смоделировать ничью</button><button data-action="notify">Проверить уведомление</button>
+            <label>Цель<select id="targetPlayer"></select></label><label>Характеристика<select id="targetTrait"></select></label><button data-action="reveal">Раскрыть карточку</button>
+            <label>Здоровье<select id="healthDirection"><option value="improve">Улучшить</option><option value="worsen">Ухудшить</option></select></label><label>Стадии<input id="healthAmount" type="number" min="1" max="5" value="2"></label><button data-action="health">Применить здоровье</button>
+            <label>Спецкарта<select id="specialEffect"><option value="improve_health">Улучшение здоровья</option><option value="worsen_health">Ухудшение здоровья</option><option value="swap_random_trait">Обмен характеристики</option><option value="take_backpack">Кража багажа</option><option value="increase_capacity">+1 место</option><option value="decrease_capacity">−1 место</option></select></label><button data-action="special">Выдать карту</button><button data-action="use-special">Выдать и применить</button>
+            <label>Вместимость<input id="capacity" type="number" min="1" max="12" value="2"></label><button data-action="capacity">Изменить</button><button data-action="eliminate">Исключить бота</button><button data-action="state">Обновить серверное состояние</button>
+        </section>
+        <section class="summary"><h2>Комната</h2><div id="summary">Не создана</div></section>
+        <section><h2>Игроки</h2><div id="players" class="players"></div></section>
+        <section><h2>Полное серверное состояние</h2><pre id="state">{}</pre></section>
+        <div id="notice" role="status"></div>
+    </main>
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/test.js?v=20260801-complete-game-update"></script>
+</body>
+</html>

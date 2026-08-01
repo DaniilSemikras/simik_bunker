@@ -1,4 +1,5 @@
 node_modules/
 .env
 .DS_Store
+data/game-history.json
 public/uploads/avatars/

@@ -4,6 +4,14 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const { Server } = require("socket.io");
+const {
+    applyHealthStageChange,
+    formatHealthState,
+    getEliminationsPerRound,
+    normalizeHealthState,
+    parseHealthState
+} = require("./lib/game-rules");
+const { GameHistoryStore } = require("./lib/game-history-store");
 
 const app = express();
 const server = http.createServer(app);
@@ -190,12 +198,19 @@ const DISASTERS = [
     "Токсичный туман накрыл континент, а еды в бункере хватит на 14 месяцев."
 ];
 const CONFIG_PATH = path.join(__dirname, "data", "game-config.json");
-const BUILT_IN_AVATAR_DIRECTORY = path.join(__dirname, "public", "assets", "avatars");
+const GAME_HISTORY_PATH = path.join(__dirname, "data", "game-history.json");
+const BUILT_IN_AVATAR_DIRECTORY = path.join(__dirname, "public", "assets", "survivor-avatars");
 const AVATAR_DIRECTORY = path.join(__dirname, "public", "uploads", "avatars");
 const MAX_AVATAR_BYTES = 350 * 1024;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "simik";
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "");
 const SUPABASE_SECRET_KEY = String(process.env.SUPABASE_SECRET_KEY || "").trim();
+const ENABLE_TEST_MODE = String(process.env.ENABLE_TEST_MODE || "").toLocaleLowerCase("en") === "true";
+const gameHistoryStore = new GameHistoryStore({
+    filePath: GAME_HISTORY_PATH,
+    supabaseUrl: SUPABASE_URL,
+    supabaseKey: SUPABASE_SECRET_KEY
+});
 const adminSessions = new Map();
 const ADMIN_ROOM = "admin-editors";
 const BUNKER_TRAITS_SEED_VERSION = 3;
@@ -207,15 +222,25 @@ const WATER_DURATION_SEED_VERSION = 1;
 const BACKPACK_WATER_SEED_VERSION = 1;
 const GENDER_OPTIONS_SEED_VERSION = 2;
 const HEALTH_CATEGORY_SEED_VERSION = 1;
-const SPECIAL_CARD_LIBRARY_SEED_VERSION = 4;
+const SPECIAL_CARD_LIBRARY_SEED_VERSION = 5;
 const DISASTER_DURATION_SEED_VERSION = 1;
-const CONTENT_FILL_SEED_VERSION = 1;
+const CONTENT_FILL_SEED_VERSION = 2;
 const WEAPON_BACKPACK_OPTION = { value: "Оружие", score: 70, chance: 10 };
 const WATER_BACKPACK_OPTIONS = [
     { value: "Запас питьевой воды на 3 дня", score: 72, chance: 8 },
     { value: "Канистры воды на 2 недели", score: 84, chance: 7 },
     { value: "Запас питьевой воды на месяц", score: 94, chance: 5 }
 ];
+const DEFAULT_SUPPLY_DURATIONS = {
+    water: [
+        { amount: 2, unit: "day" }, { amount: 3, unit: "day" }, { amount: 7, unit: "day" },
+        { amount: 14, unit: "day" }, { amount: 1, unit: "month" }, { amount: 3, unit: "month" }
+    ],
+    food: [
+        { amount: 3, unit: "day" }, { amount: 7, unit: "day" }, { amount: 12, unit: "day" },
+        { amount: 14, unit: "day" }, { amount: 1, unit: "month" }, { amount: 3, unit: "month" }
+    ]
+};
 const DEFAULT_GENDER_AGE_CATEGORY = {
     id: "gender_age",
     name: "Пол и возраст",
@@ -417,6 +442,18 @@ const DEFAULT_GAME_CONFIG = {
             name: "Переролл характеристики",
             description: "Один раз случайно измените одну свою характеристику.",
             effect: "reroll_own_trait"
+        },
+        {
+            id: "improve_health",
+            name: "Медицинский прорыв",
+            description: "Выберите игрока: его заболевание улучшится на случайное количество стадий.",
+            effect: "improve_health"
+        },
+        {
+            id: "worsen_health",
+            name: "Биологическая диверсия",
+            description: "Выберите игрока: его заболевание ухудшится на случайное количество стадий.",
+            effect: "worsen_health"
         }
     ],
     hiddenAvatars: [],
@@ -479,7 +516,7 @@ function bunkerTraitMatchesDefault(trait, defaultTrait) {
     const text = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
     const aliases = {
         water: ["water", "вод", "вокд"],
-        food: ["food", "ед", "пищ"],
+        food: ["food", "еда", "пищ", "питан"],
         electricity: ["electric", "электр", "свет"],
         ventilation: ["ventilat", "вентил"],
         condition: ["condition", "состояни", "ремонт", "поврежд"],
@@ -610,6 +647,43 @@ function inferBunkerStayDuration(text) {
     return "Бессрочно";
 }
 
+function pluralRu(amount, forms) {
+    const value = Math.abs(Number(amount) || 0) % 100;
+    const last = value % 10;
+    if (value > 10 && value < 20) return forms[2];
+    if (last === 1) return forms[0];
+    if (last >= 2 && last <= 4) return forms[1];
+    return forms[2];
+}
+
+function formatSupplyDuration(duration) {
+    const amount = Math.max(1, Math.trunc(Number(duration?.amount) || 1));
+    const unit = duration?.unit === "month" ? pluralRu(amount, ["месяц", "месяца", "месяцев"]) : pluralRu(amount, ["день", "дня", "дней"]);
+    return `${amount} ${unit}`;
+}
+
+function materializeSupplyValue(value, kind, supplyDurations = DEFAULT_SUPPLY_DURATIONS) {
+    const text = String(value || "").trim();
+    if (!text || /(?:воды|еды)\s+нет/i.test(text)) return text;
+    const options = supplyDurations?.[kind];
+    if (!Array.isArray(options) || !options.length) return text;
+    const duration = formatSupplyDuration(randomItem(options));
+    if (kind === "water") return `Запас питьевой воды на ${duration}`;
+    return `Запас еды на ${duration}`;
+}
+
+function randomDisasterDuration(disaster) {
+    const text = disasterText(disaster).toLocaleLowerCase("ru");
+    const pool = /ядер|радиаци|глобальн.*зараж/.test(text)
+        ? ["5 лет", "10 лет", "25 лет"]
+        : /вирус|эпидем|пандем|карантин/.test(text)
+            ? ["1 год", "2 года", "3 года"]
+            : /солнечн|метеорит|астероид|токсич|туман/.test(text)
+                ? ["3 месяца", "6 месяцев", "1 год", "2 года"]
+                : ["6 месяцев", "1 год", "2 года", "5 лет"];
+    return randomItem(pool);
+}
+
 function disasterText(disaster) {
     return String(typeof disaster === "string" ? disaster : disaster?.text ?? disaster?.description ?? "").trim().replace(/\s+/g, " ");
 }
@@ -690,13 +764,13 @@ function optionsFromCategoryTemplate(category) {
 
 function bunkerContentTemplate(trait) {
     const hint = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
+    if (/previous|предыдущ|жител|бомж/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "previous_residents").options);
     if (/water|вод|вокд/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "water").options);
-    if (/food|ед|пищ/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "food").options);
+    if (/food|(?:^|\s)ед[аы](?:\s|$)|пищ|питан/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "food").options);
     if (/electric|электр|свет/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "electricity").options);
     if (/ventilat|вентил/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "ventilation").options);
     if (/condition|состояни|ремонт|поврежд/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "condition").options);
     if (/specialization|назначен|специализ|техническ|лаборатор|ферм/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "specialization").options);
-    if (/previous|предыдущ|жител|бомж/.test(hint)) return clone(DEFAULT_BUNKER_TRAITS.find((item) => item.id === "previous_residents").options);
     return [
         { value: "Полностью исправно", chance: 40, occupiedSlots: 0 },
         { value: "Работает с перебоями", chance: 35, occupiedSlots: 0 },
@@ -730,6 +804,12 @@ function seedPlaceholderContent(rawConfig) {
     });
     const bunkerTraits = (Array.isArray(source.bunkerTraits) ? source.bunkerTraits : []).map((trait) => {
         const options = Array.isArray(trait?.options) ? trait.options : trait?.values;
+        const hint = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
+        const isResidents = /previous|предыдущ|жител|бомж/.test(hint);
+        const hasResidentOption = Array.isArray(options) && options.some((option) => /бункер пуст|бездом|жител/.test(String(typeof option === "string" ? option : option?.value || "").toLocaleLowerCase("ru")));
+        if (isResidents && !hasResidentOption) {
+            return { ...trait, options: bunkerContentTemplate(trait), values: undefined };
+        }
         if (!Array.isArray(options) || !options.some((option) => isPlaceholderValue(typeof option === "string" ? option : option?.value))) return trait;
         if (options.every((option) => isPlaceholderValue(typeof option === "string" ? option : option?.value))) {
             return { ...trait, options: bunkerContentTemplate(trait), values: undefined };
@@ -937,13 +1017,16 @@ function seedSpecialCardLibrary(rawConfig) {
     const hasAdjacentSwap = specialCards.some((card) => card?.effect === "swap_adjacent_profession" || /сосед|лев|прав/.test(`${card?.id || ""} ${card?.name || ""}`.toLocaleLowerCase("ru")));
     const capacityCards = DEFAULT_GAME_CONFIG.specialCards.filter((card) => ["increase_capacity", "decrease_capacity", "random_capacity"].includes(card.effect));
     const missingCapacityCards = capacityCards.filter((defaultCard) => !specialCards.some((card) => card?.effect === defaultCard.effect));
+    const healthCards = DEFAULT_GAME_CONFIG.specialCards.filter((card) => ["improve_health", "worsen_health"].includes(card.effect));
+    const missingHealthCards = healthCards.filter((defaultCard) => !specialCards.some((card) => card?.effect === defaultCard.effect));
     return {
         config: {
             ...source,
             specialCards: [
                 ...specialCards,
                 ...(hasAdjacentSwap ? [] : [clone(adjacentSwap)]),
-                ...missingCapacityCards.map(clone)
+                ...missingCapacityCards.map(clone),
+                ...missingHealthCards.map(clone)
             ],
             specialCardLibrarySeedVersion: SPECIAL_CARD_LIBRARY_SEED_VERSION
         },
@@ -970,7 +1053,7 @@ function seedGameConfig(rawConfig) {
     };
 }
 
-function normalizeGameConfig(rawConfig) {
+function normalizeGameConfig(rawConfig, includePresets = true) {
     const rawCategories = Array.isArray(rawConfig?.categories) ? rawConfig.categories : DEFAULT_GAME_CONFIG.categories;
     const usedIds = new Set();
     const categories = rawCategories.map((category) => {
@@ -1002,7 +1085,7 @@ function normalizeGameConfig(rawConfig) {
             throw new Error(`Сумма вероятностей в категории «${name}» должна быть 100%. Сейчас: ${chanceTotal}%.`);
         }
         usedIds.add(id);
-        return { id, name, options };
+        return { id, name, options, enabled: id === "profession" ? true : category?.enabled !== false };
     }).filter(Boolean).slice(0, 12);
 
     const profession = categories.find((category) => category.id === "profession");
@@ -1057,6 +1140,10 @@ function normalizeGameConfig(rawConfig) {
         const hint = `${id} ${name}`.toLocaleLowerCase("ru");
         const effect = card?.effect === "swap_adjacent_profession" || (/сосед|лев|прав/.test(hint) && /професс|специальност/.test(hint))
             ? "swap_adjacent_profession"
+            : card?.effect === "improve_health" || (/улучш|леч|исцел/.test(hint) && /здоров|болез|стади/.test(hint))
+                ? "improve_health"
+                : card?.effect === "worsen_health" || (/ухудш|зараз|диверс/.test(hint) && /здоров|болез|стади/.test(hint))
+                    ? "worsen_health"
             : /увелич|добав.*(?:мест|слот)|расшир/.test(hint)
             ? "increase_capacity"
             : /уменьш|отнят|убрат.*(?:мест|слот)|сократ/.test(hint)
@@ -1067,7 +1154,7 @@ function normalizeGameConfig(rawConfig) {
                         ? "reroll_own_trait"
                         : card?.effect === "take_backpack"
                             ? "take_backpack"
-                            : ["increase_capacity", "decrease_capacity", "random_capacity", "reroll_own_trait", "swap_adjacent_profession"].includes(card?.effect)
+                            : ["increase_capacity", "decrease_capacity", "random_capacity", "reroll_own_trait", "swap_adjacent_profession", "improve_health", "worsen_health"].includes(card?.effect)
                                 ? card.effect
                                 : card?.effect === "swap_random_trait" || card?.effect === "swap_trait"
                                     ? "swap_random_trait"
@@ -1081,7 +1168,7 @@ function normalizeGameConfig(rawConfig) {
     const hiddenAvatars = [...new Set(
         (Array.isArray(rawConfig?.hiddenAvatars) ? rawConfig.hiddenAvatars : [])
             .map((url) => String(url || ""))
-            .filter((url) => /^\/assets\/avatars\/[a-zA-Z0-9_-]+\.(png|jpg|jpeg|webp)$/i.test(url))
+            .filter((url) => /^\/assets\/survivor-avatars\/[a-zA-Z0-9_-]+\.(png|jpg|jpeg|webp|svg)$/i.test(url))
     )];
 
     const rawRevision = Number(rawConfig?.revision);
@@ -1122,7 +1209,48 @@ function normalizeGameConfig(rawConfig) {
     const contentFillSeedVersion = Number(rawConfig?.contentFillSeedVersion) >= CONTENT_FILL_SEED_VERSION
         ? CONTENT_FILL_SEED_VERSION
         : 0;
-    return { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, waterDurationSeedVersion, backpackWaterSeedVersion, genderOptionsSeedVersion, healthCategorySeedVersion, specialCardLibrarySeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, hiddenAvatars, revision };
+    const supplyDurations = Object.fromEntries(["water", "food"].map((kind) => {
+        const source = Array.isArray(rawConfig?.supplyDurations?.[kind]) ? rawConfig.supplyDurations[kind] : DEFAULT_SUPPLY_DURATIONS[kind];
+        const values = source.map((duration) => ({
+            amount: Math.max(1, Math.min(120, Math.trunc(Number(duration?.amount) || 0))),
+            unit: duration?.unit === "month" ? "month" : "day"
+        })).filter((duration) => duration.amount > 0);
+        return [kind, values.length ? values : clone(DEFAULT_SUPPLY_DURATIONS[kind])];
+    }));
+    const baseConfig = { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, waterDurationSeedVersion, backpackWaterSeedVersion, genderOptionsSeedVersion, healthCategorySeedVersion, specialCardLibrarySeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, supplyDurations, hiddenAvatars, revision };
+    if (!includePresets) return baseConfig;
+
+    const defaultPresetNames = [
+        ["classic", "Классический"],
+        ["realistic", "Реалистичный"],
+        ["funny", "Смешной"],
+        ["hard", "Сложный"],
+        ["postapocalypse", "Постапокалипсис"],
+        ["experimental", "Экспериментальный"]
+    ];
+    const rawPresets = Array.isArray(rawConfig?.presets) && rawConfig.presets.length
+        ? rawConfig.presets
+        : defaultPresetNames.map(([id, name]) => ({ id, name, ...clone(baseConfig) }));
+    const presetIds = new Set();
+    const presets = rawPresets.map((preset, index) => {
+        const id = cleanCategoryId(preset?.id) || `preset_${index + 1}`;
+        if (presetIds.has(id)) return null;
+        presetIds.add(id);
+        const content = normalizeGameConfig({
+            categories: preset?.categories || baseConfig.categories,
+            disasters: preset?.disasters || baseConfig.disasters,
+            bunkerTraits: preset?.bunkerTraits || baseConfig.bunkerTraits,
+            specialCards: preset?.specialCards || baseConfig.specialCards,
+            supplyDurations: preset?.supplyDurations || baseConfig.supplyDurations,
+            hiddenAvatars: baseConfig.hiddenAvatars,
+            revision: 0
+        }, false);
+        return { id, name: cleanText(preset?.name, 50) || `Пресет ${index + 1}`, ...content };
+    }).filter(Boolean).slice(0, 20);
+    const availablePresets = presets.length ? presets : [{ id: "classic", name: "Классический", ...clone(baseConfig) }];
+    const requestedActivePresetId = cleanCategoryId(rawConfig?.activePresetId);
+    const activePresetId = availablePresets.some((preset) => preset.id === requestedActivePresetId) ? requestedActivePresetId : availablePresets[0].id;
+    return { ...baseConfig, presets: availablePresets, activePresetId };
 }
 
 function loadGameConfig() {
@@ -1221,7 +1349,7 @@ function isAvatarFilename(filename) {
 }
 
 function isImageFilename(filename) {
-    return /^[a-zA-Z0-9_-]+\.(png|jpg|jpeg|webp)$/i.test(filename);
+    return /^[a-zA-Z0-9_-]+\.(png|jpg|jpeg|webp|svg)$/i.test(filename);
 }
 
 function listAvatarDirectory(directory, publicPath, validator) {
@@ -1234,7 +1362,7 @@ function listAvatarDirectory(directory, publicPath, validator) {
 
 function listAllAvatarUrls() {
     return [
-        ...listAvatarDirectory(BUILT_IN_AVATAR_DIRECTORY, "/assets/avatars", isImageFilename),
+        ...listAvatarDirectory(BUILT_IN_AVATAR_DIRECTORY, "/assets/survivor-avatars", isImageFilename),
         ...listAvatarDirectory(AVATAR_DIRECTORY, "/uploads/avatars", isAvatarFilename)
     ];
 }
@@ -1261,6 +1389,19 @@ function chooseAvatar(room) {
 
 let gameConfig = loadGameConfig();
 
+function gameDataForRoom(room) {
+    const presets = Array.isArray(gameConfig.presets) ? gameConfig.presets : [];
+    return presets.find((preset) => preset.id === room?.presetId)
+        || presets.find((preset) => preset.id === gameConfig.activePresetId)
+        || gameConfig;
+}
+
+function enabledGameCategories(gameData) {
+    const categories = (gameData?.categories || []).filter((category) => category.id === "profession" || category.enabled !== false);
+    const profession = categories.find((category) => category.id === "profession");
+    return profession ? [profession, ...categories.filter((category) => category.id !== "profession")] : categories;
+}
+
 function hasActiveAdminSession(token) {
     const expiry = adminSessions.get(token);
     if (!expiry || expiry < Date.now()) {
@@ -1282,6 +1423,10 @@ function broadcastAdminRooms() {
     io.to(ADMIN_ROOM).emit("admin:rooms-updated", { rooms: adminRoomSummaries() });
 }
 
+function broadcastAdminHistory() {
+    io.to(ADMIN_ROOM).emit("admin:history-updated", { games: gameHistoryStore.list() });
+}
+
 function getAdminToken(request) {
     const authorization = request.get("authorization") || "";
     return authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
@@ -1295,6 +1440,17 @@ function requireAdmin(request, response, next) {
 }
 
 app.get("/admin", (_request, response) => response.sendFile(path.join(__dirname, "public", "admin.html")));
+app.get("/api/game-options", (_request, response) => {
+    response.json({
+        presets: (gameConfig.presets || []).map((preset) => ({ id: preset.id, name: preset.name })),
+        activePresetId: gameConfig.activePresetId || "classic",
+        testMode: ENABLE_TEST_MODE
+    });
+});
+app.get("/test", (_request, response) => {
+    if (!ENABLE_TEST_MODE) return response.status(404).send("Not Found");
+    response.sendFile(path.join(__dirname, "public", "test.html"));
+});
 
 app.post("/api/admin/login", (request, response) => {
     if (String(request.body?.password || "") !== ADMIN_PASSWORD) {
@@ -1316,6 +1472,23 @@ app.get("/api/admin/rooms/:gameId", requireAdmin, (request, response) => {
     const room = Object.values(rooms).find((candidate) => candidate.gameId === gameId);
     if (!room) return response.status(404).json({ message: "Игра уже закрыта или не найдена." });
     response.json({ room: adminRoomSummary(room), state: publicState(room) });
+});
+
+app.get("/api/admin/history", requireAdmin, (request, response) => {
+    response.json({ games: gameHistoryStore.list({ roomCode: request.query.room, player: request.query.player }) });
+});
+
+app.get("/api/admin/history/:gameId", requireAdmin, (request, response) => {
+    const game = gameHistoryStore.get(request.params.gameId);
+    if (!game) return response.status(404).json({ message: "Лог завершённой игры не найден." });
+    response.json({ game });
+});
+
+app.delete("/api/admin/history/:gameId", requireAdmin, async (request, response) => {
+    const deleted = await gameHistoryStore.delete(request.params.gameId);
+    if (!deleted) return response.status(404).json({ message: "Лог завершённой игры не найден." });
+    broadcastAdminHistory();
+    response.json({ deleted: true });
 });
 
 app.put("/api/admin/config", requireAdmin, async (request, response) => {
@@ -1356,7 +1529,7 @@ app.post("/api/admin/avatars", requireAdmin, (request, response) => {
 
 app.put("/api/admin/avatars/visibility", requireAdmin, async (request, response) => {
     const url = String(request.body?.url || "");
-    const builtInAvatars = listAvatarDirectory(BUILT_IN_AVATAR_DIRECTORY, "/assets/avatars", isImageFilename);
+    const builtInAvatars = listAvatarDirectory(BUILT_IN_AVATAR_DIRECTORY, "/assets/survivor-avatars", isImageFilename);
     if (!builtInAvatars.includes(url)) {
         return response.status(404).json({ message: "Аватар не найден." });
     }
@@ -1440,8 +1613,7 @@ function healthBase(value) {
 }
 
 function healthStage(value) {
-    const match = String(value || "").match(/стади[яи]\s*([1-5])\s*\/\s*5/i);
-    return match ? Number(match[1]) : 0;
+    return parseHealthState(value).stage;
 }
 
 function healthNeedsStage(value) {
@@ -1453,14 +1625,52 @@ function cardValueForCategory(category, value) {
     return `${value} — стадия ${Math.floor(Math.random() * 5) + 1}/5`;
 }
 
-function assignCards(players, categories) {
+function generatedCardValue(category, option, supplyDurations) {
+    let value = option;
+    const hint = `${category?.id || ""} ${category?.name || ""} ${value || ""}`.toLocaleLowerCase("ru");
+    if (/(запас|канистр|питьев).*вод/.test(hint)) value = materializeSupplyValue(value, "water", supplyDurations);
+    else if (/(запас.*ед|сухпа|консерв)/.test(hint)) value = materializeSupplyValue(value, "food", supplyDurations);
+    return cardValueForCategory(category, value);
+}
+
+function assignCards(players, categories, supplyDurations) {
     return Object.fromEntries(players.map((player) => [
         player.id,
         Object.fromEntries(categories.map((category) => {
             const option = pickWeightedOption(category.options);
-            return [category.id, category.id === "profession" ? option + " — " + randomItem(PROFESSION_RANKS) : cardValueForCategory(category, option)];
+            return [category.id, category.id === "profession" ? option + " — " + randomItem(PROFESSION_RANKS) : generatedCardValue(category, option, supplyDurations)];
         }))
     ]));
+}
+
+function healthTraitId(room) {
+    return (room.traitOrder || []).find((traitId) => isHealthTrait(traitId, room.categoryNames?.[traitId])) || null;
+}
+
+function initializeHealthStates(room) {
+    const trait = healthTraitId(room);
+    room.healthStates = {};
+    if (!trait) return;
+    for (const player of room.players) {
+        const value = room.cards?.[player.id]?.[trait];
+        if (value === undefined) continue;
+        room.healthStates[player.id] = parseHealthState(value);
+        room.cards[player.id][trait] = formatHealthState(room.healthStates[player.id]);
+    }
+}
+
+function syncHealthCard(room, playerId, rawState) {
+    const trait = healthTraitId(room);
+    if (!trait || !room.cards?.[playerId]) return null;
+    const state = normalizeHealthState(rawState, room.cards[playerId][trait]);
+    room.healthStates = room.healthStates || {};
+    room.healthStates[playerId] = state;
+    const value = formatHealthState(state);
+    room.cards[playerId][trait] = value;
+    if (Object.prototype.hasOwnProperty.call(room.revealed?.[playerId] || {}, trait)) {
+        room.revealed[playerId][trait] = value;
+    }
+    return { trait, state, value };
 }
 
 function isPreviousResidentsTrait(trait) {
@@ -1468,7 +1678,7 @@ function isPreviousResidentsTrait(trait) {
     return /previous|предыдущ|жител|бомж/.test(hint);
 }
 
-function assignBunkerTraits(traits, playerCount) {
+function assignBunkerTraits(traits, playerCount, supplyDurations) {
     return traits.map((trait) => {
         if (trait.randomPercentage) {
             const fillPercent = Math.floor(Math.random() * 101);
@@ -1481,18 +1691,25 @@ function assignBunkerTraits(traits, playerCount) {
                 evictedResidents: 0
             };
         }
-        const emptyResidentOptions = isPreviousResidentsTrait(trait) && playerCount < 6
-            ? trait.options.filter((option) => cleanOccupiedSlots(option?.occupiedSlots) === 0)
+        const maximumResidentSlots = playerCount < 6 ? 0 : Math.max(0, Math.floor(playerCount / 2) - 2);
+        const residentOptions = isPreviousResidentsTrait(trait)
+            ? trait.options.filter((option) => cleanOccupiedSlots(option?.occupiedSlots) <= maximumResidentSlots)
             : null;
-        const option = emptyResidentOptions?.length
-            ? pickWeightedEntry(emptyResidentOptions)
-            : emptyResidentOptions
+        const option = residentOptions?.length
+            ? pickWeightedEntry(residentOptions)
+            : residentOptions
                 ? { value: "Бункер пуст", occupiedSlots: 0 }
                 : pickWeightedEntry(trait.options);
+        const hint = `${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru");
+        const materializedValue = /water|вод/.test(hint)
+            ? materializeSupplyValue(option.value, "water", supplyDurations)
+            : /food|(?:^|\s)ед[аы](?:\s|$)|питан/.test(hint)
+                ? materializeSupplyValue(option.value, "food", supplyDurations)
+                : option.value;
         return {
             id: trait.id,
             name: trait.name,
-            value: option.value,
+            value: materializedValue,
             occupiedSlots: cleanOccupiedSlots(option.occupiedSlots),
             evictedResidents: 0
         };
@@ -1552,15 +1769,17 @@ function useBunkerWeapon(room, playerId) {
     };
 }
 
-function assignSpecialCards(players, specialCards, traitOrder, bunkerBaseCapacity) {
+function assignSpecialCards(players, specialCards, traitOrder, bunkerCapacity, categoryNames = {}) {
     const exchangeTraits = traitOrder.filter((trait) => !["profession", "backpack"].includes(trait));
     const rerollTraits = traitOrder.filter((trait) => trait !== "profession");
-    const canModifyCapacity = Number(bunkerBaseCapacity) > 2;
+    const healthTrait = traitOrder.find((trait) => isHealthTrait(trait, categoryNames[trait]));
+    const canModifyCapacity = Number(bunkerCapacity) > 2;
     const usableCards = specialCards.filter((card) => (
         card.effect === "swap_random_trait" ? exchangeTraits.length > 0
             : card.effect === "swap_adjacent_profession" ? players.length > 1 && traitOrder.includes("profession")
             : card.effect === "take_backpack" ? traitOrder.includes("backpack")
                 : card.effect === "reroll_own_trait" ? rerollTraits.length > 0
+                    : ["improve_health", "worsen_health"].includes(card.effect) ? Boolean(healthTrait)
                     : ["increase_capacity", "decrease_capacity", "random_capacity"].includes(card.effect) && canModifyCapacity
     ));
     if (!usableCards.length) return {};
@@ -1569,6 +1788,7 @@ function assignSpecialCards(players, specialCards, traitOrder, bunkerBaseCapacit
         card.trait = card.effect === "swap_random_trait" ? randomItem(exchangeTraits)
             : card.effect === "swap_adjacent_profession" ? "profession"
             : card.effect === "reroll_own_trait" ? randomItem(rerollTraits)
+                : ["improve_health", "worsen_health"].includes(card.effect) ? healthTrait
                 : card.effect === "take_backpack" ? "backpack" : null;
         if (card.effect === "swap_adjacent_profession") {
             card.direction = randomItem(["left", "right", "random"]);
@@ -1600,6 +1820,7 @@ function revealRoundsFor(playerCount, categoryCount) {
 
 const ACTION_DURATION_MS = 60_000;
 const RECONNECT_GRACE_MS = 60_000;
+const EMPTY_ROOM_TTL_MS = 30 * 60_000;
 const FINISHED_ROOM_TTL_MS = 3 * 60_000;
 const ROOM_CLOSE_EXTENSION_MS = 30_000;
 const MIN_PLAYERS_TO_START = 3;
@@ -1660,7 +1881,7 @@ function movePlayerToSocket(room, player, socketId) {
     room.turnOrder = (room.turnOrder || []).map((id) => id === previousId ? socketId : id);
     room.eliminated = (room.eliminated || []).map((id) => id === previousId ? socketId : id);
 
-    for (const record of [room.cards, room.revealed, room.revealedThisRound, room.revealedAtFinish, room.playerSpecialCards, room.playerProfessionItems, room.playerExtraBaggage, room.playerResidentEvictions]) {
+    for (const record of [room.cards, room.revealed, room.revealedThisRound, room.revealedAtFinish, room.playerSpecialCards, room.healthStates, room.playerProfessionItems, room.playerExtraBaggage, room.playerResidentEvictions]) {
         if (!record || !Object.prototype.hasOwnProperty.call(record, previousId)) continue;
         record[socketId] = record[previousId];
         delete record[previousId];
@@ -1670,6 +1891,10 @@ function movePlayerToSocket(room, player, socketId) {
         voterId === previousId ? socketId : voterId,
         targetId === previousId ? socketId : targetId
     ]));
+    room.voteCandidateIds = Array.isArray(room.voteCandidateIds) ? room.voteCandidateIds.map((id) => id === previousId ? socketId : id) : room.voteCandidateIds;
+    room.pendingEliminationIds = (room.pendingEliminationIds || []).map((id) => id === previousId ? socketId : id);
+    player.left = false;
+    player.disconnected = false;
 }
 
 function currentTurnPlayerId(room) {
@@ -1722,7 +1947,7 @@ function adjacentPlayerId(room, playerId, direction = "random") {
 function useSpecialCard(room, playerId, targetId) {
     const specialCard = room.playerSpecialCards?.[playerId];
     if (!specialCard || specialCard.used) return { error: "Эта спецкарта уже использована." };
-    if (!["swap_random_trait", "swap_adjacent_profession", "take_backpack", "increase_capacity", "decrease_capacity", "random_capacity", "reroll_own_trait"].includes(specialCard.effect)) return { error: "Неизвестный эффект спецкарты." };
+    if (!["swap_random_trait", "swap_adjacent_profession", "take_backpack", "increase_capacity", "decrease_capacity", "random_capacity", "reroll_own_trait", "improve_health", "worsen_health"].includes(specialCard.effect)) return { error: "Неизвестный эффект спецкарты." };
     if (!room.cards[playerId]) return { error: "Не удалось найти ваши карточки." };
 
     if (specialCard.effect === "swap_adjacent_profession") {
@@ -1759,8 +1984,8 @@ function useSpecialCard(room, playerId, targetId) {
 
     if (specialCard.effect === "decrease_capacity") {
         const previousCapacity = room.capacity;
-        room.capacity = Math.max(1, room.capacity - 1);
-        if (room.capacity === previousCapacity) return { error: "Нельзя уменьшить бункер меньше чем до одного места." };
+        room.capacity = Math.max(2, room.capacity - 1);
+        if (room.capacity === previousCapacity) return { error: "Нельзя уменьшить бункер меньше чем до двух мест." };
         specialCard.used = true;
         return { card: specialCard, action: specialCard.effect, previousCapacity, capacity: room.capacity };
     }
@@ -1788,11 +2013,45 @@ function useSpecialCard(room, playerId, targetId) {
         const nextValue = isHealth ? cardValueForCategory({ id: specialCard.trait, name: room.categoryNames?.[specialCard.trait] }, nextBaseValue) : nextBaseValue;
         if (!nextValue) return { error: "Для этой характеристики не хватает вариантов." };
         room.cards[playerId][specialCard.trait] = nextValue;
+        if (isHealth) {
+            room.healthStates = room.healthStates || {};
+            room.healthStates[playerId] = parseHealthState(nextValue);
+        }
         if (Object.prototype.hasOwnProperty.call(room.revealed[playerId] || {}, specialCard.trait)) {
             room.revealed[playerId][specialCard.trait] = nextValue;
         }
         specialCard.used = true;
         return { card: specialCard, trait: specialCard.trait, action: specialCard.effect, previousValue, value: nextValue };
+    }
+
+    if (["improve_health", "worsen_health"].includes(specialCard.effect)) {
+        const trait = healthTraitId(room);
+        if (!trait || !targetId || !room.cards?.[targetId]) return { error: "Выберите игрока, здоровье которого нужно изменить." };
+        let state = normalizeHealthState(room.healthStates?.[targetId], room.cards[targetId][trait]);
+        if (specialCard.effect === "worsen_health" && state.stage === 0) {
+            const diseaseOptions = (room.cardOptionsByTrait?.[trait] || [])
+                .map((option) => option.value)
+                .filter((value) => parseHealthState(value).stage > 0 && !/смертельно болен/i.test(value));
+            const diseaseName = healthBase(diseaseOptions.length ? randomItem(diseaseOptions) : "Острое заболевание");
+            state = { ...state, diseaseName };
+        }
+        const amount = Math.floor(Math.random() * 4) + 1;
+        const direction = specialCard.effect === "improve_health" ? "improve" : "worsen";
+        const change = applyHealthStageChange(state, direction, amount);
+        const synchronized = syncHealthCard(room, targetId, change.state);
+        specialCard.used = true;
+        specialCard.targetId = targetId;
+        specialCard.healthChange = amount;
+        specialCard.resultValue = synchronized?.value || formatHealthState(change.state);
+        return {
+            card: specialCard,
+            trait,
+            action: specialCard.effect,
+            targetId,
+            amount,
+            value: specialCard.resultValue,
+            alreadyHealthy: change.alreadyHealthy
+        };
     }
 
     if (!room.traitOrder.includes(specialCard.trait) || !room.cards[targetId]) return { error: "Не удалось найти карточки выбранного игрока." };
@@ -1816,6 +2075,13 @@ function useSpecialCard(room, playerId, targetId) {
 
     room.cards[playerId][specialCard.trait] = targetValue;
     room.cards[targetId][specialCard.trait] = myValue;
+    if (isHealthTrait(specialCard.trait, room.categoryNames?.[specialCard.trait])) {
+        const myHealth = normalizeHealthState(room.healthStates?.[playerId], myValue);
+        const targetHealth = normalizeHealthState(room.healthStates?.[targetId], targetValue);
+        room.healthStates = room.healthStates || {};
+        room.healthStates[playerId] = targetHealth;
+        room.healthStates[targetId] = myHealth;
+    }
     if (Object.prototype.hasOwnProperty.call(room.revealed[playerId] || {}, specialCard.trait)) {
         room.revealed[playerId][specialCard.trait] = targetValue;
     }
@@ -1825,6 +2091,42 @@ function useSpecialCard(room, playerId, targetId) {
     specialCard.used = true;
     specialCard.targetId = targetId;
     return { card: specialCard, trait: specialCard.trait, action: specialCard.effect };
+}
+
+function tryBotSpecialCard(room, bot) {
+    const card = room.playerSpecialCards?.[bot.id];
+    if (!card || card.used || Math.random() >= 0.32) return null;
+    const requiresOtherTarget = ["swap_random_trait", "take_backpack"].includes(card.effect);
+    const requiresAnyTarget = ["improve_health", "worsen_health"].includes(card.effect);
+    const candidates = activePlayers(room).filter((player) => requiresOtherTarget ? player.id !== bot.id : true);
+    const targetId = requiresOtherTarget || requiresAnyTarget ? randomItem(candidates)?.id : null;
+    if ((requiresOtherTarget || requiresAnyTarget) && !targetId) return null;
+    const result = useSpecialCard(room, bot.id, targetId);
+    if (result.error) return null;
+    const target = room.players.find((player) => player.id === result.targetId);
+    const summary = result.action === "improve_health" || result.action === "worsen_health"
+        ? `${bot.nickname} применяет «${result.card.name}» к ${target?.nickname}: ${result.value}.`
+        : target
+            ? `${bot.nickname} применяет «${result.card.name}» к ${target.nickname}.`
+            : `${bot.nickname} применяет «${result.card.name}».`;
+    addActionLog(room, summary, "special");
+    room.usedSpecialCards = room.usedSpecialCards || [];
+    room.usedSpecialCards.push({ player: bot.nickname, target: target?.nickname || null, name: result.card.name, effect: result.action, amount: result.amount || null, result: result.value || null, at: Date.now() });
+    io.to(room.code).emit("specialCardUsed", {
+        nickname: bot.nickname,
+        targetNickname: target?.nickname || null,
+        cardName: result.card.name,
+        trait: result.trait,
+        action: result.action,
+        direction: result.direction || null,
+        item: result.item || null,
+        capacity: result.capacity || null,
+        previousCapacity: result.previousCapacity || null,
+        amount: result.amount || null,
+        value: result.value || null,
+        alreadyHealthy: Boolean(result.alreadyHealthy)
+    });
+    return result;
 }
 
 function calculateUtilityBreakdown(room) {
@@ -1890,7 +2192,23 @@ function synchronizedBunkerTraits(room) {
     });
 }
 
+function playerFinalAbilities(room, playerId) {
+    const values = [];
+    const specialCard = room.playerSpecialCards?.[playerId];
+    if (specialCard?.name) values.push(specialCard.name);
+    const professionItem = room.playerProfessionItems?.[playerId];
+    if (professionItem) values.push(`Бонус профессии: ${professionItem}`);
+    const weapon = weaponSourceForPlayer(room, playerId);
+    if (weapon) values.push("Оружие: изгнание жителя");
+    for (const item of room.playerExtraBaggage?.[playerId] || []) {
+        values.push(isWeaponItem(item) ? "Оружие: изгнание жителя" : `Полученный предмет: ${item}`);
+    }
+    if (room.playerResidentEvictions?.[playerId]) values.push("Изгнал прежнего жителя");
+    return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
 function publicState(room) {
+    const gameData = gameDataForRoom(room);
     const currentTrait = room.phase === "reveal" && room.round === 0 ? room.traitOrder?.[0] || null : null;
     const voteMarkers = Object.entries(room.votes || {}).reduce((markers, [voterId, targetId]) => {
         if (targetId === SKIP_VOTE) return markers;
@@ -1901,6 +2219,9 @@ function publicState(room) {
     return {
         code: room.code,
         gameId: room.gameId,
+        presetId: room.presetId || gameData.id || gameConfig.activePresetId || "classic",
+        presetName: room.presetName || gameData.name || "Классический",
+        visualTheme: room.visualTheme || "amber",
         serverNow: Date.now(),
         hostId: room.host,
         phase: room.phase,
@@ -1909,8 +2230,8 @@ function publicState(room) {
         round: room.round + 1,
         revealRounds: room.revealRounds || Math.max(1, room.traitOrder?.length || 1),
         currentTrait,
-        categoryOrder: room.traitOrder || gameConfig.categories.map((category) => category.id),
-        categoryNames: room.categoryNames || Object.fromEntries(gameConfig.categories.map((category) => [category.id, category.name])),
+        categoryOrder: room.traitOrder || gameData.categories.map((category) => category.id),
+        categoryNames: room.categoryNames || Object.fromEntries(gameData.categories.map((category) => [category.id, category.name])),
         revealedThisRound: room.revealedThisRound || {},
         capacity: room.capacity,
         bunkerBaseCapacity: room.bunkerBaseCapacity || room.capacity,
@@ -1922,6 +2243,8 @@ function publicState(room) {
         voteDeadline: room.voteDeadline || null,
         votedPlayerIds: Object.keys(room.votes || {}),
         voteMarkers,
+        eliminationsThisVote: room.eliminationsThisVote || 1,
+        voteCandidateIds: Array.isArray(room.voteCandidateIds) ? room.voteCandidateIds : null,
         voteCanBeSkipped: voteCanBeSkipped(room),
         bunkerSurvivalChance: room.phase === "finished" ? calculateBunkerSurvivalChance(room) : null,
         utilityBreakdown: room.phase === "finished"
@@ -1941,8 +2264,9 @@ function publicState(room) {
             professionItem: room.playerProfessionItems?.[player.id] || null,
             extraBaggage: room.playerExtraBaggage?.[player.id] || [],
             residentEviction: room.playerResidentEvictions?.[player.id] || null,
+            abilities: room.phase === "finished" ? playerFinalAbilities(room, player.id) : [],
             usedSpecialCard: room.playerSpecialCards?.[player.id]?.used
-                ? { name: room.playerSpecialCards[player.id].name }
+                ? { name: room.playerSpecialCards[player.id].name, effect: room.playerSpecialCards[player.id].effect }
                 : null
         }))
     };
@@ -1973,6 +2297,62 @@ function adminRoomSummaries() {
     return Object.values(rooms)
         .map(adminRoomSummary)
         .sort((first, second) => Number(second.gameId) - Number(first.gameId));
+}
+
+function createGameHistoryRecord(room) {
+    const utilityBreakdown = calculateUtilityBreakdown(room);
+    const finishedAt = Number(room.finishedAt) || Date.now();
+    const participants = room.players.map((player) => ({
+        nickname: player.nickname,
+        avatarUrl: player.avatarUrl || null,
+        isBot: Boolean(player.isBot),
+        left: Boolean(player.left),
+        eliminated: room.eliminated.includes(player.id),
+        cards: clone(room.cards?.[player.id] || {}),
+        revealed: clone(room.revealed?.[player.id] || {}),
+        specialCard: room.playerSpecialCards?.[player.id] ? clone(room.playerSpecialCards[player.id]) : null,
+        abilities: playerFinalAbilities(room, player.id),
+        professionItem: room.playerProfessionItems?.[player.id] || null,
+        extraBaggage: clone(room.playerExtraBaggage?.[player.id] || [])
+    }));
+    const nicknameFor = (playerId) => room.players.find((player) => player.id === playerId)?.nickname || null;
+    return {
+        gameId: room.gameId,
+        roomCode: room.code,
+        roomCreatedAt: room.createdAt || null,
+        startedAt: room.startedAt || null,
+        finishedAt,
+        durationMs: room.startedAt ? Math.max(0, finishedAt - room.startedAt) : 0,
+        hostNickname: nicknameFor(room.host),
+        participants,
+        activeParticipants: activePlayers(room).map((player) => player.nickname),
+        excludedPlayers: room.eliminated.map(nicknameFor).filter(Boolean),
+        eliminationOrder: (room.eliminationOrder || []).map(nicknameFor).filter(Boolean),
+        winners: activePlayers(room).map((player) => player.nickname),
+        theme: room.visualTheme || "amber",
+        presetId: room.presetId || gameConfig.activePresetId || "classic",
+        presetName: room.presetName || room.presetId || "Классический",
+        disaster: room.disaster || null,
+        disasterDuration: room.disasterDuration || null,
+        bunkerTraits: clone(synchronizedBunkerTraits(room)),
+        capacity: room.capacity,
+        bunkerBaseCapacity: room.bunkerBaseCapacity,
+        rounds: room.round + 1,
+        votingCount: room.votingCount || 0,
+        usedSpecialCards: clone(room.usedSpecialCards || []),
+        finishReason: room.finishReason || "capacity_reached",
+        survivalChance: calculateBunkerSurvivalChance(room),
+        utilityBreakdown: clone(utilityBreakdown),
+        actionLog: clone(room.actionLog || [])
+    };
+}
+
+function recordFinishedGame(room) {
+    if (room.historyRecorded) return;
+    room.historyRecorded = true;
+    gameHistoryStore.append(createGameHistoryRecord(room))
+        .then(broadcastAdminHistory)
+        .catch((error) => console.warn("Не удалось сохранить историю игры.", error.message));
 }
 
 function emitRoom(room) {
@@ -2012,7 +2392,7 @@ function scheduleBotAction(room, callback, delay) {
     room.botTimers.push(timer);
 }
 
-function endGame(room) {
+function endGame(room, reason = "capacity_reached") {
     if (room.phase === "finished") return;
     clearActionTimer(room);
     room.revealedAtFinish = Object.fromEntries(activePlayers(room).map((player) => [
@@ -2024,6 +2404,8 @@ function endGame(room) {
         room.revealed[player.id] = { ...room.cards[player.id] };
     }
     room.phase = "finished";
+    room.finishedAt = Date.now();
+    room.finishReason = reason;
     room.turnDeadline = null;
     room.voteDeadline = null;
     room.votes = {};
@@ -2032,28 +2414,41 @@ function endGame(room) {
     addActionLog(room, "Игра окончена — все оставшиеся характеристики раскрыты.", "reveal");
     addActionLog(room, winners.length ? "Игра завершена. В бункере остались: " + winners.join(", ") + "." : "Игра завершена. Выживших не осталось.", "finish");
     emitRoom(room);
+    recordFinishedGame(room);
     io.to(room.code).emit("gameFinished", {
         survivors: winners
     });
 }
 
-function openVoting(room) {
+function votingCandidates(room) {
+    const allowed = Array.isArray(room.voteCandidateIds) ? new Set(room.voteCandidateIds) : null;
+    return activePlayers(room).filter((player) => !allowed || allowed.has(player.id));
+}
+
+function openVoting(room, { candidateIds = null, slots = null, preservePending = false } = {}) {
     if (room.phase === "finished") return;
     clearActionTimer(room);
     room.phase = "voting";
     room.votes = {};
+    if (!preservePending) room.pendingEliminationIds = [];
+    room.voteCandidateIds = Array.isArray(candidateIds) ? [...new Set(candidateIds)] : null;
+    room.eliminationsThisVote = Math.max(1, Math.min(
+        Number(slots) || getEliminationsPerRound(activePlayers(room).length, room.capacity, room.eliminationsMode),
+        Math.max(1, activePlayers(room).length - room.capacity)
+    ));
+    room.votingCount = (Number(room.votingCount) || 0) + 1;
     room.turnDeadline = null;
     room.voteDeadline = Date.now() + ACTION_DURATION_MS;
     room.timerKind = "vote";
     room.actionTimer = setTimeout(() => resolveVote(room, true), ACTION_DURATION_MS);
-    addActionLog(room, "Началось голосование.", "vote");
-    io.to(room.code).emit("votingStarted");
+    addActionLog(room, room.eliminationsThisVote > 1 ? `Началось голосование: в этом раунде выбывают ${room.eliminationsThisVote} игрока.` : "Началось голосование.", "vote");
+    io.to(room.code).emit("votingStarted", { eliminations: room.eliminationsThisVote, runoff: Boolean(room.voteCandidateIds) });
     emitRoom(room);
     activePlayers(room).filter((player) => player.isBot).forEach((bot, index) => {
         scheduleBotAction(room, () => {
             if (room.phase !== "voting" || room.votes[bot.id]) return;
-            const otherBots = activePlayers(room).filter((player) => player.isBot && player.id !== bot.id);
-            room.votes[bot.id] = otherBots.length ? randomItem(otherBots).id : SKIP_VOTE;
+            const candidates = votingCandidates(room).filter((player) => player.id !== bot.id);
+            room.votes[bot.id] = candidates.length ? randomItem(candidates).id : SKIP_VOTE;
             const target = room.players.find((player) => player.id === room.votes[bot.id]);
             addActionLog(room, room.votes[bot.id] === SKIP_VOTE ? bot.nickname + " выбирает не исключать никого." : bot.nickname + " голосует против " + target?.nickname + ".", "vote");
             emitRoom(room);
@@ -2068,10 +2463,12 @@ function playerHasAvailableCard(room, playerId) {
 }
 
 function hasAnotherRevealRound(room) {
-    return room.round < room.traitOrder.length - 1;
+    const lastAllowedRoundIndex = room.isSoloTest ? room.traitOrder.length - 1 : room.traitOrder.length - 2;
+    return room.round < Math.max(0, lastAllowedRoundIndex);
 }
 
 function voteCanBeSkipped(room) {
+    if (Array.isArray(room.voteCandidateIds)) return false;
     return activePlayers(room).length <= room.capacity || hasAnotherRevealRound(room);
 }
 
@@ -2098,6 +2495,12 @@ function activateNextTurn(room) {
     if (currentPlayer?.isBot) {
         scheduleBotAction(room, () => {
             if (room.phase !== "reveal" || currentTurnPlayerId(room) !== currentPlayer.id) return;
+            const specialResult = tryBotSpecialCard(room, currentPlayer);
+            if (specialResult && ["increase_capacity", "random_capacity"].includes(specialResult.action) && activePlayers(room).length <= room.capacity) {
+                endGame(room, "capacity_card");
+                return;
+            }
+            emitRoom(room);
             const trait = room.round === 0
                 ? room.traitOrder[0]
                 : randomItem(room.traitOrder.filter((item) => !room.revealed[currentPlayer.id]?.[item]));
@@ -2196,7 +2599,7 @@ function continueWithoutElimination(room) {
 }
 
 function canOpenAnotherDeadlockRound(room) {
-    return activePlayers(room).length > room.capacity && room.round < room.traitOrder.length - 1;
+    return activePlayers(room).length > room.capacity && hasAnotherRevealRound(room);
 }
 
 function continueAfterDeadlock(room) {
@@ -2225,26 +2628,62 @@ function resolveVote(room, timedOut = false) {
         continueWithoutElimination(room);
         return;
     }
-    const candidates = voters.filter((player) => totals[player.id] === highestPlayerVotes);
-    if (!highestPlayerVotes || candidates.length !== 1) {
+    const eligibleCandidates = votingCandidates(room);
+    const slots = Math.min(
+        Math.max(1, Number(room.eliminationsThisVote) || 1),
+        Math.max(0, activePlayers(room).length - room.capacity),
+        eligibleCandidates.length
+    );
+    const ranked = eligibleCandidates
+        .map((player) => ({ player, votes: totals[player.id] || 0 }))
+        .sort((first, second) => second.votes - first.votes);
+    const cutoffVotes = ranked[slots - 1]?.votes || 0;
+    const certain = ranked.filter((entry) => entry.votes > cutoffVotes).map((entry) => entry.player.id);
+    const tiedAtCutoff = ranked.filter((entry) => entry.votes === cutoffVotes).map((entry) => entry.player.id);
+    const remainingSlots = Math.max(0, slots - certain.length);
+
+    if (!highestPlayerVotes || !slots || tiedAtCutoff.length > remainingSlots) {
+        if (slots > 1 && cutoffVotes > 0 && tiedAtCutoff.length > remainingSlots) {
+            room.pendingEliminationIds = [...new Set([...(room.pendingEliminationIds || []), ...certain])];
+            const tiedNames = tiedAtCutoff.map((id) => room.players.find((player) => player.id === id)?.nickname).filter(Boolean);
+            addActionLog(room, `Ничья за ${certain.length ? "следующее" : "первое"} место между: ${tiedNames.join(", ")}.`, "vote");
+            io.to(room.code).emit("voteTied", { timedOut, runoff: true, slots: remainingSlots, candidates: tiedNames });
+            openVoting(room, { candidateIds: tiedAtCutoff, slots: remainingSlots, preservePending: true });
+            return;
+        }
         addActionLog(room, "Голоса разделились — никто не исключен.", "vote");
         io.to(room.code).emit("voteTied", { timedOut, nextRound: canOpenAnotherDeadlockRound(room) });
+        room.voteCandidateIds = null;
+        room.pendingEliminationIds = [];
         continueAfterDeadlock(room);
         return;
     }
 
-    const eliminatedId = candidates[0].id;
-    const eliminatedPlayer = room.players.find((player) => player.id === eliminatedId);
-
-    room.eliminated.push(eliminatedId);
-    addActionLog(room, eliminatedPlayer.nickname + " исключён из бункера.", "out");
-    io.to(room.code).emit("playerEliminated", { nickname: eliminatedPlayer.nickname });
+    const selectedIds = [...new Set([
+        ...(room.pendingEliminationIds || []),
+        ...certain,
+        ...tiedAtCutoff.slice(0, remainingSlots)
+    ])].slice(0, Math.max(0, activePlayers(room).length - room.capacity));
+    const eliminatedNames = [];
+    for (const eliminatedId of selectedIds) {
+        if (room.eliminated.includes(eliminatedId)) continue;
+        const eliminatedPlayer = room.players.find((player) => player.id === eliminatedId);
+        if (!eliminatedPlayer) continue;
+        room.eliminated.push(eliminatedId);
+        room.eliminationOrder = [...(room.eliminationOrder || []), eliminatedId];
+        eliminatedNames.push(eliminatedPlayer.nickname);
+        addActionLog(room, eliminatedPlayer.nickname + " исключён из бункера.", "out");
+        io.to(room.code).emit("playerEliminated", { nickname: eliminatedPlayer.nickname });
+    }
+    room.voteCandidateIds = null;
+    room.pendingEliminationIds = [];
+    if (eliminatedNames.length > 1) io.to(room.code).emit("playersEliminated", { nicknames: eliminatedNames });
     startNextRound(room);
 }
 
 function continueAfterLeave(room, leavingId) {
     if (activePlayers(room).length === 0) {
-        closeRoom(room, false);
+        scheduleRoomClose(room, Date.now() + EMPTY_ROOM_TTL_MS);
         return;
     }
     if (!room.players.some((player) => player.id === room.host && !player.left)) room.host = activePlayers(room)[0].id;
@@ -2263,12 +2702,13 @@ function continueAfterLeave(room, leavingId) {
     emitRoom(room);
 }
 
-function markPlayerLeft(room, playerId) {
+function markPlayerLeft(room, playerId, { voluntary = false } = {}) {
     const player = room.players.find((candidate) => candidate.id === playerId);
     if (!player || player.left) return;
     cancelPendingLeave(player);
     player.left = true;
-    room.eliminated = room.eliminated.filter((id) => id !== playerId);
+    player.disconnected = !voluntary;
+    player.voluntaryLeft = voluntary;
     delete room.revealedThisRound[playerId];
     delete room.votes[playerId];
     for (const voterId of Object.keys(room.votes)) {
@@ -2276,12 +2716,350 @@ function markPlayerLeft(room, playerId) {
     }
 }
 
+function createEmptyRoom(code, player, payload = {}) {
+    return {
+        code,
+        gameId: generateGameId(),
+        createdAt: Date.now(),
+        host: player.id,
+        players: [player],
+        phase: "lobby",
+        capacity: 0,
+        round: 0,
+        disaster: null,
+        disasterDuration: null,
+        bunkerTraits: [],
+        playerSpecialCards: {},
+        healthStates: {},
+        playerProfessionItems: {},
+        playerExtraBaggage: {},
+        playerResidentEvictions: {},
+        professionItemsByProfession: {},
+        cardOptionsByTrait: {},
+        cards: {},
+        revealed: {},
+        revealedAtFinish: {},
+        revealedThisRound: {},
+        traitOrder: [],
+        categoryNames: {},
+        eliminated: [],
+        eliminationOrder: [],
+        votes: {},
+        votingCount: 0,
+        eliminationsMode: ["1", "2"].includes(String(payload.eliminationsMode)) ? String(payload.eliminationsMode) : "auto",
+        eliminationsThisVote: 1,
+        voteCandidateIds: null,
+        pendingEliminationIds: [],
+        usedSpecialCards: [],
+        turnOrder: [],
+        turnIndex: 0,
+        turnDeadline: null,
+        voteDeadline: null,
+        actionTimer: null,
+        timerKind: null,
+        botTimers: [],
+        roomCloseDeadline: null,
+        closeTimer: null,
+        actionLog: [],
+        actionLogSequence: 0,
+        visualTheme: ["amber", "radiation", "frost"].includes(payload.visualTheme) ? payload.visualTheme : "amber",
+        presetId: cleanCategoryId(payload.presetId) || "classic",
+        isTestRoom: Boolean(payload.isTestRoom)
+    };
+}
+
+function addBotsToRoom(room, requestedCount, prefix = "Бот") {
+    const slots = Math.max(0, 12 - activePlayers(room).length);
+    const count = Math.min(slots, Math.max(0, Math.trunc(Number(requestedCount) || 0)));
+    let botNumber = room.players.filter((player) => player.isBot).length;
+    for (let index = 0; index < count; index += 1) {
+        botNumber += 1;
+        room.players.push({
+            id: "bot_" + crypto.randomBytes(10).toString("hex"),
+            token: null,
+            nickname: `${prefix} ${botNumber}`,
+            avatarUrl: chooseAvatar(room),
+            left: false,
+            isBot: true,
+            isTestPlayer: room.isTestRoom
+        });
+    }
+    return count;
+}
+
+const TEST_SNAPSHOT_FIELDS = [
+    "phase", "round", "revealRounds", "capacity", "bunkerBaseCapacity", "bunkerOccupiedSlots",
+    "disaster", "disasterDuration", "bunkerTraits", "cards", "healthStates", "revealed",
+    "revealedAtFinish", "revealedThisRound", "eliminated", "eliminationOrder", "votes",
+    "playerSpecialCards", "playerProfessionItems", "playerExtraBaggage", "playerResidentEvictions",
+    "usedSpecialCards", "turnOrder", "turnIndex", "voteCandidateIds", "pendingEliminationIds",
+    "eliminationsThisVote", "votingCount", "actionLog", "actionLogSequence", "finishReason", "finishedAt"
+];
+
+function rememberTestState(room) {
+    if (!room?.isTestRoom) return;
+    const snapshot = Object.fromEntries(TEST_SNAPSHOT_FIELDS.map((field) => [field, room[field] === undefined ? null : clone(room[field])]));
+    room.testSnapshots = [...(room.testSnapshots || []), snapshot].slice(-20);
+}
+
+function restorePreviousTestState(room) {
+    const snapshot = room?.testSnapshots?.pop();
+    if (!snapshot) return false;
+    clearActionTimer(room);
+    if (room.closeTimer) clearTimeout(room.closeTimer);
+    room.closeTimer = null;
+    room.roomCloseDeadline = null;
+    Object.assign(room, snapshot);
+    room.turnDeadline = null;
+    room.voteDeadline = null;
+    return true;
+}
+
 io.on("connection", (socket) => {
     socket.on("admin:subscribe", (payload = {}) => {
         const token = String(payload?.token || "");
         if (!hasActiveAdminSession(token)) return socket.emit("admin:unauthorized");
         socket.join(ADMIN_ROOM);
-        socket.emit("admin:ready", { revision: gameConfig.revision, rooms: adminRoomSummaries() });
+        socket.emit("admin:ready", { revision: gameConfig.revision, rooms: adminRoomSummaries(), history: gameHistoryStore.list() });
+    });
+
+    socket.on("test:createRoom", ({ nickname: rawNickname } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        if (roomFor(socket)) return emitError(socket, "Вы уже состоите в комнате.");
+        const nickname = cleanNickname(rawNickname) || "Тестировщик";
+        const code = generateCode();
+        const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(), left: false, isBot: false, isTestPlayer: true };
+        rooms[code] = createEmptyRoom(code, player, { isTestRoom: true });
+        socket.join(code);
+        socket.emit("roomEntered", { code, playerToken: player.token, playerId: socket.id });
+        socket.emit("test:ready", { code });
+        emitRoom(rooms[code]);
+    });
+
+    socket.on("test:addBots", ({ count } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase !== "lobby") return emitError(socket, "Тестовых игроков можно добавить только в тестовом лобби.");
+        addBotsToRoom(room, count, "Тест-бот");
+        emitRoom(room);
+    });
+
+    socket.on("test:setPlayers", ({ count } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase !== "lobby") return emitError(socket, "Количество тестовых игроков меняется только в лобби.");
+        const desiredTotal = Math.max(1, Math.min(12, Math.trunc(Number(count) || 1)));
+        const realPlayers = room.players.filter((player) => !player.isBot && !player.left);
+        const desiredBots = Math.max(0, desiredTotal - realPlayers.length);
+        const bots = room.players.filter((player) => player.isBot);
+        if (bots.length > desiredBots) {
+            const removeIds = new Set(bots.slice(desiredBots).map((player) => player.id));
+            room.players = room.players.filter((player) => !removeIds.has(player.id));
+        } else if (bots.length < desiredBots) {
+            addBotsToRoom(room, desiredBots - bots.length, "Тест-бот");
+        }
+        emitRoom(room);
+    });
+
+    socket.on("test:start", () => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase !== "lobby") return emitError(socket, "Тестовую игру сейчас нельзя запустить.");
+        if (activePlayers(room).length < 2) addBotsToRoom(room, 2, "Тест-бот");
+        launchGame(room, false);
+    });
+
+    socket.on("test:applyHealth", ({ targetId, direction, amount } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase === "lobby") return emitError(socket, "Изменение здоровья доступно только в запущенной тестовой игре.");
+        const target = room.players.find((player) => player.id === targetId) || activePlayers(room)[0];
+        const trait = healthTraitId(room);
+        if (!target || !trait) return emitError(socket, "В тестовой игре нет цели или характеристики здоровья.");
+        rememberTestState(room);
+        const state = normalizeHealthState(room.healthStates?.[target.id], room.cards?.[target.id]?.[trait]);
+        const result = applyHealthStageChange(state, direction === "improve" ? "improve" : "worsen", Math.max(1, Math.min(5, Number(amount) || 1)));
+        const synchronized = syncHealthCard(room, target.id, result.state);
+        addActionLog(room, `[TEST] ${target.nickname}: ${synchronized.value}.`, "special");
+        emitRoom(room);
+        socket.emit("test:healthApplied", { targetId: target.id, value: synchronized.value, amount: result.amount });
+    });
+
+    socket.on("test:giveSpecialCard", ({ effect } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase === "lobby") return emitError(socket, "Спецкарту можно выдать только в запущенной тестовой игре.");
+        const gameData = gameDataForRoom(room);
+        const template = (gameData.specialCards || []).find((card) => card.effect === effect);
+        if (!template) return emitError(socket, "Такая спецкарта не найдена в пресете.");
+        const assigned = assignSpecialCards([{ id: socket.id }], [template], room.traitOrder, room.capacity, room.categoryNames)[socket.id];
+        if (!assigned) return emitError(socket, "Эта карта несовместима с текущей тестовой игрой.");
+        rememberTestState(room);
+        room.playerSpecialCards[socket.id] = assigned;
+        emitRoom(room);
+    });
+
+    socket.on("test:useSpecialCard", ({ effect, targetId } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || ["lobby", "finished"].includes(room.phase)) return emitError(socket, "Принудительное применение доступно только в запущенной тестовой игре.");
+        const gameData = gameDataForRoom(room);
+        const template = (gameData.specialCards || []).find((card) => card.effect === effect);
+        if (!template) return emitError(socket, "Такая спецкарта не найдена в пресете.");
+        const assigned = assignSpecialCards([{ id: socket.id }], [template], room.traitOrder, room.capacity, room.categoryNames)[socket.id];
+        if (!assigned) return emitError(socket, "Эта карта несовместима с текущей тестовой игрой.");
+        const needsOtherPlayer = ["swap_random_trait", "take_backpack"].includes(assigned.effect);
+        const needsPlayer = needsOtherPlayer || ["improve_health", "worsen_health"].includes(assigned.effect);
+        const selectedTarget = activePlayers(room).find((player) => player.id === targetId && (!needsOtherPlayer || player.id !== socket.id))
+            || activePlayers(room).find((player) => !needsOtherPlayer || player.id !== socket.id);
+        if (needsPlayer && !selectedTarget) return emitError(socket, "Для этой карты нет подходящей цели.");
+        rememberTestState(room);
+        room.playerSpecialCards[socket.id] = assigned;
+        const result = useSpecialCard(room, socket.id, needsPlayer ? selectedTarget.id : null);
+        if (result.error) return emitError(socket, result.error);
+        const target = room.players.find((player) => player.id === result.targetId);
+        room.usedSpecialCards.push({ player: room.players.find((player) => player.id === socket.id)?.nickname || "Тестировщик", target: target?.nickname || null, name: result.card.name, effect: result.action, amount: result.amount || null, result: result.value || null, at: Date.now() });
+        addActionLog(room, `[TEST] Применена спецкарта «${result.card.name}»${target ? ` к ${target.nickname}` : ""}.`, "special");
+        emitRoom(room);
+        io.to(room.code).emit("specialCardUsed", {
+            nickname: room.players.find((player) => player.id === socket.id)?.nickname,
+            targetNickname: target?.nickname || null,
+            cardName: result.card.name,
+            trait: result.trait,
+            action: result.action,
+            direction: result.direction || null,
+            item: result.item || null,
+            capacity: result.capacity || null,
+            previousCapacity: result.previousCapacity || null,
+            amount: result.amount || null,
+            value: result.value || null,
+            alreadyHealthy: Boolean(result.alreadyHealthy)
+        });
+        socket.emit("test:specialApplied", { effect: result.action, amount: result.amount || null, value: result.value || null });
+    });
+
+    socket.on("test:reveal", ({ targetId, trait } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || ["lobby", "finished"].includes(room.phase)) return emitError(socket, "Раскрытие сейчас недоступно.");
+        const target = room.players.find((player) => player.id === targetId) || activePlayers(room)[0];
+        const selectedTrait = room.traitOrder.includes(trait) ? trait : room.traitOrder.find((item) => !room.revealed?.[target?.id]?.[item]);
+        if (!target || !selectedTrait || room.cards?.[target.id]?.[selectedTrait] === undefined) return emitError(socket, "Не удалось найти тестовую карточку.");
+        rememberTestState(room);
+        room.revealed[target.id] = room.revealed[target.id] || {};
+        room.revealed[target.id][selectedTrait] = room.cards[target.id][selectedTrait];
+        if (selectedTrait === "profession") giveProfessionItem(room, target.id);
+        addActionLog(room, `[TEST] ${target.nickname} раскрывает «${room.categoryNames?.[selectedTrait] || selectedTrait}».`, "reveal");
+        emitRoom(room);
+    });
+
+    socket.on("test:openVoting", () => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || ["lobby", "finished"].includes(room.phase)) return emitError(socket, "Голосование сейчас недоступно.");
+        rememberTestState(room);
+        openVoting(room);
+    });
+
+    socket.on("test:forceTie", () => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase !== "voting") return emitError(socket, "Сначала откройте тестовое голосование.");
+        const voters = activePlayers(room);
+        if (voters.length < 2) return emitError(socket, "Для ничьей нужны хотя бы два игрока.");
+        rememberTestState(room);
+        clearActionTimer(room);
+        const candidates = votingCandidates(room);
+        const tieCandidates = candidates.slice(0, voters.length % 2 === 0 ? 2 : Math.min(3, candidates.length));
+        room.votes = Object.fromEntries(voters.map((voter, index) => [voter.id, tieCandidates[index % tieCandidates.length].id]));
+        resolveVote(room, true);
+    });
+
+    socket.on("test:advance", () => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id) return emitError(socket, "Управление доступно только ведущему тестовой комнаты.");
+        rememberTestState(room);
+        if (room.phase === "story") beginRevealRound(room);
+        else if (room.phase === "reveal") {
+            room.turnIndex = room.turnOrder.length;
+            activateNextTurn(room);
+        } else if (room.phase === "voting") resolveVote(room, true);
+    });
+
+    socket.on("test:eliminate", ({ targetId } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase === "finished") return emitError(socket, "Игрока сейчас нельзя исключить.");
+        const target = activePlayers(room).find((player) => player.id === targetId && player.id !== socket.id) || activePlayers(room).find((player) => player.id !== socket.id);
+        if (!target) return emitError(socket, "Нет доступной цели.");
+        rememberTestState(room);
+        room.eliminated.push(target.id);
+        room.eliminationOrder = [...(room.eliminationOrder || []), target.id];
+        addActionLog(room, `[TEST] ${target.nickname} исключён.`, "out");
+        if (activePlayers(room).length <= room.capacity) endGame(room, "test_elimination");
+        else emitRoom(room);
+    });
+
+    socket.on("test:setCapacity", ({ capacity } = {}) => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase === "lobby") return emitError(socket, "Вместимость сейчас нельзя изменить.");
+        rememberTestState(room);
+        room.capacity = Math.max(1, Math.min(activePlayers(room).length, Math.trunc(Number(capacity) || room.capacity)));
+        emitRoom(room);
+    });
+
+    socket.on("test:previous", () => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id) return emitError(socket, "Возврат доступен только ведущему тестовой комнаты.");
+        if (!restorePreviousTestState(room)) return emitError(socket, "Предыдущего тестового состояния ещё нет.");
+        emitRoom(room);
+    });
+
+    socket.on("test:notify", () => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id) return emitError(socket, "Уведомление доступно только в тестовой комнате.");
+        socket.emit("test:notification", { message: "Тестовое уведомление: очередь и ручное закрытие работают." });
+    });
+
+    socket.on("test:reset", () => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id) return emitError(socket, "Сброс доступен только ведущему тестовой комнаты.");
+        room.eliminated = [];
+        room.players.forEach((player) => { player.left = false; });
+        room.gameId = generateGameId();
+        room.historyRecorded = false;
+        launchGame(room, false);
+    });
+
+    socket.on("test:finish", () => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id || room.phase === "lobby") return emitError(socket, "Тестовую игру сейчас нельзя завершить.");
+        endGame(room, "test_forced");
+    });
+
+    socket.on("test:state", () => {
+        if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
+        const room = roomFor(socket);
+        if (!room?.isTestRoom || room.host !== socket.id) return emitError(socket, "Состояние доступно только ведущему тестовой комнаты.");
+        const serializableRoom = { ...room };
+        delete serializableRoom.actionTimer;
+        delete serializableRoom.closeTimer;
+        delete serializableRoom.botTimers;
+        delete serializableRoom.testSnapshots;
+        serializableRoom.players = room.players.map(({
+            token: _token,
+            disconnectTimer: _disconnectTimer,
+            pendingLeaveTimer: _pendingLeaveTimer,
+            ...player
+        }) => player);
+        const snapshot = clone(serializableRoom);
+        socket.emit("test:state", snapshot);
     });
 
     socket.on("createRoom", (rawPayload = {}) => {
@@ -2291,44 +3069,8 @@ io.on("connection", (socket) => {
         if (roomFor(socket)) return emitError(socket, "Вы уже состоите в комнате.");
 
         const code = generateCode();
-        rooms[code] = {
-            code,
-            gameId: generateGameId(),
-            createdAt: Date.now(),
-            host: socket.id,
-            players: [{ id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(), left: false, isBot: false }],
-            phase: "lobby",
-            capacity: 0,
-            round: 0,
-            disaster: null,
-            disasterDuration: null,
-            bunkerTraits: [],
-            playerSpecialCards: {},
-            playerProfessionItems: {},
-            playerExtraBaggage: {},
-            playerResidentEvictions: {},
-            professionItemsByProfession: {},
-            cardOptionsByTrait: {},
-            cards: {},
-            revealed: {},
-            revealedAtFinish: {},
-            revealedThisRound: {},
-            traitOrder: [],
-            categoryNames: {},
-            eliminated: [],
-            votes: {},
-            turnOrder: [],
-            turnIndex: 0,
-            turnDeadline: null,
-            voteDeadline: null,
-            actionTimer: null,
-            timerKind: null,
-            botTimers: [],
-            roomCloseDeadline: null,
-            closeTimer: null,
-            actionLog: [],
-            actionLogSequence: 0
-        };
+        const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(), left: false, isBot: false };
+        rooms[code] = createEmptyRoom(code, player, payload);
         socket.join(code);
         socket.emit("roomEntered", { code, playerToken: rooms[code].players[0].token, playerId: socket.id });
         emitRoom(rooms[code]);
@@ -2343,7 +3085,7 @@ io.on("connection", (socket) => {
         if (room.phase !== "lobby") return emitError(socket, "Игра уже началась.");
         if (activePlayers(room).length >= 12) return emitError(socket, "В комнате уже 12 игроков.");
         if (roomFor(socket)) return emitError(socket, "Вы уже состоите в комнате.");
-        if (room.players.some((player) => !player.left && player.nickname.toLocaleLowerCase("ru") === nickname.toLocaleLowerCase("ru"))) {
+        if (room.players.some((player) => !player.voluntaryLeft && player.nickname.toLocaleLowerCase("ru") === nickname.toLocaleLowerCase("ru"))) {
             return emitError(socket, "Такой никнейм уже занят.");
         }
         const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(room), left: false, isBot: false };
@@ -2357,10 +3099,15 @@ io.on("connection", (socket) => {
         const code = String(roomCode || "").trim().toUpperCase();
         const room = rooms[code];
         const token = String(playerToken || "");
-        const player = room?.players.find((candidate) => !candidate.left && candidate.token === token);
+        const player = room?.players.find((candidate) => !candidate.voluntaryLeft && candidate.token === token);
         if (!room || !player) return socket.emit("resumeFailed");
 
         movePlayerToSocket(room, player, socket.id);
+        if (room.phase !== "finished" && room.closeTimer) {
+            clearTimeout(room.closeTimer);
+            room.closeTimer = null;
+            room.roomCloseDeadline = null;
+        }
         socket.join(code);
         socket.emit("roomEntered", { code, playerToken: player.token, playerId: socket.id });
         emitRoom(room);
@@ -2370,50 +3117,50 @@ io.on("connection", (socket) => {
         const room = roomFor(socket);
         if (!room || room.host !== socket.id) return emitError(socket, "Добавлять тестовых игроков может только ведущий.");
         if (room.phase !== "lobby") return;
-        const slots = 12 - activePlayers(room).length;
-        if (slots <= 0) return emitError(socket, "В комнате уже максимум игроков.");
-        const count = Math.min(2, slots);
-        let botNumber = room.players.filter((player) => player.isBot).length;
-        for (let index = 0; index < count; index += 1) {
-            botNumber += 1;
-            room.players.push({
-                id: "bot_" + crypto.randomBytes(10).toString("hex"),
-                token: null,
-                nickname: "Тест-бот " + botNumber,
-                avatarUrl: chooseAvatar(room),
-                left: false,
-                isBot: true
-            });
-        }
+        if (!addBotsToRoom(room, 2, "Тест-бот")) return emitError(socket, "В комнате уже максимум игроков.");
         emitRoom(room);
     });
 
     function launchGame(room, isSoloTest = false) {
+        if (room.launchInProgress) return false;
+        room.launchInProgress = true;
+        clearActionTimer(room);
+        if (room.closeTimer) clearTimeout(room.closeTimer);
+        room.closeTimer = null;
+        room.roomCloseDeadline = null;
         room.isSoloTest = isSoloTest;
+        const gameData = gameDataForRoom(room);
+        room.presetId = gameData.id || room.presetId || gameConfig.activePresetId || "classic";
+        room.presetName = gameData.name || "Классический";
         room.phase = "story";
+        room.startedAt = Date.now();
+        room.finishedAt = null;
+        room.finishReason = null;
         room.bunkerBaseCapacity = isSoloTest ? 1 : Math.max(2, Math.floor(activePlayers(room).length / 2));
-        room.traitOrder = gameConfig.categories.map((category) => category.id);
+        const gameCategories = enabledGameCategories(gameData);
+        room.traitOrder = gameCategories.map((category) => category.id);
         room.revealRounds = isSoloTest
             ? room.traitOrder.length
             : revealRoundsFor(activePlayers(room).length, room.traitOrder.length);
-        room.categoryNames = Object.fromEntries(gameConfig.categories.map((category) => [category.id, category.name]));
-        room.cardScores = Object.fromEntries(gameConfig.categories.map((category) => [
+        room.categoryNames = Object.fromEntries(gameCategories.map((category) => [category.id, category.name]));
+        room.cardScores = Object.fromEntries(gameCategories.map((category) => [
             category.id,
             Object.fromEntries(category.options.map((option) => [option.value, option.score]))
         ]));
-        room.cardOptionsByTrait = Object.fromEntries(gameConfig.categories.map((category) => [category.id, clone(category.options)]));
-        const selectedDisaster = randomItem(gameConfig.disasters);
+        room.cardOptionsByTrait = Object.fromEntries(gameCategories.map((category) => [category.id, clone(category.options)]));
+        const selectedDisaster = randomItem(gameData.disasters);
         room.disaster = disasterText(selectedDisaster);
-        room.disasterDuration = disasterDuration(selectedDisaster);
-        room.bunkerTraits = assignBunkerTraits(gameConfig.bunkerTraits || [], activePlayers(room).length);
+        room.disasterDuration = randomDisasterDuration(selectedDisaster);
+        room.bunkerTraits = assignBunkerTraits(gameData.bunkerTraits || [], activePlayers(room).length, gameData.supplyDurations);
         room.bunkerOccupiedSlots = room.bunkerTraits.reduce((total, trait) => total + cleanOccupiedSlots(trait.occupiedSlots), 0);
         room.capacity = Math.max(1, room.bunkerBaseCapacity - room.bunkerOccupiedSlots);
-        room.cards = assignCards(activePlayers(room), gameConfig.categories);
-        room.playerSpecialCards = assignSpecialCards(activePlayers(room), gameConfig.specialCards || [], room.traitOrder, room.bunkerBaseCapacity);
+        room.cards = assignCards(activePlayers(room), gameCategories, gameData.supplyDurations);
+        initializeHealthStates(room);
+        room.playerSpecialCards = assignSpecialCards(activePlayers(room), gameData.specialCards || [], room.traitOrder, room.capacity, room.categoryNames);
         room.playerProfessionItems = {};
         room.playerExtraBaggage = {};
         room.playerResidentEvictions = {};
-        room.professionItemsByProfession = Object.fromEntries((gameConfig.categories.find((category) => category.id === "profession")?.options || []).map((option) => [
+        room.professionItemsByProfession = Object.fromEntries((gameCategories.find((category) => category.id === "profession")?.options || []).map((option) => [
             String(option.value || "").toLocaleLowerCase("ru"),
             option.passiveItem || ""
         ]));
@@ -2421,7 +3168,13 @@ io.on("connection", (socket) => {
         room.revealedAtFinish = {};
         room.revealedThisRound = {};
         room.eliminated = [];
+        room.eliminationOrder = [];
         room.votes = {};
+        room.votingCount = 0;
+        room.eliminationsThisVote = 1;
+        room.voteCandidateIds = null;
+        room.pendingEliminationIds = [];
+        room.usedSpecialCards = [];
         room.round = 0;
         room.actionLog = [];
         room.actionLogSequence = 0;
@@ -2431,6 +3184,8 @@ io.on("connection", (socket) => {
         }
         io.to(room.code).emit("gameStarted");
         emitRoom(room);
+        room.launchInProgress = false;
+        return true;
     }
 
     socket.on("startGame", () => {
@@ -2441,12 +3196,15 @@ io.on("connection", (socket) => {
         launchGame(room);
     });
 
-    socket.on("startSoloTest", () => {
+    socket.on("startSoloTest", ({ botCount } = {}) => {
         const room = roomFor(socket);
-        if (!room || room.host !== socket.id) return emitError(socket, "Тестовый запуск доступен только ведущему.");
+        if (!room || room.host !== socket.id) return emitError(socket, "Одиночная игра доступна только ведущему.");
         if (room.phase !== "lobby") return;
-        if (activePlayers(room).length !== 1) return emitError(socket, "Для теста в соло в комнате должен остаться один игрок.");
-        launchGame(room, true);
+        if (activePlayers(room).length !== 1) return emitError(socket, "Для одиночной игры в комнате должен быть один реальный игрок.");
+        const requestedBots = Math.max(2, Math.min(11, Number(botCount) || 5));
+        addBotsToRoom(room, requestedBots, "Бот");
+        room.isSoloGame = true;
+        launchGame(room, false);
     });
 
     socket.on("acknowledgeStory", () => {
@@ -2467,6 +3225,31 @@ io.on("connection", (socket) => {
         extendRoomClose(room);
         addActionLog(room, `${player.nickname} продлевает просмотр результатов на 30 секунд.`, "system");
         emitRoom(room);
+    });
+
+    socket.on("continueSamePlayers", () => {
+        const room = roomFor(socket);
+        if (!room || room.host !== socket.id) return emitError(socket, "Продолжить тем же составом может только ведущий.");
+        if (room.phase !== "finished") return emitError(socket, "Текущая партия ещё не завершена.");
+        if (room.restartRequested) return emitError(socket, "Новая партия уже запускается.");
+        room.restartRequested = true;
+        room.players = room.players.filter((player) => !player.left && !player.voluntaryLeft);
+        if (!room.players.length) {
+            room.restartRequested = false;
+            return emitError(socket, "В комнате не осталось подключённых игроков.");
+        }
+        room.gameId = generateGameId();
+        room.historyRecorded = false;
+        room.eliminated = [];
+        room.players.forEach((player) => {
+            player.left = false;
+            player.disconnected = false;
+            player.voluntaryLeft = false;
+        });
+        const launched = launchGame(room, Boolean(room.isSoloTest));
+        room.restartRequested = false;
+        if (!launched) return emitError(socket, "Не удалось запустить новую партию повторно.");
+        io.to(room.code).emit("gameRestarted", { gameId: room.gameId });
     });
 
     socket.on("revealTrait", (requestedTrait) => {
@@ -2510,9 +3293,10 @@ io.on("connection", (socket) => {
         }
         const specialCard = room.playerSpecialCards?.[socket.id];
         const targetId = typeof payload === "string" ? payload : payload?.targetId;
-        const requiresTarget = ["swap_random_trait", "take_backpack"].includes(specialCard?.effect);
-        if (requiresTarget && (targetId === socket.id || !activePlayers(room).some((player) => player.id === targetId))) {
-            return emitError(socket, "Выберите другого игрока, который ещё в игре.");
+        const requiresTarget = ["swap_random_trait", "take_backpack", "improve_health", "worsen_health"].includes(specialCard?.effect);
+        const allowsSelfTarget = ["improve_health", "worsen_health"].includes(specialCard?.effect);
+        if (requiresTarget && ((!allowsSelfTarget && targetId === socket.id) || !activePlayers(room).some((player) => player.id === targetId))) {
+            return emitError(socket, allowsSelfTarget ? "Выберите игрока, который ещё в игре." : "Выберите другого игрока, который ещё в игре.");
         }
         const result = useSpecialCard(room, socket.id, requiresTarget ? targetId : null);
         if (result.error) return emitError(socket, result.error);
@@ -2528,8 +3312,22 @@ io.on("connection", (socket) => {
                     ? player?.nickname + " применяет «" + result.card.name + "»: мест в бункере " + result.previousCapacity + " → " + result.capacity + "."
                     : result.action === "reroll_own_trait"
                         ? player?.nickname + " применяет «" + result.card.name + "» и меняет «" + (room.categoryNames?.[result.trait] || result.trait) + "»."
+                        : result.action === "improve_health"
+                            ? player?.nickname + " применяет «" + result.card.name + "» к " + target?.nickname + ": здоровье улучшено на " + result.amount + ", итог — " + result.value + "."
+                            : result.action === "worsen_health"
+                                ? player?.nickname + " применяет «" + result.card.name + "» к " + target?.nickname + ": здоровье ухудшено на " + result.amount + ", итог — " + result.value + "."
                         : player?.nickname + " применяет «" + result.card.name + "» и меняется «" + (room.categoryNames?.[result.trait] || result.trait) + "» с " + target?.nickname + ".";
         addActionLog(room, actionLog, "special");
+        room.usedSpecialCards = room.usedSpecialCards || [];
+        room.usedSpecialCards.push({
+            player: player?.nickname || "",
+            target: target?.nickname || null,
+            name: result.card.name,
+            effect: result.action,
+            amount: result.amount || null,
+            result: result.value || null,
+            at: Date.now()
+        });
         if (["increase_capacity", "random_capacity"].includes(result.action) && result.capacity > result.previousCapacity && activePlayers(room).length <= room.capacity) endGame(room);
         else emitRoom(room);
         io.to(room.code).emit("specialCardUsed", {
@@ -2541,7 +3339,10 @@ io.on("connection", (socket) => {
             direction: result.direction || null,
             item: result.item || null,
             capacity: result.capacity || null,
-            previousCapacity: result.previousCapacity || null
+            previousCapacity: result.previousCapacity || null,
+            amount: result.amount || null,
+            value: result.value || null,
+            alreadyHealthy: Boolean(result.alreadyHealthy)
         });
     });
 
@@ -2549,6 +3350,7 @@ io.on("connection", (socket) => {
         const room = roomFor(socket);
         if (!room || room.phase !== "voting" || room.eliminated.includes(socket.id)) return;
         if (!activePlayers(room).some((player) => player.id === targetId)) return emitError(socket, "Выберите игрока, который ещё в игре.");
+        if (Array.isArray(room.voteCandidateIds) && !room.voteCandidateIds.includes(targetId)) return emitError(socket, "В переголосовании можно выбрать только одного из спорных кандидатов.");
         if (targetId === socket.id) return emitError(socket, "Нельзя голосовать за себя.");
         if (room.votes[socket.id]) return emitError(socket, "Ваш голос уже принят.");
         room.votes[socket.id] = targetId;
@@ -2574,7 +3376,7 @@ io.on("connection", (socket) => {
         const room = roomFor(socket);
         if (!room) return socket.emit("leftRoom");
         socket.leave(room.code);
-        markPlayerLeft(room, socket.id);
+        markPlayerLeft(room, socket.id, { voluntary: true });
         continueAfterLeave(room, socket.id);
         socket.emit("leftRoom");
     });
@@ -2586,7 +3388,14 @@ io.on("connection", (socket) => {
     });
 });
 
-initializeGameConfig().finally(() => {
+Promise.all([
+    initializeGameConfig(),
+    gameHistoryStore.initialize().then(() => {
+        nextGameId = Math.max(nextGameId, gameHistoryStore.maxNumericId() + 1);
+    })
+]).catch((error) => {
+    console.warn("Не удалось полностью инициализировать внешнее хранилище. Сервер продолжит работу с локальными данными.", error.message);
+}).finally(() => {
     server.listen(process.env.PORT || 3000, () => {
         console.log(`Bunker started on http://localhost:${process.env.PORT || 3000}`);
         if (!process.env.ADMIN_PASSWORD) {

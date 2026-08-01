@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#101716">
     <title>Бункер — игра для друзей</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="style.css?v=20260730-utility-bonus-breakdown">
+    <link rel="stylesheet" href="style.css?v=20260801-complete-game-update">
 </head>
 <body>
     <div class="bunker-backdrop" aria-hidden="true"></div>
@@ -25,7 +25,12 @@
             <h1>Кто попадет на выплаты, а кто на парашу?<br></h1>
             <label class="field-label" for="nickname">Ваш никнейм</label>
             <input id="nickname" maxlength="18" autocomplete="nickname" placeholder="Например, Мираи">
+            <div class="menu-settings-grid">
+                <label class="field-label" for="presetSelect">Пресет игры<select id="presetSelect"><option value="classic">Классический</option></select></label>
+                <label class="field-label" for="eliminationsMode">Исключать за раунд<select id="eliminationsMode"><option value="auto">Автоматически</option><option value="1">1 игрока</option><option value="2">2 игроков</option></select></label>
+            </div>
             <button id="createRoom" class="button primary">Создать комнату</button>
+            <button id="returnRoom" class="button secondary hidden" type="button">Вернуться в комнату</button>
             <div class="or"><span>или</span></div>
             <div class="join-row">
                 <input id="roomCode" maxlength="4" autocomplete="off" placeholder="КОД">
@@ -40,7 +45,7 @@
             <div class="lobby-heading"><h2>Игроки</h2><span id="playerCount" class="count"></span></div>
             <div id="players" class="players-list"></div>
             <button id="startGame" class="button primary">Начать игру</button>
-            <button id="startSoloTest" class="button secondary hidden" type="button">Тестовый запуск в соло</button>
+            <div id="soloControls" class="solo-controls hidden"><label for="soloBotCount">Ботов</label><select id="soloBotCount"><option>2</option><option>3</option><option>4</option><option selected>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option><option>11</option></select><button id="startSoloTest" class="button secondary" type="button">Одиночная игра с ботами</button></div>
             <button id="addTestPlayers" class="button debug-button hidden" type="button">+ Добавить 2 тестовых ботов</button>
             <p id="startHint" class="hint centered"></p>
         </section>
@@ -89,8 +94,8 @@
         </section>
     </main>
 
-    <div id="toast" class="toast" role="status"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"><span id="toastMessage"></span><button id="toastClose" type="button" aria-label="Закрыть уведомление">×</button></div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="script.js?v=20260730-utility-bonus-breakdown"></script>
+    <script src="script.js?v=20260801-complete-game-update"></script>
 </body>
 </html>

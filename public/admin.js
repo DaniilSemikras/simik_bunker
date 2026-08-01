@@ -14,6 +14,12 @@ let isDirty = false;
 let pendingRemoteConfig = null;
 let adminRooms = [];
 let selectedAdminGameId = "";
+let adminHistory = [];
+let selectedHistoryGameId = "";
+
+function deepClone(value) {
+    return JSON.parse(JSON.stringify(value));
+}
 
 function applyColorTheme(themeId) {
     const theme = COLOR_THEMES.find((item) => item.id === themeId) || COLOR_THEMES[0];
@@ -122,6 +128,60 @@ async function watchAdminGame(gameId) {
     }
 }
 
+function formatDuration(milliseconds) {
+    const totalMinutes = Math.max(0, Math.round((Number(milliseconds) || 0) / 60000));
+    return totalMinutes >= 60 ? `${Math.floor(totalMinutes / 60)} ч ${totalMinutes % 60} мин` : `${totalMinutes} мин`;
+}
+
+function renderAdminHistoryDetails(game) {
+    const target = $("#adminHistoryDetails");
+    if (!game) {
+        target.classList.add("hidden");
+        target.innerHTML = "";
+        return;
+    }
+    const participants = Array.isArray(game.participants) ? game.participants : [];
+    const bunker = (game.bunkerTraits || []).map((trait) => `${trait.name}: ${trait.value}`).join(" · ") || "—";
+    target.innerHTML = `
+        <div class="admin-game-details-top"><div><p class="eyebrow">ЗАВЕРШЁННАЯ ИГРА</p><h3>Игра №${escapeHtml(game.gameId)}</h3><p>Комната <strong>${escapeHtml(game.roomCode)}</strong> · ${new Date(game.finishedAt).toLocaleString("ru-RU")}</p></div><button class="remove-history-game" type="button" data-delete-history="${escapeHtml(game.gameId)}">Удалить лог</button></div>
+        <div class="admin-game-detail-grid"><div class="admin-game-detail-stat"><span>Длительность</span><strong>${formatDuration(game.durationMs)}</strong></div><div class="admin-game-detail-stat"><span>Раунды / голосования</span><strong>${Number(game.rounds) || 0} / ${Number(game.votingCount) || 0}</strong></div><div class="admin-game-detail-stat"><span>Шанс выживания</span><strong>${Number.isFinite(Number(game.survivalChance)) ? Number(game.survivalChance) + "%" : "—"}</strong></div><div class="admin-game-detail-stat"><span>Пресет / тема</span><strong>${escapeHtml(game.presetName || game.presetId || "Классический")} · ${escapeHtml(game.theme || "amber")}</strong></div><div class="admin-game-detail-stat"><span>Вместимость / причина</span><strong>${Number(game.capacity) || 0} · ${escapeHtml(game.finishReason || "—")}</strong></div></div>
+        <div><p class="eyebrow">УЧАСТНИКИ</p><ul class="admin-game-players">${participants.map((player) => `<li class="${player.eliminated ? "is-eliminated" : ""} ${player.left ? "is-left" : ""}">${adminPlayerAvatar(player)}<span>${escapeHtml(player.nickname)}<small>${player.eliminated ? "исключён" : game.winners?.includes(player.nickname) ? "победитель" : player.left ? "вышел" : "участник"}</small></span></li>`).join("")}</ul></div>
+        <div><p class="eyebrow">ПОБЕДИТЕЛИ</p><p>${escapeHtml((game.winners || []).join(", ") || "Нет")}</p></div>
+        <div><p class="eyebrow">ПОРЯДОК ИСКЛЮЧЕНИЯ</p><p>${escapeHtml((game.eliminationOrder || []).join(" → ") || "Никого")}</p></div>
+        <div><p class="eyebrow">КАТАСТРОФА И БУНКЕР</p><p>${escapeHtml(game.disaster || "—")}</p><p>${escapeHtml(bunker)}</p><p>Срок: ${escapeHtml(game.disasterDuration || "—")}</p></div>
+        <div><p class="eyebrow">ИСПОЛЬЗОВАННЫЕ СПЕЦКАРТЫ</p><p>${escapeHtml((game.usedSpecialCards || []).map((card) => `${card.player}: ${card.name}`).join(", ") || "Нет")}</p></div>`;
+    target.classList.remove("hidden");
+}
+
+function renderAdminHistory() {
+    $("#adminHistoryCount").textContent = String(adminHistory.length);
+    $("#adminHistory").innerHTML = adminHistory.length ? adminHistory.map((game) => `
+        <article class="admin-game-card ${game.gameId === selectedHistoryGameId ? "is-selected" : ""}">
+            <span class="admin-game-number">№${escapeHtml(game.gameId)}</span>
+            <div class="admin-game-copy"><div><strong>${escapeHtml(game.roomCode)}</strong> <span class="admin-game-phase">${escapeHtml(game.presetName || game.presetId || "Классический")}</span></div><div class="admin-game-meta"><span>${(game.participants || []).length} участников</span><span>${(game.winners || []).length} победителей</span><span>${new Date(game.finishedAt).toLocaleString("ru-RU")}</span><span>${formatDuration(game.durationMs)}</span></div></div>
+            <button class="admin-game-watch" type="button" data-history-game="${escapeHtml(game.gameId)}">Подробности</button>
+        </article>`).join("") : '<p class="admin-games-empty">Завершённых игр пока нет.</p>';
+}
+
+function setAdminHistory(history) {
+    adminHistory = Array.isArray(history) ? history : [];
+    renderAdminHistory();
+}
+
+async function loadAdminHistory() {
+    const room = $("#historyRoomSearch")?.value.trim() || "";
+    const player = $("#historyPlayerSearch")?.value.trim() || "";
+    const response = await request(`/api/admin/history?room=${encodeURIComponent(room)}&player=${encodeURIComponent(player)}`);
+    setAdminHistory(response.games);
+}
+
+async function openHistoryGame(gameId) {
+    selectedHistoryGameId = String(gameId || "");
+    renderAdminHistory();
+    const response = await request(`/api/admin/history/${encodeURIComponent(selectedHistoryGameId)}`);
+    renderAdminHistoryDetails(response.game);
+}
+
 function token() {
     return localStorage.getItem(TOKEN_KEY) || "";
 }
@@ -145,6 +205,7 @@ function applyRemoteConfig(nextConfig) {
     renderSpecialCards();
     renderDisasters();
     renderAvatarLibrary();
+    renderPresets();
     showMessage("#saveMessage", "Настройки обновлены другим администратором.", "success");
 }
 
@@ -153,7 +214,10 @@ function connectAdminSocket() {
     adminSocket?.disconnect();
     adminSocket = window.io();
     adminSocket.on("connect", () => adminSocket.emit("admin:subscribe", { token: token() }));
-    adminSocket.on("admin:ready", ({ rooms } = {}) => setAdminRooms(rooms));
+    adminSocket.on("admin:ready", ({ rooms, history } = {}) => {
+        setAdminRooms(rooms);
+        if (Array.isArray(history)) setAdminHistory(history);
+    });
     adminSocket.on("admin:config-updated", ({ config: nextConfig } = {}) => applyRemoteConfig(nextConfig));
     adminSocket.on("admin:rooms-updated", ({ rooms } = {}) => {
         setAdminRooms(rooms);
@@ -166,6 +230,9 @@ function connectAdminSocket() {
         avatars = library.avatars;
         hiddenAvatars = library.hiddenAvatars || hiddenAvatars;
         renderAvatarLibrary();
+    });
+    adminSocket.on("admin:history-updated", ({ games } = {}) => {
+        if (Array.isArray(games)) setAdminHistory(games);
     });
     adminSocket.on("admin:unauthorized", () => showMessage("#saveMessage", "Сессия администратора истекла. Войдите заново.", "error"));
 }
@@ -195,6 +262,7 @@ function renderCategories() {
         <article class="category-card" data-id="${escapeHtml(category.id)}">
             <div class="category-top">
                 <input class="category-name" value="${escapeHtml(category.name)}" aria-label="Название категории">
+                <label class="category-enabled"><input class="category-enabled-input" type="checkbox" ${category.id === "profession" || category.enabled !== false ? "checked" : ""} ${category.id === "profession" ? "disabled" : ""}><span>${category.id === "profession" ? "всегда включена" : "включена"}</span></label>
                 ${category.id === "profession" ? '<span class="locked">обязательна первой</span>' : '<button class="remove" type="button">Удалить</button>'}
             </div>
             <label>Варианты и их польза для бункера</label>
@@ -238,6 +306,23 @@ function renderBunkerTraits() {
         ].join("");
     }).join("") : '<p class="avatar-library-empty">Пока нет характеристик. Добавьте, например, запас воды, еды или состояние генератора.</p>';
     updateDistributionTotals();
+    renderSupplyDurations();
+}
+
+function durationValues(kind, unit) {
+    return (config?.supplyDurations?.[kind] || []).filter((item) => item.unit === unit).map((item) => item.amount).join(", ");
+}
+
+function renderSupplyDurations() {
+    if (!$("#waterDurationDays")) return;
+    $("#waterDurationDays").value = durationValues("water", "day");
+    $("#waterDurationMonths").value = durationValues("water", "month");
+    $("#foodDurationDays").value = durationValues("food", "day");
+    $("#foodDurationMonths").value = durationValues("food", "month");
+}
+
+function parseDurationInput(selector, unit) {
+    return String($(selector)?.value || "").split(/[;,\s]+/).map(Number).filter((amount) => Number.isInteger(amount) && amount > 0 && amount <= 120).map((amount) => ({ amount, unit }));
 }
 
 function renderSpecialCards() {
@@ -247,7 +332,7 @@ function renderSpecialCards() {
         '<div class="category-top"><input class="special-card-name" value="' + escapeHtml(card.name) + '" aria-label="Название специальной карты"><button class="remove remove-special-card" type="button">Удалить</button></div>',
         '<label>Что делает карта</label><textarea class="special-card-description" rows="4" aria-label="Описание специальной карты">' + escapeHtml(card.description) + '</textarea>',
         '<div class="special-card-fields">',
-        '<label>Эффект<select class="special-card-effect" aria-label="Эффект специальной карты"><option value="swap_random_trait"' + (card.effect === "swap_random_trait" ? " selected" : "") + '>Обмен случайной характеристикой</option><option value="swap_adjacent_profession"' + (card.effect === "swap_adjacent_profession" ? " selected" : "") + '>Обмен профессией с соседом (случайный вариант)</option><option value="reroll_own_trait"' + (card.effect === "reroll_own_trait" ? " selected" : "") + '>Зарандомить свою характеристику</option><option value="take_backpack"' + (card.effect === "take_backpack" ? " selected" : "") + '>Украсть предмет из багажа</option><option value="increase_capacity"' + (card.effect === "increase_capacity" ? " selected" : "") + '>Добавить 1 место в бункере</option><option value="decrease_capacity"' + (card.effect === "decrease_capacity" ? " selected" : "") + '>Убрать 1 место в бункере</option><option value="random_capacity"' + (card.effect === "random_capacity" ? " selected" : "") + '>Случайно изменить размер бункера (±1)</option></select></label>',
+        '<label>Эффект<select class="special-card-effect" aria-label="Эффект специальной карты"><option value="swap_random_trait"' + (card.effect === "swap_random_trait" ? " selected" : "") + '>Обмен случайной характеристикой</option><option value="swap_adjacent_profession"' + (card.effect === "swap_adjacent_profession" ? " selected" : "") + '>Обмен профессией с соседом (случайный вариант)</option><option value="reroll_own_trait"' + (card.effect === "reroll_own_trait" ? " selected" : "") + '>Зарандомить свою характеристику</option><option value="take_backpack"' + (card.effect === "take_backpack" ? " selected" : "") + '>Украсть предмет из багажа</option><option value="improve_health"' + (card.effect === "improve_health" ? " selected" : "") + '>Улучшить здоровье на случайное число стадий</option><option value="worsen_health"' + (card.effect === "worsen_health" ? " selected" : "") + '>Ухудшить здоровье на случайное число стадий</option><option value="increase_capacity"' + (card.effect === "increase_capacity" ? " selected" : "") + '>Добавить 1 место в бункере</option><option value="decrease_capacity"' + (card.effect === "decrease_capacity" ? " selected" : "") + '>Убрать 1 место в бункере</option><option value="random_capacity"' + (card.effect === "random_capacity" ? " selected" : "") + '>Случайно изменить размер бункера (±1)</option></select></label>',
         '</div>',
         '</article>'
     ].join("")).join("") : '<p class="avatar-library-empty">Пока нет спецкарт. Добавьте «Обмен случайной характеристикой» или «Забрать карточку рюкзака».</p>';
@@ -280,7 +365,7 @@ function renderAvatarLibrary() {
     $("#avatarLibrary").innerHTML = avatars.length
         ? avatars.map((url) => {
             const filename = url.split("/").pop();
-            const isBuiltIn = url.startsWith("/assets/avatars/");
+            const isBuiltIn = url.startsWith("/assets/survivor-avatars/");
             const isHidden = hiddenAvatars.includes(url);
             const action = isBuiltIn
                 ? `<button class="toggle-library-avatar" type="button" data-avatar-url="${escapeHtml(url)}" data-next-hidden="${!isHidden}" aria-label="${isHidden ? "Вернуть аватар" : "Убрать аватар"}" title="${isHidden ? "Вернуть аватар" : "Убрать аватар"}"><span class="eye-icon" aria-hidden="true"></span></button><span class="library-avatar-label">${isHidden ? "скрыт" : "встроенный"}</span>`
@@ -288,6 +373,47 @@ function renderAvatarLibrary() {
             return `<article class="library-avatar${isHidden ? " is-hidden" : ""}"><img src="${escapeHtml(url)}" alt="Аватар из набора">${action}</article>`;
         }).join("")
         : '<p class="avatar-library-empty">Пока нет аватаров. Игроки будут отображаться с первой буквой ника.</p>';
+}
+
+function presetContent(source) {
+    return {
+        categories: deepClone(source.categories || []),
+        disasters: deepClone(source.disasters || []),
+        bunkerTraits: deepClone(source.bunkerTraits || []),
+        specialCards: deepClone(source.specialCards || []),
+        supplyDurations: deepClone(source.supplyDurations || config.supplyDurations || {})
+    };
+}
+
+function renderPresets() {
+    const presets = Array.isArray(config?.presets) ? config.presets : [];
+    $("#presetLibrary").innerHTML = presets.map((preset) => `
+        <article class="preset-card ${preset.id === config.activePresetId ? "is-active" : ""}" data-preset-id="${escapeHtml(preset.id)}">
+            <input class="preset-name" value="${escapeHtml(preset.name)}" aria-label="Название пресета">
+            <span>${preset.categories?.length || 0} категорий · ${preset.disasters?.length || 0} катастроф</span>
+            <div><button class="activate-preset" type="button">${preset.id === config.activePresetId ? "Активен" : "Открыть"}</button><button class="copy-preset" type="button">Копировать</button>${presets.length > 1 ? '<button class="delete-preset" type="button">Удалить</button>' : ""}</div>
+        </article>`).join("");
+}
+
+function saveEditorIntoActivePreset() {
+    const active = config.presets?.find((preset) => preset.id === config.activePresetId);
+    if (!active) return;
+    Object.assign(active, presetContent(collectConfig(false)));
+}
+
+function openPreset(presetId) {
+    if (presetId === config.activePresetId) return;
+    saveEditorIntoActivePreset();
+    const target = config.presets.find((preset) => preset.id === presetId);
+    if (!target) return;
+    config.activePresetId = target.id;
+    Object.assign(config, presetContent(target));
+    markDirty();
+    renderCategories();
+    renderBunkerTraits();
+    renderSpecialCards();
+    renderDisasters();
+    renderPresets();
 }
 
 function readImage(file) {
@@ -334,10 +460,11 @@ function makeSpecialCard() {
     renderSpecialCards();
 }
 
-function collectConfig() {
+function collectConfig(includePresets = true) {
     const categories = [...document.querySelectorAll("#categories .category-card")].map((card) => ({
         id: card.dataset.id,
         name: card.querySelector(".category-name").value,
+        enabled: card.dataset.id === "profession" || Boolean(card.querySelector(".category-enabled-input")?.checked),
         options: [...card.querySelectorAll(".option-row")].map((option) => ({
             value: option.querySelector(".option-value").value,
             score: Number(option.querySelector(".option-score-input").value),
@@ -370,20 +497,31 @@ function collectConfig() {
         text: row.querySelector(".disaster-value").value,
         shelterDuration: row.querySelector(".disaster-duration-value").value
     }));
-    return { categories, disasters, bunkerTraits, bunkerTraitsSeedVersion: config.bunkerTraitsSeedVersion, backpackWeaponSeedVersion: config.backpackWeaponSeedVersion, waterTraitLabelSeedVersion: config.waterTraitLabelSeedVersion, waterOptionsSeedVersion: config.waterOptionsSeedVersion, waterRandomPercentSeedVersion: config.waterRandomPercentSeedVersion, waterDurationSeedVersion: config.waterDurationSeedVersion, backpackWaterSeedVersion: config.backpackWaterSeedVersion, genderOptionsSeedVersion: config.genderOptionsSeedVersion, healthCategorySeedVersion: config.healthCategorySeedVersion, specialCardLibrarySeedVersion: config.specialCardLibrarySeedVersion, disasterDurationSeedVersion: config.disasterDurationSeedVersion, contentFillSeedVersion: config.contentFillSeedVersion, specialCards, hiddenAvatars, revision: config.revision };
+    const supplyDurations = {
+        water: [...parseDurationInput("#waterDurationDays", "day"), ...parseDurationInput("#waterDurationMonths", "month")],
+        food: [...parseDurationInput("#foodDurationDays", "day"), ...parseDurationInput("#foodDurationMonths", "month")]
+    };
+    const content = { categories, disasters, bunkerTraits, bunkerTraitsSeedVersion: config.bunkerTraitsSeedVersion, backpackWeaponSeedVersion: config.backpackWeaponSeedVersion, waterTraitLabelSeedVersion: config.waterTraitLabelSeedVersion, waterOptionsSeedVersion: config.waterOptionsSeedVersion, waterRandomPercentSeedVersion: config.waterRandomPercentSeedVersion, waterDurationSeedVersion: config.waterDurationSeedVersion, backpackWaterSeedVersion: config.backpackWaterSeedVersion, genderOptionsSeedVersion: config.genderOptionsSeedVersion, healthCategorySeedVersion: config.healthCategorySeedVersion, specialCardLibrarySeedVersion: config.specialCardLibrarySeedVersion, disasterDurationSeedVersion: config.disasterDurationSeedVersion, contentFillSeedVersion: config.contentFillSeedVersion, specialCards, supplyDurations, hiddenAvatars, revision: config.revision };
+    if (!includePresets) return content;
+    const presets = deepClone(config.presets || []);
+    const active = presets.find((preset) => preset.id === config.activePresetId);
+    if (active) Object.assign(active, presetContent(content));
+    return { ...content, presets, activePresetId: config.activePresetId || presets[0]?.id || "classic" };
 }
 
 async function loadEditor() {
-    const [nextConfig, avatarResponse, roomsResponse] = await Promise.all([request("/api/admin/config"), request("/api/admin/avatars"), request("/api/admin/rooms")]);
+    const [nextConfig, avatarResponse, roomsResponse, historyResponse] = await Promise.all([request("/api/admin/config"), request("/api/admin/avatars"), request("/api/admin/rooms"), request("/api/admin/history")]);
     config = nextConfig;
     avatars = avatarResponse.avatars;
     hiddenAvatars = avatarResponse.hiddenAvatars || [];
     setAdminRooms(roomsResponse.rooms);
+    setAdminHistory(historyResponse.games);
     renderCategories();
     renderBunkerTraits();
     renderSpecialCards();
     renderDisasters();
     renderAvatarLibrary();
+    renderPresets();
     isDirty = false;
     pendingRemoteConfig = null;
     $("#reloadLatest").classList.add("hidden");
@@ -427,7 +565,59 @@ $("#login").addEventListener("click", async () => {
 $("#password").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#login").click(); });
 $("#addCategory").addEventListener("click", makeCategory);
 $("#addBunkerTrait").addEventListener("click", makeBunkerTrait);
+document.querySelector(".supply-duration-editor")?.addEventListener("input", markDirty);
 $("#addSpecialCard").addEventListener("click", makeSpecialCard);
+$("#createPreset").addEventListener("click", () => {
+    saveEditorIntoActivePreset();
+    const id = `preset_${Date.now()}`;
+    const preset = { id, name: "Новый пресет", ...presetContent(collectConfig(false)) };
+    config.presets = [...(config.presets || []), preset];
+    config.activePresetId = id;
+    markDirty();
+    renderPresets();
+});
+$("#presetLibrary").addEventListener("input", (event) => {
+    if (!event.target.matches(".preset-name")) return;
+    const card = event.target.closest("[data-preset-id]");
+    const preset = config.presets.find((item) => item.id === card?.dataset.presetId);
+    if (preset) preset.name = event.target.value;
+    markDirty();
+});
+$("#presetLibrary").addEventListener("click", (event) => {
+    const card = event.target.closest("[data-preset-id]");
+    if (!card) return;
+    const presetId = card.dataset.presetId;
+    if (event.target.closest(".activate-preset")) {
+        openPreset(presetId);
+        return;
+    }
+    if (event.target.closest(".copy-preset")) {
+        saveEditorIntoActivePreset();
+        const source = config.presets.find((preset) => preset.id === presetId);
+        if (!source) return;
+        const copy = deepClone(source);
+        copy.id = `preset_${Date.now()}`;
+        copy.name = `${source.name} — копия`;
+        config.presets.push(copy);
+        markDirty();
+        renderPresets();
+        return;
+    }
+    if (event.target.closest(".delete-preset") && config.presets.length > 1) {
+        config.presets = config.presets.filter((preset) => preset.id !== presetId);
+        if (config.activePresetId === presetId) {
+            const next = config.presets[0];
+            config.activePresetId = next.id;
+            Object.assign(config, presetContent(next));
+            renderCategories();
+            renderBunkerTraits();
+            renderSpecialCards();
+            renderDisasters();
+        }
+        markDirty();
+        renderPresets();
+    }
+});
 $("#refreshAdminGames").addEventListener("click", async () => {
     try {
         const response = await request("/api/admin/rooms");
@@ -440,6 +630,29 @@ $("#refreshAdminGames").addEventListener("click", async () => {
 $("#adminGames").addEventListener("click", (event) => {
     const button = event.target.closest("[data-watch-game]");
     if (button) watchAdminGame(button.dataset.watchGame);
+});
+$("#refreshAdminHistory").addEventListener("click", () => loadAdminHistory().catch((error) => showMessage("#saveMessage", error.message, "error")));
+let historySearchTimer = 0;
+[$("#historyRoomSearch"), $("#historyPlayerSearch")].forEach((input) => input.addEventListener("input", () => {
+    clearTimeout(historySearchTimer);
+    historySearchTimer = setTimeout(() => loadAdminHistory().catch((error) => showMessage("#saveMessage", error.message, "error")), 260);
+}));
+$("#adminHistory").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-history-game]");
+    if (button) openHistoryGame(button.dataset.historyGame).catch((error) => showMessage("#saveMessage", error.message, "error"));
+});
+$("#adminHistoryDetails").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-delete-history]");
+    if (!button) return;
+    try {
+        await request(`/api/admin/history/${encodeURIComponent(button.dataset.deleteHistory)}`, { method: "DELETE" });
+        selectedHistoryGameId = "";
+        renderAdminHistoryDetails(null);
+        await loadAdminHistory();
+        showMessage("#saveMessage", "Лог игры удалён.", "success");
+    } catch (error) {
+        showMessage("#saveMessage", error.message, "error");
+    }
 });
 $("#addDisaster").addEventListener("click", () => {
     config.disasters.push({ text: "Новый сценарий катастрофы.", shelterDuration: "Бессрочно" });
@@ -645,6 +858,7 @@ $("#save").addEventListener("click", async () => {
         renderBunkerTraits();
         renderSpecialCards();
         renderDisasters();
+        renderPresets();
         showMessage("#saveMessage", "Настройки сохранены.", "success");
     } catch (error) {
         if (error.status === 409 && error.payload?.config) {
@@ -668,6 +882,7 @@ $("#reloadLatest").addEventListener("click", () => {
     renderSpecialCards();
     renderDisasters();
     renderAvatarLibrary();
+    renderPresets();
     showMessage("#saveMessage", "Загружена последняя сохранённая версия.", "success");
 });
 $("#logout").addEventListener("click", () => {
