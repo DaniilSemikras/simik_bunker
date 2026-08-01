@@ -3145,7 +3145,7 @@ io.on("connection", (socket) => {
         socket.emit("test:specialApplied", { effect: result.action, amount: result.amount || null, value: result.value || null });
     });
 
-    socket.on("test:reveal", ({ targetId, trait } = {}) => {
+    socket.on("test:reveal", ({ targetId, trait, automatic = false } = {}) => {
         if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
         const room = roomFor(socket);
         if (!room?.isTestRoom || room.host !== socket.id || ["lobby", "finished"].includes(room.phase)) return emitError(socket, "Раскрытие сейчас недоступно.");
@@ -3156,6 +3156,11 @@ io.on("connection", (socket) => {
         const forcedTrait = hiddenTraits.includes(firstRoundTrait) ? firstRoundTrait : null;
         const selectedTrait = requestedTrait || forcedTrait || randomItem(hiddenTraits);
         if (!target || !selectedTrait || room.cards?.[target.id]?.[selectedTrait] === undefined) return emitError(socket, "Не удалось найти тестовую карточку.");
+        if (automatic && room.phase === "reveal" && currentTurnPlayerId(room) === target.id) {
+            rememberTestState(room);
+            if (!revealTraitForPlayer(room, target.id, selectedTrait)) return emitError(socket, "Не удалось завершить тестовый ход.");
+            return;
+        }
         rememberTestState(room);
         room.revealed[target.id] = room.revealed[target.id] || {};
         room.revealed[target.id][selectedTrait] = room.cards[target.id][selectedTrait];
