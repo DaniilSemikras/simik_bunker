@@ -222,7 +222,7 @@ const gameHistoryStore = new GameHistoryStore({
 });
 const adminSessions = new Map();
 const ADMIN_ROOM = "admin-editors";
-const BUNKER_TRAITS_SEED_VERSION = 3;
+const BUNKER_TRAITS_SEED_VERSION = 4;
 const BACKPACK_WEAPON_SEED_VERSION = 1;
 const WATER_TRAIT_LABEL_SEED_VERSION = 1;
 const WATER_OPTIONS_SEED_VERSION = 1;
@@ -312,19 +312,15 @@ const DEFAULT_BUNKER_TRAITS = [
         name: "Наличие воды",
         options: [
             { value: "Воды нет", chance: 15 },
-            { value: "Запас воды на 3 дня", chance: 35 },
-            { value: "Запас воды на месяц", chance: 30 },
-            { value: "Запас воды на год", chance: 20 }
+            { value: "Запас питьевой воды", chance: 85 }
         ]
     },
     {
         id: "food",
-        name: "Еда",
+        name: "Наличие еды",
         options: [
             { value: "Еды нет", chance: 15 },
-            { value: "Запас еды на 3 дня", chance: 35 },
-            { value: "Запас еды на месяц", chance: 30 },
-            { value: "Запас еды на год", chance: 20 }
+            { value: "Запас еды", chance: 85 }
         ]
     },
     {
