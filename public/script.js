@@ -365,8 +365,7 @@ function playerTableMarkup(cardOrder, me, isVoting, hasVoted, isFinished, specia
         const hasOwnValue = isMe && Object.prototype.hasOwnProperty.call(myCards, trait);
         const isFinishReveal = isFinished && !player.left && !player.eliminated && Array.isArray(player.finishRevealedTraits) && player.finishRevealedTraits.includes(trait);
         const baseValue = hasOwnValue ? myCards[trait] : isRevealed ? player.revealed[trait] : "скрыто";
-        const extraBaggage = trait === "backpack" && Array.isArray(player.extraBaggage) ? player.extraBaggage : [];
-        const value = extraBaggage.length ? [baseValue, ...extraBaggage].filter(Boolean).join(" · ") : baseValue;
+        const value = baseValue;
         const canRevealHere = isMe && !isRevealed && (canChooseTrait || (canRevealProfession && trait === room.currentTrait));
         const visibilityClass = isFinishReveal ? "is-finish-reveal-value" : isRevealed ? "is-revealed-value" : hasOwnValue ? "is-private-value" : "is-hidden-value";
         return `<td class="${visibilityClass} ${playerState(player)}"><div class="table-cell-content ${canRevealHere ? "has-reveal-control" : ""}"><span class="table-cell-value" title="${escaped(value)}">${escaped(value)}</span>${canRevealHere ? `<button class="table-reveal-button" type="button" data-reveal-trait="${trait}" title="Раскрыть: ${escaped(traitName(trait))}" aria-label="Раскрыть: ${escaped(traitName(trait))}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z"></path><circle cx="12" cy="12" r="2.8"></circle></svg></button>` : ""}</div></td>`;
@@ -556,8 +555,7 @@ function updateGame() {
 
     const cardOrder = room.categoryOrder?.length ? room.categoryOrder : Object.keys(myCards);
     const personalCards = cardOrder.filter((name) => name in myCards).map((name) => {
-        const extraBaggage = name === "backpack" && Array.isArray(me?.extraBaggage) ? me.extraBaggage : [];
-        const value = extraBaggage.length ? [myCards[name], ...extraBaggage].filter(Boolean).join(" · ") : myCards[name];
+        const value = myCards[name];
         const canRevealThisCard = !myRevealed[name] && (canChooseTrait || (canRevealProfession && name === room.currentTrait));
         return cardMarkup(
             name,
@@ -586,8 +584,7 @@ function updateGame() {
             const hasOwnValue = isMe && Object.prototype.hasOwnProperty.call(myCards, name);
             const isFinishReveal = isFinished && !player.left && !player.eliminated && Array.isArray(player.finishRevealedTraits) && player.finishRevealedTraits.includes(name);
             const baseValue = hasOwnValue ? myCards[name] : isRevealed ? player.revealed[name] : "скрыто";
-            const extraBaggage = name === "backpack" && Array.isArray(player.extraBaggage) ? player.extraBaggage : [];
-            const value = extraBaggage.length ? [baseValue, ...extraBaggage].filter(Boolean).join(" · ") : baseValue;
+            const value = baseValue;
             const canRevealHere = isMe && !isRevealed && (canChooseTrait || (canRevealProfession && name === room.currentTrait));
             const visibilityClass = isFinishReveal ? "is-finish-reveal-card" : isRevealed ? "" : hasOwnValue ? "is-private-card" : "is-hidden-card";
             const revealControl = canRevealHere

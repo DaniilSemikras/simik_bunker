@@ -5,6 +5,7 @@ const path = require("path");
 const crypto = require("crypto");
 const { Server } = require("socket.io");
 const {
+    appendBackpackItem,
     applyHealthStageChange,
     formatHealthState,
     getEliminationsPerRound,
@@ -2227,13 +2228,18 @@ function useSpecialCard(room, playerId, targetId) {
         if (/^(?:рюкзак забран|багаж пуст)$/i.test(String(targetValue || "").trim())) return { error: "У этого игрока багаж уже пуст." };
         room.playerExtraBaggage = room.playerExtraBaggage || {};
         room.playerExtraBaggage[playerId] = [...(room.playerExtraBaggage[playerId] || []), targetValue];
+        const nextBackpack = appendBackpackItem(myValue, targetValue);
+        room.cards[playerId][specialCard.trait] = nextBackpack;
+        if (Object.prototype.hasOwnProperty.call(room.revealed[playerId] || {}, specialCard.trait)) {
+            room.revealed[playerId][specialCard.trait] = nextBackpack;
+        }
         room.cards[targetId][specialCard.trait] = "Багаж пуст";
         room.revealed[targetId] = room.revealed[targetId] || {};
         room.revealed[targetId][specialCard.trait] = room.cards[targetId][specialCard.trait];
         specialCard.used = true;
         specialCard.targetId = targetId;
         specialCard.item = targetValue;
-        return { card: specialCard, trait: specialCard.trait, action: specialCard.effect, item: targetValue, targetId };
+        return { card: specialCard, trait: specialCard.trait, action: specialCard.effect, item: targetValue, value: nextBackpack, targetId };
     }
 
     room.cards[playerId][specialCard.trait] = targetValue;

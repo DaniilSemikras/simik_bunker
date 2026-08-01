@@ -3,12 +3,19 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+    appendBackpackItem,
     applyHealthStageChange,
     formatHealthState,
     getEliminationsPerRound,
     selectRematchPlayers,
     parseHealthState
 } = require("../lib/game-rules");
+
+test("украденный предмет добавляется в багаж через запятую", () => {
+    assert.equal(appendBackpackItem("Аптечка", "Оружие"), "Аптечка, Оружие");
+    assert.equal(appendBackpackItem("Аптечка, Рация", "Фильтр для воды"), "Аптечка, Рация, Фильтр для воды");
+    assert.equal(appendBackpackItem("Багаж пуст", "Генератор"), "Генератор");
+});
 
 test("улучшение здоровья уменьшает стадию и не уходит ниже нуля", () => {
     const initial = parseHealthState("Туберкулёз — стадия 3/5");
