@@ -116,7 +116,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .test-admin-player-actions { display:flex; flex-wrap:wrap; gap:5px; margin-left:auto; }
 .test-admin-player-actions button { min-height:28px; border:1px solid #355a41; border-radius:8px; padding:5px 7px; color:#dce8df; background:#14271a; cursor:pointer; font-size:8px; font-weight:850; }
 .test-admin-player-actions button.test-danger { color:#ffcfc7; border-color:#73463e; background:#34201d; }
-.test-admin-special { display:grid; grid-template-columns:minmax(110px,.8fr) minmax(150px,1.4fr) auto; align-items:center; gap:7px; padding:9px 11px; border-bottom:1px solid color-mix(in srgb,var(--accent) 12%,transparent); background:color-mix(in srgb,var(--accent) 5%,transparent); }
+.test-admin-special { display:grid; grid-template-columns:minmax(105px,.75fr) minmax(135px,1.2fr) minmax(120px,.9fr) auto; align-items:center; gap:7px; padding:9px 11px; border-bottom:1px solid color-mix(in srgb,var(--accent) 12%,transparent); background:color-mix(in srgb,var(--accent) 5%,transparent); }
 .test-admin-special>div { display:grid; min-width:0; gap:2px; }
 .test-admin-special span { color:var(--accent); font-size:7px; font-weight:900; letter-spacing:.07em; text-transform:uppercase; }
 .test-admin-special strong { overflow:hidden; color:var(--ink); font-size:9px; text-overflow:ellipsis; white-space:nowrap; }

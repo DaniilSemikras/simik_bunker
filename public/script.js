@@ -286,6 +286,7 @@ function renderIntegratedTestAdmin() {
     const names = testServerState.categoryNames || room.categoryNames || {};
     const healthTrait = traits.find((trait) => trait === "health" || /здоров/i.test(names[trait] || ""));
     const specialCards = testServerState.testSpecialCards || [];
+    const specialTraits = testServerState.testSpecialTraits || [];
     $("#testAdminPlayers").innerHTML = room.players.map((player, index) => {
         const values = testServerState.cards?.[player.id] || {};
         const revealed = player.revealed || {};
@@ -297,10 +298,20 @@ function renderIntegratedTestAdmin() {
             return `<div class="test-admin-card ${isOpen ? "is-open" : ""}"><div><span>${escaped(names[trait] || trait)}</span><strong title="${escaped(values[trait] ?? "—")}">${escaped(values[trait] ?? "—")}</strong></div><button type="button" data-test-reveal data-player="${escaped(player.id)}" data-trait="${escaped(trait)}" data-revealed="${isOpen ? "false" : "true"}">${isOpen ? "Скрыть" : "Открыть"}</button></div>`;
         }).join("");
         const specialOptions = specialCards.map((card) => `<option value="${escaped(card.effect)}" ${card.effect === assignedSpecial?.effect ? "selected" : ""} ${card.available ? "" : "disabled"}>${escaped(card.name)}${card.available ? "" : ` — ${escaped(card.unavailableReason || "недоступна")}`}</option>`).join("");
-        const specialControl = room.phase === "lobby" ? "" : `<div class="test-admin-special"><div><span>Специальная карта</span><strong>${escaped(assignedSpecial?.name || "не назначена")}</strong></div><select data-test-special-select aria-label="Спецкарта для ${escaped(player.nickname)}"><option value="">Выберите карту</option>${specialOptions}</select><button type="button" data-test-give-special data-player="${escaped(player.id)}" ${player.eliminated ? "disabled" : ""}>Выдать</button></div>`;
+        const swapTraitOptions = specialTraits.filter((trait) => trait.canSwap).map((trait) => `<option value="${escaped(trait.id)}" ${trait.id === assignedSpecial?.trait ? "selected" : ""}>${escaped(trait.name)}</option>`).join("");
+        const rerollTraitOptions = specialTraits.filter((trait) => trait.canReroll).map((trait) => `<option value="${escaped(trait.id)}" ${trait.id === assignedSpecial?.trait ? "selected" : ""}>${escaped(trait.name)}</option>`).join("");
+        const specialControl = room.phase === "lobby" ? "" : `<div class="test-admin-special"><div><span>Специальная карта</span><strong>${escaped(assignedSpecial?.name || "не назначена")}</strong></div><select data-test-special-select aria-label="Спецкарта для ${escaped(player.nickname)}"><option value="">Выберите карту</option>${specialOptions}</select><select class="hidden" data-test-special-trait="swap_random_trait" aria-label="Характеристика для обмена"><option value="">Что обменять?</option>${swapTraitOptions}</select><select class="hidden" data-test-special-trait="reroll_own_trait" aria-label="Характеристика для переролла"><option value="">Что перероллить?</option>${rerollTraitOptions}</select><button type="button" data-test-give-special data-player="${escaped(player.id)}" ${player.eliminated ? "disabled" : ""}>Выдать</button></div>`;
         return `<article class="test-admin-player ${player.eliminated ? "is-out" : ""} ${isCurrent ? "is-current" : ""}"><div class="test-admin-player-head"><div class="test-admin-avatar">${avatar}</div><div><small>№${index + 1}${player.isBot ? " · БОТ" : ""}</small><strong>${escaped(player.nickname)}</strong><em>${player.eliminated ? "исключён" : isCurrent ? "текущий ход" : "в игре"}</em></div><div class="test-admin-player-actions"><button type="button" data-test-turn data-player="${escaped(player.id)}">Дать ход</button>${healthTrait ? `<button type="button" data-test-health="improve" data-player="${escaped(player.id)}">Здоровье +</button><button type="button" data-test-health="worsen" data-player="${escaped(player.id)}">Здоровье −</button>` : ""}<button type="button" class="${player.eliminated ? "" : "test-danger"}" data-test-eliminate data-player="${escaped(player.id)}" data-eliminated="${player.eliminated ? "false" : "true"}">${player.eliminated ? "Вернуть" : "Исключить"}</button></div></div>${specialControl}<div class="test-admin-cards">${cards || '<span class="hint">Карты появятся после запуска.</span>'}</div></article>`;
     }).join("");
+    $("#testAdminPlayers").querySelectorAll(".test-admin-player").forEach(updateTestSpecialTraitPicker);
     $("#testAdminState").textContent = JSON.stringify(testServerState, null, 2);
+}
+
+function updateTestSpecialTraitPicker(playerCard) {
+    const effect = playerCard?.querySelector("[data-test-special-select]")?.value || "";
+    playerCard?.querySelectorAll("[data-test-special-trait]").forEach((select) => {
+        select.classList.toggle("hidden", select.dataset.testSpecialTrait !== effect);
+    });
 }
 
 function nickname() {
@@ -701,9 +712,12 @@ $("#testPanel").addEventListener("click", (event) => {
     if (eliminate) return socket.emit("test:setEliminated", { targetId: eliminate.dataset.player, eliminated: eliminate.dataset.eliminated === "true" });
     const giveSpecial = event.target.closest("[data-test-give-special]");
     if (giveSpecial) {
-        const effect = giveSpecial.closest(".test-admin-player")?.querySelector("[data-test-special-select]")?.value;
+        const playerCard = giveSpecial.closest(".test-admin-player");
+        const effect = playerCard?.querySelector("[data-test-special-select]")?.value;
         if (!effect) return toast("Сначала выберите специальную карту.");
-        return socket.emit("test:giveSpecialCard", { targetId: giveSpecial.dataset.player, effect });
+        const traitSelect = [...(playerCard?.querySelectorAll("[data-test-special-trait]") || [])].find((select) => select.dataset.testSpecialTrait === effect);
+        if (traitSelect && !traitSelect.value) return toast("Выберите характеристику для этой карты.");
+        return socket.emit("test:giveSpecialCard", { targetId: giveSpecial.dataset.player, effect, trait: traitSelect?.value || null });
     }
     const action = event.target.closest("[data-test-action]")?.dataset.testAction;
     if (!action) return;
@@ -717,6 +731,9 @@ $("#testPanel").addEventListener("click", (event) => {
     if (action === "vote") socket.emit("test:openVoting");
     if (action === "tie") socket.emit("test:forceTie");
     if (action === "finish") socket.emit("test:finish");
+});
+$("#testPanel").addEventListener("change", (event) => {
+    if (event.target.matches("[data-test-special-select]")) updateTestSpecialTraitPicker(event.target.closest(".test-admin-player"));
 });
 $("#playerViewToggle").addEventListener("click", () => {
     playersView = playersView === "table" ? "cards" : "table";

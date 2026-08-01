@@ -3116,7 +3116,7 @@ io.on("connection", (socket) => {
         socket.emit("test:healthApplied", { targetId: target.id, value: synchronized.value, amount: result.amount });
     });
 
-    socket.on("test:giveSpecialCard", ({ targetId, effect } = {}) => {
+    socket.on("test:giveSpecialCard", ({ targetId, effect, trait } = {}) => {
         if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
         const room = roomFor(socket);
         if (!room?.isTestRoom || room.host !== socket.id || room.phase === "lobby") return emitError(socket, "Спецкарту можно выдать только в запущенной тестовой игре.");
@@ -3125,8 +3125,16 @@ io.on("connection", (socket) => {
         if (!template) return emitError(socket, "Такая спецкарта не найдена в пресете.");
         const target = activePlayers(room).find((player) => player.id === targetId);
         if (!target) return emitError(socket, "Игрок для выдачи спецкарты не найден.");
-        const assigned = assignSpecialCards(activePlayers(room), [template], room.traitOrder, room.capacity, room.categoryNames)[target.id];
+        const testPlayers = activePlayers(room);
+        const assigned = assignSpecialCards(testPlayers, [template], room.traitOrder, room.capacity, room.categoryNames)[target.id];
         if (!assigned) return emitError(socket, "Эта карта несовместима с текущей тестовой игрой.");
+        const specialContext = specialCardContext(testPlayers, room.traitOrder, room.capacity, room.categoryNames);
+        const allowedTraits = assigned.effect === "swap_random_trait" ? specialContext.exchangeTraits
+            : assigned.effect === "reroll_own_trait" ? specialContext.rerollTraits : [];
+        if (allowedTraits.length) {
+            if (!allowedTraits.includes(trait)) return emitError(socket, "Выберите характеристику для этой тестовой спецкарты.");
+            assigned.trait = trait;
+        }
         rememberTestState(room);
         room.playerSpecialCards[target.id] = assigned;
         addActionLog(room, `[TEST] ${target.nickname} получает спецкарту «${assigned.name}».`, "special");
@@ -3417,6 +3425,12 @@ io.on("connection", (socket) => {
             const unavailableReason = specialCardUnavailableReason(card, specialContext);
             return { effect: card.effect, name: card.name, description: card.description, available: !unavailableReason, unavailableReason };
         });
+        snapshot.testSpecialTraits = (room.traitOrder || []).map((trait) => ({
+            id: trait,
+            name: room.categoryNames?.[trait] || trait,
+            canSwap: specialContext.exchangeTraits.includes(trait),
+            canReroll: specialContext.rerollTraits.includes(trait)
+        }));
         socket.emit("test:state", snapshot);
     });
 
