@@ -285,16 +285,20 @@ function renderIntegratedTestAdmin() {
     const traits = testServerState.traitOrder || room.categoryOrder || [];
     const names = testServerState.categoryNames || room.categoryNames || {};
     const healthTrait = traits.find((trait) => trait === "health" || /здоров/i.test(names[trait] || ""));
+    const specialCards = testServerState.testSpecialCards || [];
     $("#testAdminPlayers").innerHTML = room.players.map((player, index) => {
         const values = testServerState.cards?.[player.id] || {};
         const revealed = player.revealed || {};
         const isCurrent = room.turnPlayerId === player.id;
+        const assignedSpecial = testServerState.playerSpecialCards?.[player.id] || null;
         const avatar = player.avatarUrl ? `<img src="${escaped(player.avatarUrl)}" alt="">` : escaped((player.nickname || "?").charAt(0).toUpperCase());
         const cards = traits.map((trait) => {
             const isOpen = Object.prototype.hasOwnProperty.call(revealed, trait);
             return `<div class="test-admin-card ${isOpen ? "is-open" : ""}"><div><span>${escaped(names[trait] || trait)}</span><strong title="${escaped(values[trait] ?? "—")}">${escaped(values[trait] ?? "—")}</strong></div><button type="button" data-test-reveal data-player="${escaped(player.id)}" data-trait="${escaped(trait)}" data-revealed="${isOpen ? "false" : "true"}">${isOpen ? "Скрыть" : "Открыть"}</button></div>`;
         }).join("");
-        return `<article class="test-admin-player ${player.eliminated ? "is-out" : ""} ${isCurrent ? "is-current" : ""}"><div class="test-admin-player-head"><div class="test-admin-avatar">${avatar}</div><div><small>№${index + 1}${player.isBot ? " · БОТ" : ""}</small><strong>${escaped(player.nickname)}</strong><em>${player.eliminated ? "исключён" : isCurrent ? "текущий ход" : "в игре"}</em></div><div class="test-admin-player-actions"><button type="button" data-test-turn data-player="${escaped(player.id)}">Дать ход</button>${healthTrait ? `<button type="button" data-test-health="improve" data-player="${escaped(player.id)}">Здоровье +</button><button type="button" data-test-health="worsen" data-player="${escaped(player.id)}">Здоровье −</button>` : ""}<button type="button" class="${player.eliminated ? "" : "test-danger"}" data-test-eliminate data-player="${escaped(player.id)}" data-eliminated="${player.eliminated ? "false" : "true"}">${player.eliminated ? "Вернуть" : "Исключить"}</button></div></div><div class="test-admin-cards">${cards || '<span class="hint">Карты появятся после запуска.</span>'}</div></article>`;
+        const specialOptions = specialCards.map((card) => `<option value="${escaped(card.effect)}" ${card.effect === assignedSpecial?.effect ? "selected" : ""} ${card.available ? "" : "disabled"}>${escaped(card.name)}${card.available ? "" : " — недоступна"}</option>`).join("");
+        const specialControl = room.phase === "lobby" ? "" : `<div class="test-admin-special"><div><span>Специальная карта</span><strong>${escaped(assignedSpecial?.name || "не назначена")}</strong></div><select data-test-special-select aria-label="Спецкарта для ${escaped(player.nickname)}"><option value="">Выберите карту</option>${specialOptions}</select><button type="button" data-test-give-special data-player="${escaped(player.id)}" ${player.eliminated ? "disabled" : ""}>Выдать</button></div>`;
+        return `<article class="test-admin-player ${player.eliminated ? "is-out" : ""} ${isCurrent ? "is-current" : ""}"><div class="test-admin-player-head"><div class="test-admin-avatar">${avatar}</div><div><small>№${index + 1}${player.isBot ? " · БОТ" : ""}</small><strong>${escaped(player.nickname)}</strong><em>${player.eliminated ? "исключён" : isCurrent ? "текущий ход" : "в игре"}</em></div><div class="test-admin-player-actions"><button type="button" data-test-turn data-player="${escaped(player.id)}">Дать ход</button>${healthTrait ? `<button type="button" data-test-health="improve" data-player="${escaped(player.id)}">Здоровье +</button><button type="button" data-test-health="worsen" data-player="${escaped(player.id)}">Здоровье −</button>` : ""}<button type="button" class="${player.eliminated ? "" : "test-danger"}" data-test-eliminate data-player="${escaped(player.id)}" data-eliminated="${player.eliminated ? "false" : "true"}">${player.eliminated ? "Вернуть" : "Исключить"}</button></div></div>${specialControl}<div class="test-admin-cards">${cards || '<span class="hint">Карты появятся после запуска.</span>'}</div></article>`;
     }).join("");
     $("#testAdminState").textContent = JSON.stringify(testServerState, null, 2);
 }
@@ -696,6 +700,12 @@ $("#testPanel").addEventListener("click", (event) => {
     if (turn) return socket.emit("test:setTurn", { targetId: turn.dataset.player });
     const eliminate = event.target.closest("[data-test-eliminate]");
     if (eliminate) return socket.emit("test:setEliminated", { targetId: eliminate.dataset.player, eliminated: eliminate.dataset.eliminated === "true" });
+    const giveSpecial = event.target.closest("[data-test-give-special]");
+    if (giveSpecial) {
+        const effect = giveSpecial.closest(".test-admin-player")?.querySelector("[data-test-special-select]")?.value;
+        if (!effect) return toast("Сначала выберите специальную карту.");
+        return socket.emit("test:giveSpecialCard", { targetId: giveSpecial.dataset.player, effect });
+    }
     const action = event.target.closest("[data-test-action]")?.dataset.testAction;
     if (!action) return;
     if (action === "players") socket.emit("test:setPlayers", { count: Number($("#testPlayerCount").value) });
@@ -891,6 +901,7 @@ socket.on("test:state", (state) => {
 });
 socket.on("test:healthApplied", ({ value } = {}) => toast(`Тест: здоровье изменено — ${value}.`));
 socket.on("test:specialApplied", ({ value } = {}) => toast(value ? `Тест: ${value}.` : "Тестовая спецкарта применена."));
+socket.on("test:specialGiven", ({ nickname: name, name: cardName } = {}) => toast(`${name} получает спецкарту «${cardName}».`));
 socket.on("yourSpecialCard", (card) => {
     mySpecialCard = card || null;
     if (room?.phase !== "lobby") updateGame();

@@ -3090,18 +3090,22 @@ io.on("connection", (socket) => {
         socket.emit("test:healthApplied", { targetId: target.id, value: synchronized.value, amount: result.amount });
     });
 
-    socket.on("test:giveSpecialCard", ({ effect } = {}) => {
+    socket.on("test:giveSpecialCard", ({ targetId, effect } = {}) => {
         if (!ENABLE_TEST_MODE) return emitError(socket, "Тестовый режим выключен.");
         const room = roomFor(socket);
         if (!room?.isTestRoom || room.host !== socket.id || room.phase === "lobby") return emitError(socket, "Спецкарту можно выдать только в запущенной тестовой игре.");
         const gameData = gameDataForRoom(room);
         const template = (gameData.specialCards || []).find((card) => card.effect === effect);
         if (!template) return emitError(socket, "Такая спецкарта не найдена в пресете.");
-        const assigned = assignSpecialCards([{ id: socket.id }], [template], room.traitOrder, room.capacity, room.categoryNames)[socket.id];
+        const target = activePlayers(room).find((player) => player.id === targetId);
+        if (!target) return emitError(socket, "Игрок для выдачи спецкарты не найден.");
+        const assigned = assignSpecialCards(activePlayers(room), [template], room.traitOrder, room.capacity, room.categoryNames)[target.id];
         if (!assigned) return emitError(socket, "Эта карта несовместима с текущей тестовой игрой.");
         rememberTestState(room);
-        room.playerSpecialCards[socket.id] = assigned;
+        room.playerSpecialCards[target.id] = assigned;
+        addActionLog(room, `[TEST] ${target.nickname} получает спецкарту «${assigned.name}».`, "special");
         emitRoom(room);
+        socket.emit("test:specialGiven", { targetId: target.id, nickname: target.nickname, name: assigned.name, effect: assigned.effect });
     });
 
     socket.on("test:useSpecialCard", ({ effect, targetId } = {}) => {
@@ -3379,6 +3383,14 @@ io.on("connection", (socket) => {
             ...player
         }) => player);
         const snapshot = clone(serializableRoom);
+        const gameData = gameDataForRoom(room);
+        const testPlayers = activePlayers(room);
+        snapshot.testSpecialCards = (gameData.specialCards || []).map((card) => ({
+            effect: card.effect,
+            name: card.name,
+            description: card.description,
+            available: Boolean(testPlayers.length && assignSpecialCards(testPlayers, [card], room.traitOrder || [], room.capacity, room.categoryNames || {})[testPlayers[0].id])
+        }));
         socket.emit("test:state", snapshot);
     });
 
