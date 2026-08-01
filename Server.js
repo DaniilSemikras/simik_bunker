@@ -1777,18 +1777,32 @@ function useBunkerWeapon(room, playerId) {
     };
 }
 
-function assignSpecialCards(players, specialCards, traitOrder, bunkerCapacity, categoryNames = {}) {
-    const exchangeTraits = traitOrder.filter((trait) => !["profession", "backpack"].includes(trait));
+function specialCardContext(players, traitOrder, bunkerCapacity, categoryNames = {}) {
+    const backpackTrait = traitOrder.find((trait) => trait === "backpack" || isBackpackCategory({ id: trait, name: categoryNames[trait] })) || null;
+    const exchangeTraits = traitOrder.filter((trait) => trait !== "profession" && trait !== backpackTrait);
     const rerollTraits = traitOrder.filter((trait) => trait !== "profession");
     const healthTrait = traitOrder.find((trait) => isHealthTrait(trait, categoryNames[trait]));
     const canModifyCapacity = Number(bunkerCapacity) > 2;
+    return { backpackTrait, exchangeTraits, rerollTraits, healthTrait, canModifyCapacity, playerCount: players.length };
+}
+
+function specialCardUnavailableReason(card, context) {
+    if (card.effect === "swap_random_trait" && !context.exchangeTraits.length) return "нет подходящих характеристик";
+    if (card.effect === "swap_adjacent_profession" && context.playerCount < 2) return "нужен второй игрок";
+    if (card.effect === "swap_adjacent_profession" && !context.hasProfession) return "нет профессии";
+    if (card.effect === "take_backpack" && !context.backpackTrait) return "нет категории «Багаж»";
+    if (card.effect === "reroll_own_trait" && !context.rerollTraits.length) return "нечего перероллить";
+    if (["improve_health", "worsen_health"].includes(card.effect) && !context.healthTrait) return "нет категории «Здоровье»";
+    if (["increase_capacity", "decrease_capacity", "random_capacity"].includes(card.effect) && !context.canModifyCapacity) return "при двух местах размер не меняется";
+    return "";
+}
+
+function assignSpecialCards(players, specialCards, traitOrder, bunkerCapacity, categoryNames = {}) {
+    const context = specialCardContext(players, traitOrder, bunkerCapacity, categoryNames);
+    context.hasProfession = traitOrder.includes("profession");
+    const { backpackTrait, exchangeTraits, rerollTraits, healthTrait } = context;
     const usableCards = specialCards.filter((card) => (
-        card.effect === "swap_random_trait" ? exchangeTraits.length > 0
-            : card.effect === "swap_adjacent_profession" ? players.length > 1 && traitOrder.includes("profession")
-            : card.effect === "take_backpack" ? traitOrder.includes("backpack")
-                : card.effect === "reroll_own_trait" ? rerollTraits.length > 0
-                    : ["improve_health", "worsen_health"].includes(card.effect) ? Boolean(healthTrait)
-                    : ["increase_capacity", "decrease_capacity", "random_capacity"].includes(card.effect) && canModifyCapacity
+        !specialCardUnavailableReason(card, context)
     ));
     if (!usableCards.length) return {};
     return Object.fromEntries(players.map((player) => {
@@ -1797,7 +1811,7 @@ function assignSpecialCards(players, specialCards, traitOrder, bunkerCapacity, c
             : card.effect === "swap_adjacent_profession" ? "profession"
             : card.effect === "reroll_own_trait" ? randomItem(rerollTraits)
                 : ["improve_health", "worsen_health"].includes(card.effect) ? healthTrait
-                : card.effect === "take_backpack" ? "backpack" : null;
+                : card.effect === "take_backpack" ? backpackTrait : null;
         if (card.effect === "swap_adjacent_profession") {
             card.direction = randomItem(["left", "right", "random"]);
             const variant = card.direction === "left"
@@ -3385,12 +3399,12 @@ io.on("connection", (socket) => {
         const snapshot = clone(serializableRoom);
         const gameData = gameDataForRoom(room);
         const testPlayers = activePlayers(room);
-        snapshot.testSpecialCards = (gameData.specialCards || []).map((card) => ({
-            effect: card.effect,
-            name: card.name,
-            description: card.description,
-            available: Boolean(testPlayers.length && assignSpecialCards(testPlayers, [card], room.traitOrder || [], room.capacity, room.categoryNames || {})[testPlayers[0].id])
-        }));
+        const specialContext = specialCardContext(testPlayers, room.traitOrder || [], room.capacity, room.categoryNames || {});
+        specialContext.hasProfession = (room.traitOrder || []).includes("profession");
+        snapshot.testSpecialCards = (gameData.specialCards || []).map((card) => {
+            const unavailableReason = specialCardUnavailableReason(card, specialContext);
+            return { effect: card.effect, name: card.name, description: card.description, available: !unavailableReason, unavailableReason };
+        });
         socket.emit("test:state", snapshot);
     });
 
