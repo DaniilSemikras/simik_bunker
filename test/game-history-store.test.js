@@ -69,3 +69,35 @@ test("при отсутствии отдельной таблицы истори
     assert.equal(payload.id, 2);
     assert.equal(payload.config.games[0].gameId, "0000007");
 });
+
+test("после появления таблицы хранилище переключается с fallback на неё", async (context) => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bunker-history-recovery-test-"));
+    const filePath = path.join(directory, "history.json");
+    let historyTableAvailable = false;
+    const requests = [];
+    context.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+    context.mock.method(global, "fetch", async (url, options = {}) => {
+        requests.push({ url: String(url), options });
+        if (String(url).includes("bunker_game_history")) {
+            if (!historyTableAvailable) return { ok: false, status: 404, async json() { return {}; } };
+            return { ok: true, status: options.method === "POST" ? 201 : 200, async json() { return []; } };
+        }
+        if (!options.method || options.method === "GET") return { ok: true, status: 200, async json() { return []; } };
+        return { ok: true, status: 201, async json() { return {}; } };
+    });
+
+    const store = new GameHistoryStore({
+        filePath,
+        supabaseUrl: "https://example.supabase.co",
+        supabaseKey: "secret",
+        logger: { warn() {} }
+    });
+    await store.initialize();
+    assert.equal(store.remoteBackend, "config-row");
+
+    historyTableAvailable = true;
+    await store.append({ gameId: "0000008", roomCode: "LIVE", finishedAt: 8, participants: [] });
+
+    assert.equal(store.remoteBackend, "history-table");
+    assert.ok(requests.some((request) => request.options.method === "POST" && request.url.includes("bunker_game_history")));
+});
