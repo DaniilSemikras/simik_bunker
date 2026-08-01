@@ -6,21 +6,41 @@
     <meta name="robots" content="noindex">
     <title>Бункер — тестовый режим</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="/test.css?v=20260801-complete-game-update">
+    <link rel="stylesheet" href="/test.css?v=20260801-test-steps">
 </head>
 <body>
     <main>
         <header><div><span>DEV ONLY</span><h1>Тестовый режим «Бункера»</h1></div><a href="/">Открыть игру</a></header>
-        <section class="controls">
-            <button data-action="create">Создать тестовую комнату</button>
-            <label>Всего игроков<input id="playerCount" type="number" min="1" max="12" value="6"></label><button data-action="players">Установить состав</button>
-            <label>Боты<input id="botCount" type="number" min="1" max="11" value="5"></label><button data-action="bots">Добавить ботов</button>
-            <button data-action="start">Начать игру</button><button data-action="advance">Следующая фаза</button><button data-action="finish">Сразу финал</button><button data-action="reset">Сбросить партию</button>
-            <button data-action="previous">← Предыдущее состояние</button><button data-action="vote">Открыть голосование</button><button data-action="tie">Смоделировать ничью</button><button data-action="notify">Проверить уведомление</button><button data-action="rematch">Играть снова</button><button data-action="decline-rematch">Не играю дальше</button>
-            <label>Цель<select id="targetPlayer"></select></label><label>Характеристика<select id="targetTrait"></select></label><button data-action="reveal">Раскрыть карточку</button>
-            <label>Здоровье<select id="healthDirection"><option value="improve">Улучшить</option><option value="worsen">Ухудшить</option></select></label><label>Стадии<input id="healthAmount" type="number" min="1" max="5" value="2"></label><button data-action="health">Применить здоровье</button>
-            <label>Спецкарта<select id="specialEffect"><option value="improve_health">Улучшение здоровья</option><option value="worsen_health">Ухудшение здоровья</option><option value="swap_random_trait">Обмен характеристики</option><option value="take_backpack">Кража багажа</option><option value="increase_capacity">+1 место</option><option value="decrease_capacity">−1 место</option></select></label><button data-action="special">Выдать карту</button><button data-action="use-special">Выдать и применить</button>
-            <label>Вместимость<input id="capacity" type="number" min="1" max="12" value="2"></label><button data-action="capacity">Изменить</button><button data-action="eliminate">Исключить бота</button><button data-action="state">Обновить серверное состояние</button>
+        <section class="controls" aria-label="Пошаговое управление тестом">
+            <article class="test-step is-primary">
+                <div class="step-heading"><span>1</span><div><h2>Создайте комнату</h2><p>Сначала создайте отдельную тестовую сессию.</p></div></div>
+                <div class="step-actions"><button data-action="create">Создать тестовую комнату</button></div>
+            </article>
+            <article class="test-step">
+                <div class="step-heading"><span>2</span><div><h2>Соберите игроков</h2><p>Количество включает вас и подключившихся людей, остальные места займут боты.</p></div></div>
+                <div class="step-actions"><label>Всего игроков<input id="playerCount" type="number" min="1" max="12" value="6"></label><button data-action="players">Установить состав</button><label>Добавить ботов<input id="botCount" type="number" min="1" max="11" value="5"></label><button class="secondary-action" data-action="bots">Добавить отдельно</button></div>
+            </article>
+            <article class="test-step">
+                <div class="step-heading"><span>3</span><div><h2>Запустите игру</h2><p>После запуска переходите по фазам или вернитесь на один шаг.</p></div></div>
+                <div class="step-actions"><button data-action="start">Начать игру</button><button data-action="advance">Следующая фаза</button><button class="secondary-action" data-action="previous">← Предыдущее состояние</button><button class="secondary-action" data-action="notify">Проверить уведомление</button></div>
+            </article>
+            <article class="test-step">
+                <div class="step-heading"><span>4</span><div><h2>Раскрывайте карточки</h2><p>Автокнопка сначала открывает профессию, а затем случайную закрытую характеристику.</p></div></div>
+                <div class="step-actions"><label>Игрок<select id="targetPlayer"></select></label><button data-action="reveal-auto">Открыть карту по правилам</button><label>Ручной выбор<select id="targetTrait"></select></label><button class="secondary-action" data-action="reveal-manual">Открыть выбранную</button></div>
+                <div class="step-actions sub-actions"><label>Здоровье<select id="healthDirection"><option value="improve">Улучшить</option><option value="worsen">Ухудшить</option></select></label><label>Стадии<input id="healthAmount" type="number" min="1" max="5" value="2"></label><button class="secondary-action" data-action="health">Применить здоровье</button></div>
+            </article>
+            <article class="test-step">
+                <div class="step-heading"><span>5</span><div><h2>Проверьте специальные карты</h2><p>Можно только выдать карту или сразу применить её к выбранному игроку.</p></div></div>
+                <div class="step-actions"><label>Спецкарта<select id="specialEffect"><option value="improve_health">Улучшение здоровья</option><option value="worsen_health">Ухудшение здоровья</option><option value="swap_random_trait">Обмен характеристики</option><option value="take_backpack">Кража багажа</option><option value="increase_capacity">+1 место</option><option value="decrease_capacity">−1 место</option></select></label><button data-action="special">Выдать карту</button><button class="secondary-action" data-action="use-special">Выдать и применить</button></div>
+            </article>
+            <article class="test-step">
+                <div class="step-heading"><span>6</span><div><h2>Голосование и баланс</h2><p>Откройте голосование, создайте ничью или измените условия бункера вручную.</p></div></div>
+                <div class="step-actions"><button data-action="vote">Открыть голосование</button><button class="secondary-action" data-action="tie">Смоделировать ничью</button><button class="danger-action" data-action="eliminate">Исключить бота</button><label>Вместимость<input id="capacity" type="number" min="1" max="12" value="2"></label><button class="secondary-action" data-action="capacity">Изменить</button></div>
+            </article>
+            <article class="test-step">
+                <div class="step-heading"><span>7</span><div><h2>Финал и новая игра</h2><p>Завершите партию и проверьте согласие участников на повторную игру.</p></div></div>
+                <div class="step-actions"><button data-action="finish">Сразу финал</button><button data-action="rematch">Играть снова</button><button class="secondary-action" data-action="decline-rematch">Не играю дальше</button><button class="danger-action" data-action="reset">Сбросить партию</button></div>
+            </article>
         </section>
         <section class="summary"><h2>Комната</h2><div id="summary">Не создана</div></section>
         <section><h2>Игроки</h2><div id="players" class="players"></div></section>
@@ -28,6 +48,6 @@
         <div id="notice" role="status"></div>
     </main>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/test.js?v=20260801-complete-game-update"></script>
+    <script src="/test.js?v=20260801-test-steps"></script>
 </body>
 </html>

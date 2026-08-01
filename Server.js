@@ -3074,7 +3074,11 @@ io.on("connection", (socket) => {
         const room = roomFor(socket);
         if (!room?.isTestRoom || room.host !== socket.id || ["lobby", "finished"].includes(room.phase)) return emitError(socket, "Раскрытие сейчас недоступно.");
         const target = room.players.find((player) => player.id === targetId) || activePlayers(room)[0];
-        const selectedTrait = room.traitOrder.includes(trait) ? trait : room.traitOrder.find((item) => !room.revealed?.[target?.id]?.[item]);
+        const hiddenTraits = room.traitOrder.filter((item) => !Object.prototype.hasOwnProperty.call(room.revealed?.[target?.id] || {}, item));
+        const requestedTrait = hiddenTraits.includes(trait) ? trait : null;
+        const firstRoundTrait = room.round === 0 ? room.traitOrder[0] : null;
+        const forcedTrait = hiddenTraits.includes(firstRoundTrait) ? firstRoundTrait : null;
+        const selectedTrait = requestedTrait || forcedTrait || randomItem(hiddenTraits);
         if (!target || !selectedTrait || room.cards?.[target.id]?.[selectedTrait] === undefined) return emitError(socket, "Не удалось найти тестовую карточку.");
         rememberTestState(room);
         room.revealed[target.id] = room.revealed[target.id] || {};

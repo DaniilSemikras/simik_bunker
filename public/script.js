@@ -458,6 +458,7 @@ function updateGame() {
         ? `<span class="eyebrow">КАТАСТРОФА</span><p class="story-text">${disasterText}</p><div class="disaster-meta"><span class="capacity">${capacityLabel}</span>${shelterDuration}${isHost() ? '<button class="button primary story-ready" type="button" data-acknowledge-story>Все прочитали историю — начать раунд</button>' : '<span class="story-wait">Ждём, пока ведущий начнёт раунд.</span>'}</div>`
         : `<div class="disaster-accordion ${disasterExpanded ? "is-open" : ""}"><button class="disaster-accordion-toggle" type="button" aria-expanded="${disasterExpanded}" aria-controls="disasterStory"><span class="eyebrow">КАТАСТРОФА · ${disasterExpanded ? "СКРЫТЬ" : "ОТКРЫТЬ"} ИСТОРИЮ</span><span class="accordion-icon" aria-hidden="true">⌄</span></button><div id="disasterStory" class="disaster-accordion-content"${disasterExpanded ? "" : " hidden"}><p>${disasterText}</p></div></div><div class="disaster-meta"><span class="capacity">${capacityLabel}</span>${shelterDuration}${bunkerChance}</div>`;
     $("#disasterCard").classList.toggle("story-mode", isStory);
+    $("#disasterCard").classList.toggle("is-collapsible", !isStory);
     $("#disasterCard").innerHTML = disasterContent;
     const bunkerTraits = Array.isArray(room.bunkerTraits) ? room.bunkerTraits : [];
     $("#bunkerTraitsPanel").classList.toggle("hidden", !bunkerTraits.length);
@@ -489,12 +490,11 @@ function updateGame() {
     const canRevealProfession = room.phase === "reveal" && trait && me && !me.eliminated && isMyTurn && !hasRevealedThisRound;
     const canChooseTrait = isChoiceRound && me && !me.eliminated && isMyTurn && !hasRevealedThisRound;
     const canSkipVote = isVoting && room.voteCanBeSkipped !== false && me && !me.eliminated && !hasVoted;
+    $(".round-panel").classList.toggle("has-round-action", canSkipVote);
     const revealAnimation = pendingRevealAnimation !== renderedRevealAnimation ? pendingRevealAnimation : null;
     const isNewReveal = (playerId, traitId) => Boolean(
         revealAnimation && revealAnimation.playerId === playerId && revealAnimation.trait === traitId
     );
-    $("#revealButton").classList.toggle("hidden", !canRevealProfession);
-    $("#revealButton").textContent = canRevealProfession ? `Раскрыть: ${traitName(trait)}` : "";
     $("#skipVoteButton").classList.toggle("hidden", !canSkipVote);
     $("#actionHint").textContent = isFinished ? "Игра завершена." : isStory ? (isHost() ? "Подтвердите начало, когда все прочитали историю." : "Ждём подтверждения ведущего.") : me?.eliminated ? "Вы исключены, но можете наблюдать за игрой." : specialTargetMode ? `Выберите игрока: ${specialTargetAction.toLocaleLowerCase("ru")}.` : isVoting && hasVoted ? "Ваш голос принят. Ждём остальных." : isVoting ? "Голосуйте до окончания таймера." : hasRevealedThisRound ? "Карта раскрыта. Ждём остальных." : isMyTurn && canChooseTrait ? "Ваш ход: нажмите на любую ещё нераскрытую карточку." : isMyTurn ? "Ваш ход: раскройте профессию." : turnPlayer ? `Сейчас ходит ${turnPlayer.nickname}.` : "";
 
@@ -502,11 +502,12 @@ function updateGame() {
     const personalCards = cardOrder.filter((name) => name in myCards).map((name) => {
         const extraBaggage = name === "backpack" && Array.isArray(me?.extraBaggage) ? me.extraBaggage : [];
         const value = extraBaggage.length ? [myCards[name], ...extraBaggage].filter(Boolean).join(" · ") : myCards[name];
+        const canRevealThisCard = !myRevealed[name] && (canChooseTrait || (canRevealProfession && name === room.currentTrait));
         return cardMarkup(
             name,
             value,
             Boolean(myRevealed[name]),
-            canChooseTrait && !myRevealed[name],
+            canRevealThisCard,
             isNewReveal(ownPlayerId(), name),
             isFinished && Array.isArray(me?.finishRevealedTraits) && me.finishRevealedTraits.includes(name)
         );
@@ -636,10 +637,6 @@ const refreshPlayersViewForViewport = () => {
 };
 if (playerTableMedia.addEventListener) playerTableMedia.addEventListener("change", refreshPlayersViewForViewport);
 else playerTableMedia.addListener(refreshPlayersViewForViewport);
-$("#revealButton").addEventListener("click", () => {
-    socket.emit("revealTrait", room?.currentTrait);
-    playSound("reveal");
-});
 $("#skipVoteButton").addEventListener("click", () => socket.emit("skipVote"));
 $("#extendRoomTimer").addEventListener("click", () => socket.emit("extendRoomClose"));
 $("#toastClose").addEventListener("click", closeToast);
@@ -712,11 +709,14 @@ $("#myCards").addEventListener("click", (event) => {
 $("#disasterCard").addEventListener("click", (event) => {
     if (event.target.closest("[data-acknowledge-story]")) socket.emit("acknowledgeStory");
     const toggle = event.target.closest(".disaster-accordion-toggle");
-    if (toggle) {
+    const cardToggle = !toggle && event.currentTarget.classList.contains("is-collapsible") && !event.target.closest("button, a, input, select, textarea");
+    if (toggle || cardToggle) {
         disasterExpanded = !disasterExpanded;
-        toggle.setAttribute("aria-expanded", String(disasterExpanded));
-        toggle.querySelector(".eyebrow").textContent = `КАТАСТРОФА · ${disasterExpanded ? "СКРЫТЬ" : "ОТКРЫТЬ"} ИСТОРИЮ`;
-        toggle.closest(".disaster-accordion")?.classList.toggle("is-open", disasterExpanded);
+        const accordionToggle = event.currentTarget.querySelector(".disaster-accordion-toggle");
+        accordionToggle?.setAttribute("aria-expanded", String(disasterExpanded));
+        const label = accordionToggle?.querySelector(".eyebrow");
+        if (label) label.textContent = `КАТАСТРОФА · ${disasterExpanded ? "СКРЫТЬ" : "ОТКРЫТЬ"} ИСТОРИЮ`;
+        event.currentTarget.querySelector(".disaster-accordion")?.classList.toggle("is-open", disasterExpanded);
         $("#disasterStory")?.classList.toggle("hidden", !disasterExpanded);
     }
 });

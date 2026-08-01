@@ -36,7 +36,8 @@ document.addEventListener("click", (event) => {
     if (action === "notify") socket.emit("test:notify");
     if (action === "rematch") socket.emit("requestRematch");
     if (action === "decline-rematch") socket.emit("declineRematch");
-    if (action === "reveal") socket.emit("test:reveal", { targetId: $("#targetPlayer").value, trait: $("#targetTrait").value });
+    if (action === "reveal-auto") socket.emit("test:reveal", { targetId: $("#targetPlayer").value });
+    if (action === "reveal-manual") socket.emit("test:reveal", { targetId: $("#targetPlayer").value, trait: $("#targetTrait").value });
     if (action === "finish") socket.emit("test:finish");
     if (action === "reset") socket.emit("test:reset");
     if (action === "health") socket.emit("test:applyHealth", { targetId: (room?.players || []).find((player) => player.id !== ownId && !player.eliminated)?.id || ownId, direction: $("#healthDirection").value, amount: Number($("#healthAmount").value) });
