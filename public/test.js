@@ -34,6 +34,8 @@ document.addEventListener("click", (event) => {
     if (action === "vote") socket.emit("test:openVoting");
     if (action === "tie") socket.emit("test:forceTie");
     if (action === "notify") socket.emit("test:notify");
+    if (action === "rematch") socket.emit("requestRematch");
+    if (action === "decline-rematch") socket.emit("declineRematch");
     if (action === "reveal") socket.emit("test:reveal", { targetId: $("#targetPlayer").value, trait: $("#targetTrait").value });
     if (action === "finish") socket.emit("test:finish");
     if (action === "reset") socket.emit("test:reset");

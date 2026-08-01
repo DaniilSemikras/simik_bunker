@@ -213,6 +213,14 @@ function traitName(trait) {
 }
 
 function updateActionTimer() {
+    const rematchTimer = $("#rematchTimer");
+    if (rematchTimer) {
+        const rematchSeconds = Math.max(0, Math.ceil(((Number(room?.rematchDeadline) || 0) - (Date.now() + serverTimeOffset)) / 1000));
+        rematchTimer.textContent = room?.rematchResolved
+            ? "Приём ответов завершён"
+            : `На решение: ${String(Math.floor(rematchSeconds / 60)).padStart(2, "0")}:${String(rematchSeconds % 60).padStart(2, "0")}`;
+        rematchTimer.classList.toggle("urgent", rematchSeconds > 0 && rematchSeconds <= 10);
+    }
     const isFinalTimer = room?.phase === "finished";
     const timer = isFinalTimer ? $("#resultsActionTimer") : $("#actionTimer");
     const controls = isFinalTimer ? $("#resultsTimerControls") : $("#timerControls");
@@ -256,8 +264,6 @@ function avatarMarkup(player) {
 function playerPayload() {
     return {
         nickname: nickname(),
-        presetId: $("#presetSelect")?.value || "classic",
-        eliminationsMode: $("#eliminationsMode")?.value || "auto",
         visualTheme: localStorage.getItem(THEME_STORAGE_KEY) || "amber"
     };
 }
@@ -272,10 +278,8 @@ function updateLobby() {
         <div class="player-row ${player.left ? "left-player" : ""}">${avatarMarkup(player)}<span>${escaped(player.nickname)}</span>${player.left ? '<span class="host-badge">вышел</span>' : player.id === room.hostId ? '<span class="host-badge">ведущий</span>' : ""}</div>
     `).join("");
     $("#startGame").classList.toggle("hidden", !isHost());
-    $("#soloControls").classList.toggle("hidden", !isHost() || playerTotal !== 1);
-    $("#addTestPlayers").classList.toggle("hidden", !isHost() || playerTotal >= 12);
     $("#startHint").textContent = playerTotal === 1 && isHost()
-        ? "В одиночной игре боты сами раскрывают карты, используют способности и голосуют."
+        ? "Для обычного старта нужно минимум 3 игрока. Тестовые игроки доступны только на странице /test."
         : playerTotal < 3
         ? "Для обычного старта нужно минимум 3 игрока."
         : isHost() ? "После старта половина игроков сможет остаться в бункере." : "";
@@ -409,6 +413,20 @@ function updateGame() {
         `<span><b>Вместимость:</b> ${room.capacity}</span>`,
         ...(room.bunkerTraits || []).filter((item) => /water|вод|food|(?:^|\s)ед[аы](?:\s|$)|питан/i.test(`${item.id} ${item.name}`)).map((item) => `<span><b>${escaped(item.name)}:</b> ${escaped(item.value)}</span>`)
     ].filter(Boolean).join("");
+    const rematchHumans = room.players.filter((player) => !player.left && !player.isBot);
+    const rematchReadyPlayers = rematchHumans.filter((player) => room.rematchReadyIds?.includes(player.id));
+    const rematchDeclinedPlayers = rematchHumans.filter((player) => room.rematchDeclinedIds?.includes(player.id));
+    const ownRematchReady = room.rematchReadyIds?.includes(ownPlayerId());
+    const ownRematchDeclined = room.rematchDeclinedIds?.includes(ownPlayerId());
+    const rematchOpen = isFinished && !room.rematchResolved && Number(room.rematchDeadline) > Date.now() + serverTimeOffset;
+    const rematchMarkup = isFinished ? `
+        <div class="continue-game-block ${rematchOpen ? "" : "is-closed"}">
+            <div class="rematch-copy"><span>ЕЩЁ ОДНУ ПАРТИЮ?</span><strong>${rematchOpen ? "Решает каждый игрок" : "Приём ответов завершён"}</strong><p>${rematchOpen ? "В новую игру попадут только согласившиеся. Если ответят все — начнём раньше." : "Текущую комнату ещё можно просматривать до закрытия."}</p></div>
+            ${rematchOpen ? `<div id="rematchTimer" class="rematch-timer"></div>` : ""}
+            <div class="rematch-ready"><span>ГОТОВЫ ${rematchReadyPlayers.length} ИЗ ${rematchHumans.length}</span><div>${rematchReadyPlayers.map((player) => `<span title="${escaped(player.nickname)}">${avatarMarkup(player)}</span>`).join("") || "<small>Пока никто</small>"}</div></div>
+            ${rematchOpen ? `<div class="rematch-actions"><button class="button ${ownRematchReady ? "rematch-selected" : "primary"}" type="button" data-request-rematch>${ownRematchReady ? "✓ Вы играете снова" : "Играть снова"}</button><button class="button ${ownRematchDeclined ? "rematch-declined" : "secondary"}" type="button" data-decline-rematch>${ownRematchDeclined ? "✓ Не участвую" : "Не играю дальше"}</button></div>` : ""}
+            ${rematchDeclinedPlayers.length ? `<small class="rematch-declined-list">Не участвуют: ${rematchDeclinedPlayers.map((player) => escaped(player.nickname)).join(", ")}</small>` : ""}
+        </div>` : "";
 
     $("#gameCode").textContent = room.code;
     $("#phaseTitle").textContent = isFinished ? "Игра завершена" : isStory ? "История катастрофы" : isVoting ? "Голосование" : "Раскрытие карт";
@@ -422,7 +440,7 @@ function updateGame() {
         ${winners.length ? `<div class="winner-section"><span class="winner-label">В БУНКЕРЕ ОСТАЛИСЬ</span><div class="winner-list">${winners.map((player) => `<span class="winner-chip">${avatarMarkup(player)}<strong>${escaped(player.nickname)}</strong></span>`).join("")}</div></div>` : ""}
         <div class="final-survival"><span>ШАНС ВЫЖИВАНИЯ</span><strong>${survivalChanceValue === null ? "—" : survivalChanceValue + "%"}</strong><div class="final-conditions">${finalConditions}</div>${strongestPlayer ? `<p><b>Сильная сторона:</b> ${escaped(playerNameById(strongestPlayer.playerId))} — ${strongestPlayer.utility}% полезности.</p>` : ""}${weakestPlayer && weakestPlayer !== strongestPlayer ? `<p><b>Слабая сторона:</b> ${escaped(playerNameById(weakestPlayer.playerId))} — ${weakestPlayer.utility}% полезности.</p>` : ""}</div>
         ${utilityRows ? `<div class="utility-breakdown"><span class="utility-kicker">КТО ЧЕМ ПОЛЕЗЕН В БУНКЕРЕ</span><div class="utility-list">${utilityRows}</div></div>` : ""}
-        <div class="continue-game-block">${isHost() ? '<button class="button primary" type="button" data-continue-game>Продолжить тем же составом</button>' : '<p>Ожидание решения хоста о продолжении игры.</p>'}</div>
+        ${rematchMarkup}
     ` : "";
     const bunkerChance = isFinished && typeof room.bunkerSurvivalChance === "number"
         ? `<span class="bunker-chance">Выживаемость по полезности: <strong>${room.bunkerSurvivalChance}%</strong></span>`
@@ -598,28 +616,11 @@ function tryResumeSession(force = false) {
     socket.emit("resumeRoom", { roomCode: savedSession.code, playerToken: savedSession.token });
 }
 
-async function loadGameOptions() {
-    try {
-        const response = await fetch("/api/game-options", { cache: "no-store" });
-        if (!response.ok) return;
-        const options = await response.json();
-        const presets = Array.isArray(options.presets) ? options.presets : [];
-        if (presets.length) {
-            $("#presetSelect").innerHTML = presets.map((preset) => `<option value="${escaped(preset.id)}">${escaped(preset.name)}</option>`).join("");
-            $("#presetSelect").value = presets.some((preset) => preset.id === options.activePresetId) ? options.activePresetId : presets[0].id;
-        }
-    } catch {
-        // Игра остаётся доступной со встроенным классическим пресетом.
-    }
-}
-
 $("#createRoom").addEventListener("click", () => socket.emit("createRoom", playerPayload()));
 $("#joinRoom").addEventListener("click", () => socket.emit("joinRoom", { roomCode: $("#roomCode").value, ...playerPayload() }));
 $("#nickname").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#createRoom").click(); });
 $("#roomCode").addEventListener("input", (event) => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
 $("#startGame").addEventListener("click", () => socket.emit("startGame"));
-$("#startSoloTest").addEventListener("click", () => socket.emit("startSoloTest", { botCount: Number($("#soloBotCount").value) || 5 }));
-$("#addTestPlayers").addEventListener("click", () => socket.emit("addTestPlayers"));
 $("#playerViewToggle").addEventListener("click", () => {
     playersView = playersView === "table" ? "cards" : "table";
     localStorage.setItem("bunker-players-view", playersView);
@@ -721,7 +722,8 @@ $("#disasterCard").addEventListener("click", (event) => {
 });
 $("#resultsBanner").addEventListener("click", (event) => {
     if (event.target.closest("#resultsExtendRoomTimer")) socket.emit("extendRoomClose");
-    if (event.target.closest("[data-continue-game]")) socket.emit("continueSamePlayers");
+    if (event.target.closest("[data-request-rematch]")) socket.emit("requestRematch");
+    if (event.target.closest("[data-decline-rematch]")) socket.emit("declineRematch");
 });
 
 socket.on("roomEntered", enterRoom);
@@ -834,7 +836,23 @@ socket.on("voteTied", ({ nextRound, runoff, slots, candidates = [] } = {}) => { 
 socket.on("voteSkipped", () => { toast("Решение команды: никого не исключаем. Начинается следующий раунд."); playSound("tie"); });
 socket.on("revealLimitReached", () => { toast("Лимит раскрытий достигнут: оставшиеся карты останутся тайной."); playSound("vote"); });
 socket.on("gameFinished", ({ survivors }) => { toast(`Выжили: ${survivors.join(", ")}.`); playSound("finish"); });
-socket.on("gameRestarted", () => { toast("Ведущий запустил новую партию тем же составом.", { important: true }); playSound("start"); });
+socket.on("rematchUpdated", ({ nickname: name, ready }) => { toast(ready ? `${name} готов сыграть снова.` : `${name} не участвует в следующей игре.`, { duration: 2200 }); });
+socket.on("rematchClosed", ({ reason }) => { toast(reason || "Минута на решение закончилась.", { important: true }); });
+socket.on("rematchLobby", () => { toast("Готовые игроки вернулись в лобби. Можно дождаться остальных или добавить ботов.", { important: true }); });
+socket.on("rematchExcluded", () => {
+    room = null;
+    myCards = {};
+    myPlayerId = "";
+    mySpecialCard = null;
+    myWeaponStatus = { hasWeapon: false, used: false, canEvict: false };
+    specialTargetMode = false;
+    currentCode = "";
+    clearSavedSession();
+    $("#roomCode").value = "";
+    show("#menu");
+    toast("Вы не участвуете в следующей партии.");
+});
+socket.on("gameRestarted", ({ playerCount } = {}) => { toast(`Новая партия начинается${playerCount ? `: ${playerCount} игроков` : ""}.`, { important: true }); playSound("start"); });
 socket.on("errorMessage", (message) => toast(message, { critical: true }));
 socket.on("disconnect", () => toast("Соединение с сервером потеряно."));
 socket.on("connect", tryResumeSession);
@@ -843,7 +861,6 @@ clearInterval(countdownTimer);
 countdownTimer = setInterval(updateActionTimer, 250);
 updateSoundToggle();
 applyColorTheme(localStorage.getItem(THEME_STORAGE_KEY) || "amber");
-loadGameOptions();
 $("#returnRoom").classList.toggle("hidden", !savedSession);
 document.addEventListener("pointerdown", unlockSound, { once: true });
 document.addEventListener("keydown", unlockSound, { once: true });

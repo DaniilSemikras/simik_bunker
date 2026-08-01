@@ -6,6 +6,7 @@ const {
     applyHealthStageChange,
     formatHealthState,
     getEliminationsPerRound,
+    selectRematchPlayers,
     parseHealthState
 } = require("../lib/game-rules");
 
@@ -46,4 +47,25 @@ test("ручной режим исключения не опускает чис�
     assert.equal(getEliminationsPerRound(4, 3, "2"), 1);
     assert.equal(getEliminationsPerRound(9, 4, "2"), 2);
     assert.equal(getEliminationsPerRound(4, 4, "2"), 0);
+});
+
+test("повторная игра оставляет только согласившихся людей", () => {
+    const players = [
+        { id: "one", isBot: false, left: false },
+        { id: "two", isBot: false, left: false },
+        { id: "three", isBot: false, left: false }
+    ];
+    const selection = selectRematchPlayers(players, ["one", "three"], false);
+    assert.deepEqual(selection.kept.map((player) => player.id), ["one", "three"]);
+    assert.deepEqual(selection.removed.map((player) => player.id), ["two"]);
+});
+
+test("в одиночной повторной игре боты сохраняются только при согласии человека", () => {
+    const players = [
+        { id: "human", isBot: false, left: false },
+        { id: "bot-one", isBot: true, left: false },
+        { id: "bot-two", isBot: true, left: false }
+    ];
+    assert.equal(selectRematchPlayers(players, ["human"], true).kept.length, 3);
+    assert.equal(selectRematchPlayers(players, [], true).kept.length, 0);
 });

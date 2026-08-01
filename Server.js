@@ -9,7 +9,8 @@ const {
     formatHealthState,
     getEliminationsPerRound,
     normalizeHealthState,
-    parseHealthState
+    parseHealthState,
+    selectRematchPlayers
 } = require("./lib/game-rules");
 const { GameHistoryStore } = require("./lib/game-history-store");
 
@@ -1823,8 +1824,10 @@ const RECONNECT_GRACE_MS = 60_000;
 const EMPTY_ROOM_TTL_MS = 30 * 60_000;
 const FINISHED_ROOM_TTL_MS = 3 * 60_000;
 const ROOM_CLOSE_EXTENSION_MS = 30_000;
+const REMATCH_DECISION_MS = 60_000;
 const MIN_PLAYERS_TO_START = 3;
 const SKIP_VOTE = "__skip_vote__";
+let launchGame = null;
 
 function newPlayerToken() {
     return crypto.randomBytes(24).toString("hex");
@@ -1852,6 +1855,8 @@ function closeRoom(room, notifyPlayers = true) {
     clearActionTimer(room);
     if (room.closeTimer) clearTimeout(room.closeTimer);
     room.closeTimer = null;
+    if (room.rematchTimer) clearTimeout(room.rematchTimer);
+    room.rematchTimer = null;
     for (const player of room.players) cancelPendingLeave(player);
     if (notifyPlayers) io.to(room.code).emit("roomExpired");
     delete rooms[room.code];
@@ -1869,6 +1874,120 @@ function extendRoomClose(room) {
     const deadline = baseDeadline + ROOM_CLOSE_EXTENSION_MS;
     scheduleRoomClose(room, deadline);
     return deadline;
+}
+
+function rematchHumanPlayers(room) {
+    return room.players.filter((player) => !player.left && !player.isBot);
+}
+
+function resetRoomToLobby(room) {
+    clearActionTimer(room);
+    room.phase = "lobby";
+    room.rematchDeadline = null;
+    room.rematchReadyIds = [];
+    room.rematchDeclinedIds = [];
+    room.rematchResolved = false;
+    room.capacity = 0;
+    room.bunkerBaseCapacity = 0;
+    room.bunkerOccupiedSlots = 0;
+    room.round = 0;
+    room.disaster = null;
+    room.disasterDuration = null;
+    room.bunkerTraits = [];
+    room.cards = {};
+    room.healthStates = {};
+    room.revealed = {};
+    room.revealedAtFinish = {};
+    room.revealedThisRound = {};
+    room.playerSpecialCards = {};
+    room.playerProfessionItems = {};
+    room.playerExtraBaggage = {};
+    room.playerResidentEvictions = {};
+    room.usedSpecialCards = [];
+    room.eliminated = [];
+    room.eliminationOrder = [];
+    room.votes = {};
+    room.voteCandidateIds = null;
+    room.pendingEliminationIds = [];
+    room.turnOrder = [];
+    room.turnIndex = 0;
+    room.turnDeadline = null;
+    room.voteDeadline = null;
+    room.actionLog = [];
+    room.actionLogSequence = 0;
+    room.finishedAt = null;
+    room.finishReason = null;
+    room.roomCloseDeadline = null;
+    if (room.closeTimer) clearTimeout(room.closeTimer);
+    room.closeTimer = null;
+}
+
+function finalizeRematch(room) {
+    if (!room || room.phase !== "finished" || room.rematchResolved) return false;
+    room.rematchResolved = true;
+    if (room.rematchTimer) clearTimeout(room.rematchTimer);
+    room.rematchTimer = null;
+    room.rematchDeadline = null;
+
+    const preserveBots = Boolean(room.isSoloGame || room.isTestRoom);
+    const selection = selectRematchPlayers(room.players, room.rematchReadyIds, preserveBots);
+    const readyHumans = selection.readyHumans;
+    if (!readyHumans.length) {
+        io.to(room.code).emit("rematchClosed", { started: false, reason: "Никто не подтвердил участие в новой игре." });
+        emitRoom(room);
+        return false;
+    }
+
+    for (const player of selection.removed) {
+        if (!player.isBot && !player.left) io.to(player.id).emit("rematchExcluded");
+        io.sockets.sockets.get(player.id)?.leave(room.code);
+        cancelPendingLeave(player);
+    }
+    room.players = selection.kept;
+    room.players.forEach((player) => {
+        player.left = false;
+        player.disconnected = false;
+        player.voluntaryLeft = false;
+    });
+    if (!room.players.some((player) => player.id === room.host)) room.host = readyHumans[0].id;
+    room.gameId = generateGameId();
+    room.historyRecorded = false;
+    room.rematchReadyIds = [];
+    room.rematchDeclinedIds = [];
+
+    const canStartImmediately = room.players.filter((player) => !player.left).length >= MIN_PLAYERS_TO_START;
+    if (canStartImmediately && typeof launchGame === "function") {
+        const launched = launchGame(room, false);
+        if (launched) {
+            io.to(room.code).emit("gameRestarted", { gameId: room.gameId, playerCount: room.players.length });
+            return true;
+        }
+    }
+
+    resetRoomToLobby(room);
+    io.to(room.code).emit("rematchLobby", { playerCount: room.players.length });
+    emitRoom(room);
+    return true;
+}
+
+function maybeFinalizeRematch(room) {
+    if (!room || room.phase !== "finished" || room.rematchResolved) return false;
+    const humans = rematchHumanPlayers(room);
+    const readyIds = new Set(room.rematchReadyIds || []);
+    const declinedIds = new Set(room.rematchDeclinedIds || []);
+    if (humans.length && humans.every((player) => readyIds.has(player.id) || declinedIds.has(player.id))) {
+        return finalizeRematch(room);
+    }
+    return false;
+}
+
+function startRematchWindow(room) {
+    if (room.rematchTimer) clearTimeout(room.rematchTimer);
+    room.rematchReadyIds = [];
+    room.rematchDeclinedIds = [];
+    room.rematchResolved = false;
+    room.rematchDeadline = Date.now() + REMATCH_DECISION_MS;
+    room.rematchTimer = setTimeout(() => finalizeRematch(room), REMATCH_DECISION_MS);
 }
 
 function movePlayerToSocket(room, player, socketId) {
@@ -1893,6 +2012,8 @@ function movePlayerToSocket(room, player, socketId) {
     ]));
     room.voteCandidateIds = Array.isArray(room.voteCandidateIds) ? room.voteCandidateIds.map((id) => id === previousId ? socketId : id) : room.voteCandidateIds;
     room.pendingEliminationIds = (room.pendingEliminationIds || []).map((id) => id === previousId ? socketId : id);
+    room.rematchReadyIds = (room.rematchReadyIds || []).map((id) => id === previousId ? socketId : id);
+    room.rematchDeclinedIds = (room.rematchDeclinedIds || []).map((id) => id === previousId ? socketId : id);
     player.left = false;
     player.disconnected = false;
 }
@@ -2251,6 +2372,10 @@ function publicState(room) {
             ? calculateUtilityBreakdown(room).map(({ playerId, utility, revealedCards, professionBonus, professionReasons, professionItem, professionItemBonus, professionItemReasons, contributions }) => ({ playerId, utility, revealedCards, professionBonus, professionReasons, professionItem, professionItemBonus, professionItemReasons, contributions }))
             : [],
         roomCloseDeadline: room.roomCloseDeadline || null,
+        rematchDeadline: room.rematchDeadline || null,
+        rematchReadyIds: room.rematchReadyIds || [],
+        rematchDeclinedIds: room.rematchDeclinedIds || [],
+        rematchResolved: Boolean(room.rematchResolved),
         actionLog: room.actionLog || [],
         players: room.players.map((player) => ({
             id: player.id,
@@ -2409,6 +2534,7 @@ function endGame(room, reason = "capacity_reached") {
     room.turnDeadline = null;
     room.voteDeadline = null;
     room.votes = {};
+    startRematchWindow(room);
     scheduleRoomClose(room, Date.now() + FINISHED_ROOM_TTL_MS);
     const winners = activePlayers(room).map((player) => player.nickname);
     addActionLog(room, "Игра окончена — все оставшиеся характеристики раскрыты.", "reveal");
@@ -2433,7 +2559,7 @@ function openVoting(room, { candidateIds = null, slots = null, preservePending =
     if (!preservePending) room.pendingEliminationIds = [];
     room.voteCandidateIds = Array.isArray(candidateIds) ? [...new Set(candidateIds)] : null;
     room.eliminationsThisVote = Math.max(1, Math.min(
-        Number(slots) || getEliminationsPerRound(activePlayers(room).length, room.capacity, room.eliminationsMode),
+        Number(slots) || getEliminationsPerRound(activePlayers(room).length, room.capacity, "auto"),
         Math.max(1, activePlayers(room).length - room.capacity)
     ));
     room.votingCount = (Number(room.votingCount) || 0) + 1;
@@ -2746,7 +2872,7 @@ function createEmptyRoom(code, player, payload = {}) {
         eliminationOrder: [],
         votes: {},
         votingCount: 0,
-        eliminationsMode: ["1", "2"].includes(String(payload.eliminationsMode)) ? String(payload.eliminationsMode) : "auto",
+        eliminationsMode: "auto",
         eliminationsThisVote: 1,
         voteCandidateIds: null,
         pendingEliminationIds: [],
@@ -2760,10 +2886,15 @@ function createEmptyRoom(code, player, payload = {}) {
         botTimers: [],
         roomCloseDeadline: null,
         closeTimer: null,
+        rematchDeadline: null,
+        rematchReadyIds: [],
+        rematchDeclinedIds: [],
+        rematchResolved: false,
+        rematchTimer: null,
         actionLog: [],
         actionLogSequence: 0,
         visualTheme: ["amber", "radiation", "frost"].includes(payload.visualTheme) ? payload.visualTheme : "amber",
-        presetId: cleanCategoryId(payload.presetId) || "classic",
+        presetId: cleanCategoryId(payload.presetId) || gameConfig.activePresetId || "classic",
         isTestRoom: Boolean(payload.isTestRoom)
     };
 }
@@ -3051,6 +3182,7 @@ io.on("connection", (socket) => {
         delete serializableRoom.actionTimer;
         delete serializableRoom.closeTimer;
         delete serializableRoom.botTimers;
+        delete serializableRoom.rematchTimer;
         delete serializableRoom.testSnapshots;
         serializableRoom.players = room.players.map(({
             token: _token,
@@ -3113,21 +3245,19 @@ io.on("connection", (socket) => {
         emitRoom(room);
     });
 
-    socket.on("addTestPlayers", () => {
-        const room = roomFor(socket);
-        if (!room || room.host !== socket.id) return emitError(socket, "Добавлять тестовых игроков может только ведущий.");
-        if (room.phase !== "lobby") return;
-        if (!addBotsToRoom(room, 2, "Тест-бот")) return emitError(socket, "В комнате уже максимум игроков.");
-        emitRoom(room);
-    });
-
-    function launchGame(room, isSoloTest = false) {
+    launchGame = function launchGameRoom(room, isSoloTest = false) {
         if (room.launchInProgress) return false;
         room.launchInProgress = true;
         clearActionTimer(room);
         if (room.closeTimer) clearTimeout(room.closeTimer);
         room.closeTimer = null;
         room.roomCloseDeadline = null;
+        if (room.rematchTimer) clearTimeout(room.rematchTimer);
+        room.rematchTimer = null;
+        room.rematchDeadline = null;
+        room.rematchReadyIds = [];
+        room.rematchDeclinedIds = [];
+        room.rematchResolved = false;
         room.isSoloTest = isSoloTest;
         const gameData = gameDataForRoom(room);
         room.presetId = gameData.id || room.presetId || gameConfig.activePresetId || "classic";
@@ -3186,7 +3316,7 @@ io.on("connection", (socket) => {
         emitRoom(room);
         room.launchInProgress = false;
         return true;
-    }
+    };
 
     socket.on("startGame", () => {
         const room = roomFor(socket);
@@ -3194,17 +3324,6 @@ io.on("connection", (socket) => {
         if (room.phase !== "lobby") return;
         if (activePlayers(room).length < MIN_PLAYERS_TO_START) return emitError(socket, "Нужно хотя бы три игрока.");
         launchGame(room);
-    });
-
-    socket.on("startSoloTest", ({ botCount } = {}) => {
-        const room = roomFor(socket);
-        if (!room || room.host !== socket.id) return emitError(socket, "Одиночная игра доступна только ведущему.");
-        if (room.phase !== "lobby") return;
-        if (activePlayers(room).length !== 1) return emitError(socket, "Для одиночной игры в комнате должен быть один реальный игрок.");
-        const requestedBots = Math.max(2, Math.min(11, Number(botCount) || 5));
-        addBotsToRoom(room, requestedBots, "Бот");
-        room.isSoloGame = true;
-        launchGame(room, false);
     });
 
     socket.on("acknowledgeStory", () => {
@@ -3227,29 +3346,34 @@ io.on("connection", (socket) => {
         emitRoom(room);
     });
 
-    socket.on("continueSamePlayers", () => {
+    const handleRematchReady = () => {
         const room = roomFor(socket);
-        if (!room || room.host !== socket.id) return emitError(socket, "Продолжить тем же составом может только ведущий.");
+        const player = room?.players.find((candidate) => candidate.id === socket.id && !candidate.left && !candidate.isBot);
+        if (!room || !player) return emitError(socket, "Вы не состоите в этой комнате.");
         if (room.phase !== "finished") return emitError(socket, "Текущая партия ещё не завершена.");
-        if (room.restartRequested) return emitError(socket, "Новая партия уже запускается.");
-        room.restartRequested = true;
-        room.players = room.players.filter((player) => !player.left && !player.voluntaryLeft);
-        if (!room.players.length) {
-            room.restartRequested = false;
-            return emitError(socket, "В комнате не осталось подключённых игроков.");
+        if (room.rematchResolved || !room.rematchDeadline || Date.now() >= room.rematchDeadline) return emitError(socket, "Минута на решение уже закончилась.");
+        room.rematchReadyIds = [...new Set([...(room.rematchReadyIds || []), socket.id])];
+        room.rematchDeclinedIds = (room.rematchDeclinedIds || []).filter((id) => id !== socket.id);
+        addActionLog(room, `${player.nickname} готов сыграть ещё раз.`, "system");
+        io.to(room.code).emit("rematchUpdated", { nickname: player.nickname, ready: true });
+        if (!maybeFinalizeRematch(room)) emitRoom(room);
+    };
+
+    socket.on("requestRematch", handleRematchReady);
+    socket.on("continueSamePlayers", handleRematchReady);
+
+    socket.on("declineRematch", () => {
+        const room = roomFor(socket);
+        const player = room?.players.find((candidate) => candidate.id === socket.id && !candidate.left && !candidate.isBot);
+        if (!room || !player) return emitError(socket, "Вы не состоите в этой комнате.");
+        if (room.phase !== "finished" || room.rematchResolved || !room.rematchDeadline || Date.now() >= room.rematchDeadline) {
+            return emitError(socket, "Сейчас нельзя изменить решение о новой игре.");
         }
-        room.gameId = generateGameId();
-        room.historyRecorded = false;
-        room.eliminated = [];
-        room.players.forEach((player) => {
-            player.left = false;
-            player.disconnected = false;
-            player.voluntaryLeft = false;
-        });
-        const launched = launchGame(room, Boolean(room.isSoloTest));
-        room.restartRequested = false;
-        if (!launched) return emitError(socket, "Не удалось запустить новую партию повторно.");
-        io.to(room.code).emit("gameRestarted", { gameId: room.gameId });
+        room.rematchDeclinedIds = [...new Set([...(room.rematchDeclinedIds || []), socket.id])];
+        room.rematchReadyIds = (room.rematchReadyIds || []).filter((id) => id !== socket.id);
+        addActionLog(room, `${player.nickname} не участвует в следующей игре.`, "system");
+        io.to(room.code).emit("rematchUpdated", { nickname: player.nickname, ready: false });
+        if (!maybeFinalizeRematch(room)) emitRoom(room);
     });
 
     socket.on("revealTrait", (requestedTrait) => {
