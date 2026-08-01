@@ -261,6 +261,7 @@ function updateActionTimer() {
 
 function renderIntegratedTestAdmin() {
     const canControl = Boolean(room?.isTestRoom && isHost());
+    document.body.classList.toggle("test-admin-open", canControl && testPanelOpen);
     $("#testPanelToggle").classList.toggle("hidden", !canControl);
     if (!canControl) {
         testPanelOpen = false;
