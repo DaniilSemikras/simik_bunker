@@ -80,7 +80,7 @@ input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(241,168,78,.
 .avatar-image { display:block; object-fit:cover; background:var(--panel-2); }
 .host-badge { margin-left:auto; color:var(--accent); font-size:11px; font-weight:700; }
 .lobby-host-actions { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(150px,.55fr); gap:9px; margin-top:10px; }
-.lobby-host-actions .button { width:100%; margin:0; }
+.lobby-host-actions .button { width:100%; min-height:42px; margin:0; padding:9px 12px; font-size:13px; line-height:1.15; white-space:nowrap; }
 .lobby-expiry { margin:10px 0 0; padding:9px 12px; border:1px solid color-mix(in srgb,var(--accent) 34%,transparent); border-radius:10px; color:var(--muted); background:color-mix(in srgb,var(--accent) 7%,transparent); font-size:11px; text-align:center; }
 .danger-button { border-color:rgba(222,103,83,.48); color:#ffd6cf; background:rgba(87,35,29,.5); }
 .danger-button:hover { border-color:rgba(255,139,119,.82); background:rgba(112,42,34,.68); }
