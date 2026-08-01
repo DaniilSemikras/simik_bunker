@@ -105,7 +105,7 @@ function professionBunkerFit(room, professionValue) {
         if (!amount || bonus >= 45) return;
         const applied = Math.min(amount, 45 - bonus);
         bonus += applied;
-        reasons.push(`${reason} +${applied}`);
+        reasons.push(reason);
     };
     const specialization = traitText(["specialization", "назначен", "специализ"]);
     if (/технич/.test(specialization) && technical) addBonus(18, "подходит техническому бункеру");
@@ -156,7 +156,7 @@ function professionItemBunkerFit(room, professionValue, itemValue) {
         if (!amount || bonus >= 28) return;
         const applied = Math.min(amount, 28 - bonus);
         bonus += applied;
-        reasons.push(`${reason} +${applied}`);
+        reasons.push(reason);
     };
     const technicalFailure = /(электр|вентил|состояни).*(сломан|поврежден|аварийн|ремонт)|(?:сломан|поврежден|аварийн|ремонт).*(электр|вентил|состояни)/.test(bunker);
     const lowFood = /(еды нет|3 дня|недел|голод)/.test(bunker);
