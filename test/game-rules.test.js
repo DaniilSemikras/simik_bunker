@@ -89,6 +89,14 @@ test("ухудшение здорового игрока начинается с
     assert.equal(formatHealthState(result.state), "Заболевание — стадия 2/5");
 });
 
+test("сильный иммунитет сохраняет смысл после ухудшения и восстановления", () => {
+    const initial = parseHealthState("Сильный иммунитет");
+    const worsened = applyHealthStageChange(initial, "worsen", 1).state;
+    assert.equal(formatHealthState(worsened), "Ослабленный иммунитет — стадия 1/5");
+    const restored = applyHealthStageChange(worsened, "improve", 1).state;
+    assert.equal(formatHealthState(restored), "Сильный иммунитет");
+});
+
 test("автоматическое исключение двух игроков включается только в большой игре", () => {
     assert.equal(getEliminationsPerRound(12, 6, "auto"), 2);
     assert.equal(getEliminationsPerRound(9, 6, "auto"), 1);

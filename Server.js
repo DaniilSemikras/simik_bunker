@@ -12,6 +12,7 @@ const {
     formatHealthState,
     getEliminationsPerRound,
     hasRevealedProfession,
+    isFullyHealthyText,
     isWeaponItem,
     normalizeHealthState,
     parseDurationDays,
@@ -1710,7 +1711,8 @@ function healthStage(value) {
 }
 
 function healthNeedsStage(value) {
-    return /(астм|диабет|мигрен|бессон|паническ|гипертони|эпилепс|онколог|депресс)/.test(healthBase(value).toLocaleLowerCase("ru"));
+    const text = healthBase(value).trim();
+    return Boolean(text) && !isFullyHealthyText(text) && !/смертельно болен/i.test(text);
 }
 
 function cardValueForCategory(category, value) {
