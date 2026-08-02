@@ -2010,6 +2010,7 @@ function rematchHumanPlayers(room) {
 
 function resetRoomToLobby(room) {
     clearActionTimer(room);
+    room.launchInProgress = false;
     room.phase = "lobby";
     room.rematchDeadline = null;
     room.rematchReadyIds = [];
@@ -2051,6 +2052,24 @@ function resetRoomToLobby(room) {
 }
 
 function finalizeRematch(room) {
+    try {
+        return finalizeRematchUnsafe(room);
+    } catch (error) {
+        console.error("Не удалось запустить повторную игру.", error);
+        if (room && rooms[room.code] === room) {
+            resetRoomToLobby(room);
+            io.to(room.code).emit("rematchClosed", {
+                started: false,
+                reason: "Повторную игру не удалось запустить. Комната возвращена в лобби."
+            });
+            emitRoom(room);
+            scheduleIdleLobbyClose(room);
+        }
+        return false;
+    }
+}
+
+function finalizeRematchUnsafe(room) {
     if (!room || room.phase !== "finished" || room.rematchResolved) return false;
     room.rematchResolved = true;
     if (room.rematchTimer) clearTimeout(room.rematchTimer);
@@ -2082,6 +2101,7 @@ function finalizeRematch(room) {
     room.historyRecorded = false;
     room.rematchReadyIds = [];
     room.rematchDeclinedIds = [];
+    resetRoomToLobby(room);
 
     const canStartImmediately = room.players.filter((player) => !player.left).length >= MIN_PLAYERS_TO_START;
     if (canStartImmediately && typeof launchGame === "function") {
@@ -2092,9 +2112,9 @@ function finalizeRematch(room) {
         }
     }
 
-    resetRoomToLobby(room);
     io.to(room.code).emit("rematchLobby", { playerCount: room.players.length });
     emitRoom(room);
+    scheduleIdleLobbyClose(room);
     return true;
 }
 
