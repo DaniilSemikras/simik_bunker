@@ -435,11 +435,14 @@ function updateGame() {
         if (!player) return "";
         const professionReasons = Array.isArray(entry.professionReasons) ? entry.professionReasons.join("; ") : "";
         const professionImpact = Number(entry.professionImpact) || 0;
+        const rankImpact = Number(entry.rankImpact) || 0;
+        const rankSign = rankImpact > 0 ? "+" : "";
         const itemReasons = Array.isArray(entry.professionItemReasons) ? entry.professionItemReasons.join("; ") : "";
         const itemImpact = Number(entry.professionItemImpact) || 0;
         const supplyBonus = Number(entry.supplyBonus) || 0;
         const supplyReasons = Array.isArray(entry.supplyReasons) ? entry.supplyReasons.join("; ") : "";
         const baseLine = '<li><b>Основа: ' + (Number(entry.baseUtility) || 0) + '%</b><span>профессия и остальные характеристики.</span></li>';
+        const rankLine = '<li class="' + (rankImpact ? '' : 'utility-neutral') + '"><b>Ранг: ' + rankSign + rankImpact + '%</b><span>' + escaped(entry.rankName || "нормис") + '.</span></li>';
         const professionLine = professionImpact
             ? '<li><b>Условия бункера: +' + professionImpact + '%</b><span>' + escaped(professionReasons) + '</span></li>'
             : '<li class="utility-neutral"><b>Условия бункера: +0%</b><span>у профессии нет особого совпадения.</span></li>';
@@ -449,7 +452,7 @@ function updateGame() {
         const supplyLine = supplyBonus
             ? '<li><b>Личные запасы: +' + supplyBonus + '%</b><span>' + escaped(supplyReasons) + '</span></li>'
             : '<li class="utility-neutral"><b>Личные запасы: +0%</b><span>нет запасов, покрывающих срок изоляции.</span></li>';
-        const contributionItems = baseLine + professionLine + additionalLine + supplyLine;
+        const contributionItems = baseLine + rankLine + professionLine + additionalLine + supplyLine;
         return '<article class="utility-player">' + avatarMarkup(player) + '<div class="utility-copy"><div class="utility-player-heading"><strong>' + escaped(player.nickname) + '</strong><b>' + entry.utility + '%</b></div><small>Итоговая полезность</small><ul class="utility-contributions">' + contributionItems + '</ul></div></article>';
     }).join("");
     const myRevealed = me?.revealed || {};

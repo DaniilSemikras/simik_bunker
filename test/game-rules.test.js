@@ -11,6 +11,8 @@ const {
     getEliminationsPerRound,
     hasRevealedProfession,
     parseDurationDays,
+    professionRank,
+    professionRankImpact,
     randomizeGenderAge,
     selectRematchPlayers,
     parseHealthState
@@ -54,6 +56,16 @@ test("возраст генерируется независимо от пола
 test("возраст 90+ выпадает только в редком верхнем диапазоне", () => {
     assert.equal(randomizeGenderAge("Женщина", () => 0.979999), "Женщина, 89 лет");
     assert.equal(randomizeGenderAge("Женщина", () => 0.98), "Женщина, 90 лет");
+});
+
+test("ранг профессии изменяет итоговую полезность", () => {
+    assert.equal(professionRank("Фермер — вафля"), "вафля");
+    assert.equal(professionRankImpact("Фермер — вафля"), -8);
+    assert.equal(professionRankImpact("Фермер — новичок"), -4);
+    assert.equal(professionRankImpact("Фермер — нормис"), 0);
+    assert.equal(professionRankImpact("Фермер — продвинутый"), 4);
+    assert.equal(professionRankImpact("Фермер — силач"), 7);
+    assert.equal(professionRankImpact("Фермер — прайм"), 10);
 });
 
 test("улучшение здоровья уменьшает стадию и не уходит ниже нуля", () => {

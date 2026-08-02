@@ -17,6 +17,8 @@ const {
     normalizeHealthState,
     parseDurationDays,
     parseHealthState,
+    professionRank,
+    professionRankImpact,
     randomizeGenderAge,
     selectRematchPlayers
 } = require("./lib/game-rules");
@@ -114,6 +116,13 @@ function professionBunkerFit(room, professionValue) {
     if (/ферм/.test(specialization) && foodExpert) addBonus(18, "полезна для фермы");
     if (/медицин/.test(specialization) && medic) addBonus(18, "полезна для медблока");
     if (/(склад|снабжен)/.test(specialization) && warehouseExpert) addBonus(18, "полезна для склада снабжения");
+
+    const equipment = traitText(["equipment", "оснащен", "предметы внутри"]);
+    if (/(семен|культиватор|удобрен|выращиван)/.test(equipment) && farmer) addBonus(14, "сможет использовать фермерское оснащение");
+    if (/(кабель|предохранител|генератор|мультиметр|инструмент)/.test(equipment) && technical) addBonus(10, "сможет использовать техническое оснащение");
+    if (/(реактив|микроскоп|лаборатор|анализ воды)/.test(equipment) && scientist) addBonus(10, "сможет использовать лабораторное оснащение");
+    if (/(медикамент|хирург|антибиотик|аптечк)/.test(equipment) && medic) addBonus(10, "сможет использовать медицинское оснащение");
+    if (/(консерв|питьевой воды|запас топлива)/.test(equipment) && warehouseExpert) addBonus(8, "сможет организовать запасы бункера");
 
     const electricity = traitText(["electricity", "электр"]);
     if (/(поврежден|слом|нужен электрик|аварийн)/.test(electricity)) {
@@ -236,6 +245,60 @@ const HEALTH_CATEGORY_SEED_VERSION = 1;
 const SPECIAL_CARD_LIBRARY_SEED_VERSION = 5;
 const DISASTER_DURATION_SEED_VERSION = 1;
 const CONTENT_FILL_SEED_VERSION = 2;
+const CORE_CONTENT_SEED_VERSION = 1;
+const CORE_PROFESSION_OPTIONS = [
+    { value: "Врач скорой помощи", score: 95 },
+    { value: "Медик", score: 92 },
+    { value: "Фельдшер", score: 92 },
+    { value: "Хирург", score: 94 },
+    { value: "Медсестра", score: 88 },
+    { value: "Электрик", score: 92 },
+    { value: "Энергетик", score: 90 },
+    { value: "Электронщик", score: 88 },
+    { value: "Инженер", score: 90 },
+    { value: "Механик", score: 88 },
+    { value: "Строитель", score: 86 },
+    { value: "Программист", score: 72 },
+    { value: "Биолог", score: 84 },
+    { value: "Химик", score: 84 },
+    { value: "Учёный", score: 86 },
+    { value: "Лаборант", score: 80 },
+    { value: "Фармацевт", score: 86 },
+    { value: "Фермер", score: 91 },
+    { value: "Агроном", score: 88 },
+    { value: "Садовод", score: 84 },
+    { value: "Повар", score: 80 },
+    { value: "Кулинар", score: 78 },
+    { value: "Ветеринар", score: 81 },
+    { value: "Сантехник", score: 84 },
+    { value: "Гидролог", score: 84 },
+    { value: "Военный", score: 84 },
+    { value: "Спасатель", score: 84 },
+    { value: "Пожарный", score: 82 },
+    { value: "Охранник", score: 76 },
+    { value: "Полицейский", score: 80 },
+    { value: "Логист", score: 80 },
+    { value: "Кладовщик", score: 74 },
+    { value: "Психолог", score: 76 }
+];
+const CORE_BACKPACK_OPTIONS = [
+    { value: "Запас семян и удобрений", score: 88 },
+    { value: "Сухпаёк на 3 дня", score: 72 },
+    { value: "Ящик консервов на 2 недели", score: 86 },
+    { value: "Аптечка и набор лекарств", score: 88 },
+    { value: "Набор инструментов", score: 86 },
+    { value: "Фильтр для воды", score: 86 },
+    { value: "Рация и запас батареек", score: 78 }
+];
+const COMMON_BUNKER_ITEMS = ["аптечка первой помощи", "набор инструментов", "рация и батарейки", "фонари", "фильтр для воды"];
+const BUNKER_ITEMS_BY_SPECIALIZATION = {
+    technical: ["кабель и запас предохранителей", "детали для генератора", "мультиметр"],
+    laboratory: ["набор реактивов", "микроскоп и лабораторная посуда", "система анализа воды"],
+    farm: ["запас семян", "ручной культиватор и удобрения", "контейнеры для выращивания грибов"],
+    medical: ["запас медикаментов", "хирургический набор", "антибиотики и перевязочные материалы"],
+    warehouse: ["ящики консервов", "канистры питьевой воды", "запас топлива и батарей"]
+};
+const PREVIOUS_RESIDENT_ITEMS = ["старый револьвер", "банка консервов", "складной нож", "зажигалка", "бутылка воды", "грязная карта местности"];
 const WEAPON_BACKPACK_OPTION = { value: "Оружие", score: 70, chance: 10 };
 const WATER_BACKPACK_OPTIONS = [
     { value: "Запас питьевой воды на 3 дня", score: 72, chance: 8 },
@@ -403,6 +466,7 @@ const DEFAULT_GAME_CONFIG = {
     specialCardLibrarySeedVersion: SPECIAL_CARD_LIBRARY_SEED_VERSION,
     disasterDurationSeedVersion: DISASTER_DURATION_SEED_VERSION,
     contentFillSeedVersion: CONTENT_FILL_SEED_VERSION,
+    coreContentSeedVersion: CORE_CONTENT_SEED_VERSION,
     specialCards: [
         {
             id: "swap_random_trait",
@@ -501,8 +565,8 @@ function defaultChance(index, count) {
 
 function defaultProfessionItem(value) {
     const text = String(value || "").toLocaleLowerCase("ru");
-    if (/(врач|фельдшер|медик|ветеринар|хирург)/.test(text)) return "аптечка, антибиотики и перевязочный набор";
-    if (/(биолог|химик|лаборант|фармацевт)/.test(text)) return "реактивы и тест-набор для воды";
+    if (/(врач|фельдшер|медик|медсестр|ветеринар|хирург)/.test(text)) return "аптечка, антибиотики и перевязочный набор";
+    if (/(биолог|химик|уч[её]н|лаборант|фармацевт)/.test(text)) return "реактивы и тест-набор для воды";
     if (/(электрик|энергетик|инженер|электронщик)/.test(text)) return "мультиметр, кабель и запас предохранителей";
     if (/(сантехник|гидролог)/.test(text)) return "фильтр и набор для очистки воды";
     if (/(фермер|агроном|садовод)/.test(text)) return "семена, удобрения и ручной культиватор";
@@ -511,8 +575,87 @@ function defaultProfessionItem(value) {
     if (/(механик|автомеханик)/.test(text)) return "слесарный набор и запасные детали";
     if (/(военн|спасател|пожарн|охранник|полиц)/.test(text)) return "рация, фонарь и аварийный набор";
     if (/(программист|радист|связист)/.test(text)) return "рация и диагностический набор";
+    if (/(логист|кладов)/.test(text)) return "инвентарная ведомость, маркировка и складской инструмент";
     if (/(психолог|учител)/.test(text)) return "набор для коммуникации с группой";
     return "";
+}
+
+function coreOptionExists(options, candidateValue) {
+    const candidate = String(candidateValue || "").toLocaleLowerCase("ru").trim();
+    return options.some((option) => {
+        const existing = String(typeof option === "string" ? option : option?.value || "").toLocaleLowerCase("ru").trim();
+        return Boolean(existing) && (existing === candidate || existing.includes(candidate) || candidate.includes(existing));
+    });
+}
+
+function mergeCoreOptions(rawOptions, library, isProfession = false) {
+    const options = (Array.isArray(rawOptions) ? clone(rawOptions) : []).map((option) => typeof option === "string" ? { value: option } : option);
+    const addedValues = new Set();
+    for (const candidate of library) {
+        if (coreOptionExists(options, candidate.value)) continue;
+        options.push({ ...candidate, ...(isProfession ? { passiveItem: defaultProfessionItem(candidate.value) } : {}) });
+        addedValues.add(candidate.value);
+    }
+    const limited = options.slice(0, 60);
+    if (!addedValues.size) return limited.map((option) => ({
+        ...option,
+        ...(isProfession && !option.passiveItem ? { passiveItem: defaultProfessionItem(option.value) } : {})
+    }));
+    const weights = limited.map((option, index) => addedValues.has(option.value)
+        ? 2
+        : cleanChance(option.chance, defaultChance(index, limited.length)));
+    const totalWeight = weights.reduce((sum, weight) => sum + weight, 0) || limited.length;
+    let assignedChance = 0;
+    return limited.map((option, index) => {
+        const chance = index === limited.length - 1
+            ? Math.round((100 - assignedChance) * 100) / 100
+            : Math.round((weights[index] / totalWeight * 100) * 100) / 100;
+        assignedChance += chance;
+        return {
+            ...option,
+            ...(isProfession && !option.passiveItem ? { passiveItem: defaultProfessionItem(option.value) } : {}),
+            chance
+        };
+    });
+}
+
+function addCoreContentToCategories(rawCategories) {
+    const categories = Array.isArray(rawCategories) ? clone(rawCategories) : [];
+    let profession = categories.find((category) => categoryContentKind(category) === "profession");
+    if (!profession) {
+        profession = clone(DEFAULT_GAME_CONFIG.categories.find((category) => category.id === "profession"));
+        categories.unshift(profession);
+    }
+    profession.options = mergeCoreOptions(Array.isArray(profession.options) ? profession.options : profession.values, CORE_PROFESSION_OPTIONS, true);
+    delete profession.values;
+
+    let backpack = categories.find(isBackpackCategory);
+    if (!backpack) {
+        backpack = clone(DEFAULT_BACKPACK_CATEGORY);
+        categories.push(backpack);
+    }
+    backpack.options = mergeCoreOptions(Array.isArray(backpack.options) ? backpack.options : backpack.values, CORE_BACKPACK_OPTIONS);
+    delete backpack.values;
+    return categories;
+}
+
+function seedCoreContent(rawConfig) {
+    const source = rawConfig && typeof rawConfig === "object" ? rawConfig : {};
+    if (Number(source.coreContentSeedVersion) >= CORE_CONTENT_SEED_VERSION) return { config: source, changed: false };
+    const presets = Array.isArray(source.presets)
+        ? source.presets.map((preset) => Array.isArray(preset?.categories)
+            ? { ...preset, categories: addCoreContentToCategories(preset.categories) }
+            : preset)
+        : source.presets;
+    return {
+        config: {
+            ...source,
+            categories: addCoreContentToCategories(source.categories),
+            ...(presets ? { presets } : {}),
+            coreContentSeedVersion: CORE_CONTENT_SEED_VERSION
+        },
+        changed: true
+    };
 }
 
 function bunkerTraitMatchesDefault(trait, defaultTrait) {
@@ -1128,13 +1271,14 @@ function seedGameConfig(rawConfig) {
     const backpackSeed = seedBackpackWeapon(contentSeed.config);
     const backpackWaterSeed = seedBackpackWater(backpackSeed.config);
     const backpackFoodSeed = seedBackpackFood(backpackWaterSeed.config);
-    const profileSeed = seedProfileCategories(backpackFoodSeed.config);
+    const coreContentSeed = seedCoreContent(backpackFoodSeed.config);
+    const profileSeed = seedProfileCategories(coreContentSeed.config);
     const healthSeed = seedHealthCategory(profileSeed.config);
     const specialCardSeed = seedSpecialCardLibrary(healthSeed.config);
     const disasterSeed = seedDisasterDurations(specialCardSeed.config);
     return {
         config: disasterSeed.config,
-        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || waterDurationSeed.changed || backpackSeed.changed || backpackWaterSeed.changed || backpackFoodSeed.changed || profileSeed.changed || healthSeed.changed || specialCardSeed.changed || disasterSeed.changed || contentSeed.changed
+        changed: bunkerSeed.changed || waterLabelSeed.changed || waterOptionsSeed.changed || waterPercentageSeed.changed || waterDurationSeed.changed || backpackSeed.changed || backpackWaterSeed.changed || backpackFoodSeed.changed || coreContentSeed.changed || profileSeed.changed || healthSeed.changed || specialCardSeed.changed || disasterSeed.changed || contentSeed.changed
     };
 }
 
@@ -1163,7 +1307,7 @@ function normalizeGameConfig(rawConfig, includePresets = true) {
                 normalizedOption.passiveItem = cleanText(typeof option === "string" ? "" : option?.passiveItem, 120) || defaultProfessionItem(value);
             }
             return normalizedOption;
-        }).filter(Boolean).slice(0, 40);
+        }).filter(Boolean).slice(0, 60);
         if (!id || !name || !options.length || usedIds.has(id)) return null;
         const chanceTotal = options.reduce((sum, option) => sum + option.chance, 0);
         if (Math.abs(chanceTotal - 100) > 0.01) {
@@ -1297,6 +1441,9 @@ function normalizeGameConfig(rawConfig, includePresets = true) {
     const contentFillSeedVersion = Number(rawConfig?.contentFillSeedVersion) >= CONTENT_FILL_SEED_VERSION
         ? CONTENT_FILL_SEED_VERSION
         : 0;
+    const coreContentSeedVersion = Number(rawConfig?.coreContentSeedVersion) >= CORE_CONTENT_SEED_VERSION
+        ? CORE_CONTENT_SEED_VERSION
+        : 0;
     const supplyDurations = Object.fromEntries(["water", "food"].map((kind) => {
         const source = Array.isArray(rawConfig?.supplyDurations?.[kind]) ? rawConfig.supplyDurations[kind] : DEFAULT_SUPPLY_DURATIONS[kind];
         const values = source.map((duration) => ({
@@ -1305,7 +1452,7 @@ function normalizeGameConfig(rawConfig, includePresets = true) {
         })).filter((duration) => duration.amount > 0);
         return [kind, values.length ? values : clone(DEFAULT_SUPPLY_DURATIONS[kind])];
     }));
-    const baseConfig = { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, waterDurationSeedVersion, backpackWaterSeedVersion, backpackFoodSeedVersion, genderOptionsSeedVersion, healthCategorySeedVersion, specialCardLibrarySeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, specialCards, supplyDurations, hiddenAvatars, revision };
+    const baseConfig = { categories: otherCategories, disasters, bunkerTraits, bunkerTraitsSeedVersion, backpackWeaponSeedVersion, waterTraitLabelSeedVersion, waterOptionsSeedVersion, waterRandomPercentSeedVersion, waterDurationSeedVersion, backpackWaterSeedVersion, backpackFoodSeedVersion, genderOptionsSeedVersion, healthCategorySeedVersion, specialCardLibrarySeedVersion, disasterDurationSeedVersion, contentFillSeedVersion, coreContentSeedVersion, specialCards, supplyDurations, hiddenAvatars, revision };
     if (!includePresets) return baseConfig;
 
     const defaultPresetNames = [
@@ -1774,8 +1921,32 @@ function isPreviousResidentsTrait(trait) {
     return /previous|предыдущ|жител|бомж/.test(hint);
 }
 
+function generatedBunkerEquipment(selectedTraits) {
+    if (selectedTraits.some((trait) => /equipment|оснащен|предметы внутри/.test(`${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru")))) return null;
+    const specialization = selectedTraits.find((trait) => /specialization|назначен|специализ/.test(`${trait?.id || ""} ${trait?.name || ""}`.toLocaleLowerCase("ru")));
+    const specializationValue = String(specialization?.value || "").toLocaleLowerCase("ru");
+    const pool = /технич/.test(specializationValue) ? BUNKER_ITEMS_BY_SPECIALIZATION.technical
+        : /лаборатор|научн/.test(specializationValue) ? BUNKER_ITEMS_BY_SPECIALIZATION.laboratory
+            : /ферм/.test(specializationValue) ? BUNKER_ITEMS_BY_SPECIALIZATION.farm
+                : /медицин/.test(specializationValue) ? BUNKER_ITEMS_BY_SPECIALIZATION.medical
+                    : /склад|снабжен/.test(specializationValue) ? BUNKER_ITEMS_BY_SPECIALIZATION.warehouse
+                        : COMMON_BUNKER_ITEMS;
+    const items = [randomItem(pool), randomItem(COMMON_BUNKER_ITEMS)];
+    const residents = selectedTraits.find(isPreviousResidentsTrait);
+    if (residents && !/пуст/.test(String(residents.value || "").toLocaleLowerCase("ru"))) {
+        items.push(`тайник прежнего жителя: ${randomItem(PREVIOUS_RESIDENT_ITEMS)}`);
+    }
+    return {
+        id: "equipment",
+        name: "Оснащение бункера",
+        value: [...new Set(items)].join(", "),
+        occupiedSlots: 0,
+        evictedResidents: 0
+    };
+}
+
 function assignBunkerTraits(traits, playerCount, supplyDurations) {
-    return traits.map((trait) => {
+    const selectedTraits = traits.map((trait) => {
         if (trait.randomPercentage) {
             const fillPercent = Math.floor(Math.random() * 101);
             return {
@@ -1810,6 +1981,8 @@ function assignBunkerTraits(traits, playerCount, supplyDurations) {
             evictedResidents: 0
         };
     });
+    const equipment = generatedBunkerEquipment(selectedTraits);
+    return equipment ? [...selectedTraits, equipment] : selectedTraits;
 }
 
 function backpackTraitId(room) {
@@ -2460,6 +2633,8 @@ function calculateUtilityBreakdown(room) {
         const professionValue = room.cards?.[player.id]?.[professionTrait] || room.revealed?.[player.id]?.[professionTrait] || "";
         const professionScoreKey = professionBase(professionValue);
         const professionBaseScore = cleanScore(room.cardScores?.[professionTrait]?.[professionScoreKey], defaultOptionScore("profession", professionScoreKey));
+        const rankName = professionRank(professionValue);
+        const rankImpact = professionRankImpact(professionValue);
         const professionFit = professionValue ? professionBunkerFit(room, professionValue) : { bonus: 0, reasons: [] };
         const professionBonus = professionFit.bonus;
         const baseUtility = Math.round(professionValue ? professionBaseScore * 0.45 + otherAverage * 0.55 : otherAverage);
@@ -2469,7 +2644,7 @@ function calculateUtilityBreakdown(room) {
         const professionItemFit = professionItem ? professionItemBunkerFit(room, professionValue, professionItem) : { bonus: 0, reasons: [] };
         const professionItemImpact = professionItem ? 4 + Math.round(professionItemFit.bonus * 0.45) : 0;
         const supplyFit = playerSupplyFit(room, player.id);
-        const utility = Math.min(100, baseUtility + professionImpact + professionItemImpact + supplyFit.bonus);
+        const utility = Math.max(0, Math.min(100, baseUtility + rankImpact + professionImpact + professionItemImpact + supplyFit.bonus));
         const contributions = [
             ...professionReasons.map((reason) => ({ source: professionValue || "Профессия", reason })),
             ...professionItemFit.reasons.map((reason) => ({ source: professionItem, reason })),
@@ -2483,6 +2658,8 @@ function calculateUtilityBreakdown(room) {
             baseUtility,
             otherAverage: Math.round(otherAverage),
             professionBaseScore: Math.round(professionBaseScore),
+            rankName,
+            rankImpact,
             professionBonus,
             professionImpact,
             professionReasons,
@@ -2570,7 +2747,7 @@ function publicState(room) {
         voteCanBeSkipped: voteCanBeSkipped(room),
         bunkerSurvivalChance: room.phase === "finished" ? calculateBunkerSurvivalChance(room) : null,
         utilityBreakdown: room.phase === "finished"
-            ? calculateUtilityBreakdown(room).map(({ playerId, utility, revealedCards, baseUtility, otherAverage, professionBaseScore, professionBonus, professionImpact, professionReasons, professionItem, professionItemBonus, professionItemImpact, professionItemReasons, supplyBonus, supplyReasons, requiredDuration, contributions }) => ({ playerId, utility, revealedCards, baseUtility, otherAverage, professionBaseScore, professionBonus, professionImpact, professionReasons, professionItem, professionItemBonus, professionItemImpact, professionItemReasons, supplyBonus, supplyReasons, requiredDuration, contributions }))
+            ? calculateUtilityBreakdown(room).map(({ playerId, utility, revealedCards, baseUtility, otherAverage, professionBaseScore, rankName, rankImpact, professionBonus, professionImpact, professionReasons, professionItem, professionItemBonus, professionItemImpact, professionItemReasons, supplyBonus, supplyReasons, requiredDuration, contributions }) => ({ playerId, utility, revealedCards, baseUtility, otherAverage, professionBaseScore, rankName, rankImpact, professionBonus, professionImpact, professionReasons, professionItem, professionItemBonus, professionItemImpact, professionItemReasons, supplyBonus, supplyReasons, requiredDuration, contributions }))
             : [],
         roomCloseDeadline: room.roomCloseDeadline || null,
         lobbyCloseDeadline: room.lobbyCloseDeadline || null,
