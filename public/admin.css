@@ -76,6 +76,7 @@ input:focus,textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px co
 .admin-game-watch { border:1px solid color-mix(in srgb,var(--accent) 54%,transparent); border-radius:9px; padding:8px 10px; color:var(--accent-ink); background:var(--accent); font-size:11px; font-weight:850; }
 .admin-games-empty { margin:0; padding:18px; border:1px dashed var(--line); border-radius:12px; color:var(--muted); text-align:center; font-size:13px; }
 .admin-game-details { display:grid; gap:12px; margin-top:14px; padding:18px; border:1px solid color-mix(in srgb,var(--accent) 42%,transparent); border-radius:14px; background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 8%,var(--panel)),var(--card-bg)); }
+.admin-games > .admin-game-details { margin-top:-2px; }
 .admin-game-details-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .admin-game-details h3 { font-size:18px; }
 .admin-game-details p { margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.45; }

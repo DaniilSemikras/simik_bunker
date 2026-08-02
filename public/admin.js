@@ -163,9 +163,23 @@ function renderAdminHistoryDetails(game) {
         <div><p class="eyebrow">КАТАСТРОФА И БУНКЕР</p><p>${escapeHtml(game.disaster || "—")}</p><p>${escapeHtml(bunker)}</p><p>Срок: ${escapeHtml(game.disasterDuration || "—")}</p></div>
         <div><p class="eyebrow">ИСПОЛЬЗОВАННЫЕ СПЕЦКАРТЫ</p><p>${escapeHtml((game.usedSpecialCards || []).map((card) => `${card.player}: ${card.name}`).join(", ") || "Нет")}</p></div>`;
     target.classList.remove("hidden");
+    placeAdminHistoryDetails();
+}
+
+function placeAdminHistoryDetails() {
+    const target = $("#adminHistoryDetails");
+    const historyList = $("#adminHistory");
+    if (!target || !historyList || !selectedHistoryGameId) return;
+    const selectedCard = Array.from(historyList.querySelectorAll(".admin-game-card")).find((card) =>
+        card.querySelector("[data-history-game]")?.dataset.historyGame === selectedHistoryGameId
+    );
+    if (selectedCard) selectedCard.after(target);
 }
 
 function renderAdminHistory() {
+    const details = $("#adminHistoryDetails");
+    const historyPanel = $("[data-editor-panel='history']");
+    if (details && historyPanel && details.parentElement !== historyPanel) historyPanel.append(details);
     $("#adminHistoryCount").textContent = String(adminHistory.length);
     $("#adminHistory").innerHTML = adminHistory.length ? adminHistory.map((game) => `
         <article class="admin-game-card ${game.gameId === selectedHistoryGameId ? "is-selected" : ""}">
@@ -173,6 +187,12 @@ function renderAdminHistory() {
             <div class="admin-game-copy"><div><strong>${escapeHtml(game.roomCode)}</strong> <span class="admin-game-phase">${escapeHtml(game.presetName || game.presetId || "Классический")}</span></div><div class="admin-game-meta"><span>${(game.participants || []).length} участников</span><span>${(game.winners || []).length} победителей</span><span>${formatDuration(game.durationMs)}</span></div></div>
             <button class="admin-game-watch" type="button" data-history-game="${escapeHtml(game.gameId)}">Подробности</button>
         </article>`).join("") : '<p class="admin-games-empty">Завершённых игр пока нет.</p>';
+    if (selectedHistoryGameId && adminHistory.some((game) => String(game.gameId) === selectedHistoryGameId)) {
+        placeAdminHistoryDetails();
+    } else if (selectedHistoryGameId) {
+        selectedHistoryGameId = "";
+        renderAdminHistoryDetails(null);
+    }
 }
 
 function setAdminHistory(history) {
@@ -190,7 +210,13 @@ async function loadAdminHistory() {
 async function openHistoryGame(gameId) {
     selectedHistoryGameId = String(gameId || "");
     renderAdminHistory();
-    const response = await request(`/api/admin/history/${encodeURIComponent(selectedHistoryGameId)}`);
+    const requestedGameId = selectedHistoryGameId;
+    const target = $("#adminHistoryDetails");
+    target.innerHTML = '<p class="admin-games-empty">Загружаю подробности игры…</p>';
+    target.classList.remove("hidden");
+    placeAdminHistoryDetails();
+    const response = await request(`/api/admin/history/${encodeURIComponent(requestedGameId)}`);
+    if (selectedHistoryGameId !== requestedGameId) return;
     renderAdminHistoryDetails(response.game);
 }
 
