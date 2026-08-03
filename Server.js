@@ -23,6 +23,8 @@ const {
     selectRematchPlayers
 } = require("./lib/game-rules");
 const { GameHistoryStore } = require("./lib/game-history-store");
+const { PlayerProfileStore } = require("./lib/player-profile-store");
+const { DEFAULT_FRAME_ID, PLAYER_FRAMES } = require("./lib/player-frames");
 
 const app = express();
 const server = http.createServer(app);
@@ -217,6 +219,7 @@ const DISASTERS = [
 ];
 const CONFIG_PATH = path.join(__dirname, "data", "game-config.json");
 const GAME_HISTORY_PATH = path.join(__dirname, "data", "game-history.json");
+const PLAYER_PROFILES_PATH = path.join(__dirname, "data", "player-profiles.json");
 const EMPTY_LOBBY_TTL_MS = 3 * 60 * 1000;
 const BUILT_IN_AVATAR_DIRECTORY = path.join(__dirname, "public", "assets", "survivor-avatars");
 const AVATAR_DIRECTORY = path.join(__dirname, "public", "uploads", "avatars");
@@ -227,6 +230,11 @@ const SUPABASE_SECRET_KEY = String(process.env.SUPABASE_SECRET_KEY || "").trim()
 const ENABLE_TEST_MODE = String(process.env.ENABLE_TEST_MODE || "").toLocaleLowerCase("en") === "true";
 const gameHistoryStore = new GameHistoryStore({
     filePath: GAME_HISTORY_PATH,
+    supabaseUrl: SUPABASE_URL,
+    supabaseKey: SUPABASE_SECRET_KEY
+});
+const playerProfileStore = new PlayerProfileStore({
+    filePath: PLAYER_PROFILES_PATH,
     supabaseUrl: SUPABASE_URL,
     supabaseKey: SUPABASE_SECRET_KEY
 });
@@ -1674,6 +1682,109 @@ function requireAdmin(request, response, next) {
     next();
 }
 
+function accountAccessToken(request) {
+    const authorization = request.get("authorization") || "";
+    return authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+}
+
+async function supabaseAccount(accessToken) {
+    const token = String(accessToken || "").trim();
+    if (!usesSupabaseConfig() || !token) return null;
+    const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        headers: { apikey: SUPABASE_SECRET_KEY, authorization: `Bearer ${token}` }
+    });
+    if (!response.ok) return null;
+    const user = await response.json();
+    return user?.id ? user : null;
+}
+
+async function requireAccount(request, response, next) {
+    try {
+        const user = await supabaseAccount(accountAccessToken(request));
+        if (!user) return response.status(401).json({ message: "Войдите через Google, чтобы открыть профиль." });
+        request.accountUser = user;
+        next();
+    } catch (error) {
+        response.status(502).json({ message: "Не удалось проверить аккаунт Supabase." });
+    }
+}
+
+function publicPlayerProfile(profile) {
+    return {
+        userId: profile.userId,
+        email: profile.email,
+        displayName: profile.displayName,
+        pictureUrl: profile.pictureUrl,
+        ownedFrames: profile.ownedFrames,
+        selectedFrame: profile.selectedFrame,
+        freeCaseOpened: profile.freeCaseOpened
+    };
+}
+
+async function profileForAccessToken(accessToken) {
+    const user = await supabaseAccount(accessToken);
+    return user ? playerProfileStore.ensure(user) : null;
+}
+
+async function accountPlayerFields(payload = {}) {
+    const accessToken = String(payload.authToken || "");
+    if (!accessToken) return { accountId: null, frameId: DEFAULT_FRAME_ID };
+    const profile = await profileForAccessToken(accessToken);
+    if (!profile) throw new Error("Сессия Google истекла. Войдите снова или продолжите без аккаунта.");
+    return { accountId: profile.userId, frameId: profile.selectedFrame || DEFAULT_FRAME_ID };
+}
+
+app.get("/api/auth/config", (_request, response) => {
+    response.json({ enabled: usesSupabaseConfig(), frames: PLAYER_FRAMES });
+});
+
+app.get("/api/auth/google", (request, response) => {
+    if (!usesSupabaseConfig()) return response.status(503).send("Supabase Auth ещё не настроен.");
+    const forwardedProto = String(request.get("x-forwarded-proto") || "").split(",")[0].trim();
+    const protocol = forwardedProto || request.protocol || "https";
+    const redirectTo = `${protocol}://${request.get("host")}/`;
+    const authorizeUrl = new URL(`${SUPABASE_URL}/auth/v1/authorize`);
+    authorizeUrl.searchParams.set("provider", "google");
+    authorizeUrl.searchParams.set("redirect_to", redirectTo);
+    response.redirect(authorizeUrl.toString());
+});
+
+app.post("/api/auth/refresh", async (request, response) => {
+    if (!usesSupabaseConfig()) return response.status(503).json({ message: "Supabase Auth ещё не настроен." });
+    const refreshToken = String(request.body?.refreshToken || "");
+    if (!refreshToken) return response.status(400).json({ message: "Отсутствует токен обновления." });
+    const refreshResponse = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+        method: "POST",
+        headers: supabaseHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({ refresh_token: refreshToken })
+    });
+    const payload = await refreshResponse.json().catch(() => ({}));
+    if (!refreshResponse.ok) return response.status(401).json({ message: "Сессия Google истекла. Войдите снова." });
+    response.json(payload);
+});
+
+app.get("/api/account/profile", requireAccount, async (request, response) => {
+    const profile = await playerProfileStore.ensure(request.accountUser);
+    response.json({ profile: publicPlayerProfile(profile), frames: PLAYER_FRAMES });
+});
+
+app.post("/api/account/free-case", requireAccount, async (request, response) => {
+    await playerProfileStore.ensure(request.accountUser);
+    const result = await playerProfileStore.openFreeCase(request.accountUser.id);
+    if (!result.opened) return response.status(409).json({ message: "Пробный кейс уже открыт.", profile: publicPlayerProfile(result.profile) });
+    response.json({ opened: true, frame: result.frame, profile: publicPlayerProfile(result.profile) });
+});
+
+app.put("/api/account/frame", requireAccount, async (request, response) => {
+    await playerProfileStore.ensure(request.accountUser);
+    try {
+        const profile = await playerProfileStore.selectFrame(request.accountUser.id, String(request.body?.frameId || ""));
+        response.json({ profile: publicPlayerProfile(profile) });
+    } catch (error) {
+        response.status(400).json({ message: error.message });
+    }
+});
+
 app.get("/admin", (_request, response) => response.sendFile(path.join(__dirname, "public", "admin.html")));
 app.get("/api/game-options", (_request, response) => {
     response.json({
@@ -2770,6 +2881,7 @@ function publicState(room) {
             id: player.id,
             nickname: player.nickname,
             avatarUrl: player.avatarUrl || null,
+            frameId: player.frameId || DEFAULT_FRAME_ID,
             isBot: Boolean(player.isBot),
             left: Boolean(player.left),
             eliminated: room.eliminated.includes(player.id),
@@ -2819,6 +2931,7 @@ function createGameHistoryRecord(room) {
     const participants = room.players.map((player) => ({
         nickname: player.nickname,
         avatarUrl: player.avatarUrl || null,
+        frameId: player.frameId || DEFAULT_FRAME_ID,
         isBot: Boolean(player.isBot),
         left: Boolean(player.left),
         eliminated: room.eliminated.includes(player.id),
@@ -3335,6 +3448,7 @@ function addBotsToRoom(room, requestedCount, prefix = "Бот") {
             token: null,
             nickname: `${prefix} ${botNumber}`,
             avatarUrl: chooseAvatar(room),
+            frameId: DEFAULT_FRAME_ID,
             left: false,
             isBot: true,
             isTestPlayer: room.isTestRoom
@@ -3391,7 +3505,7 @@ io.on("connection", (socket) => {
         if (roomFor(socket)) return emitError(socket, "Вы уже состоите в комнате.");
         const nickname = cleanNickname(rawNickname) || "Тестировщик";
         const code = generateCode();
-        const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(), left: false, isBot: false, isTestPlayer: true };
+        const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(), frameId: DEFAULT_FRAME_ID, left: false, isBot: false, isTestPlayer: true };
         rooms[code] = createEmptyRoom(code, player, { isTestRoom: true });
         socket.join(code);
         socket.emit("roomEntered", { code, playerToken: player.token, playerId: socket.id });
@@ -3766,14 +3880,20 @@ io.on("connection", (socket) => {
         socket.emit("test:state", snapshot);
     });
 
-    socket.on("createRoom", (rawPayload = {}) => {
+    socket.on("createRoom", async (rawPayload = {}) => {
         const payload = typeof rawPayload === "string" ? { nickname: rawPayload } : rawPayload || {};
         const nickname = cleanNickname(payload.nickname);
         if (!nickname) return emitError(socket, "Введите никнейм.");
         if (roomFor(socket)) return emitError(socket, "Вы уже состоите в комнате.");
 
+        let accountFields;
+        try {
+            accountFields = await accountPlayerFields(payload);
+        } catch (error) {
+            return emitError(socket, error.message);
+        }
         const code = generateCode();
-        const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(), left: false, isBot: false };
+        const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(), ...accountFields, left: false, isBot: false };
         rooms[code] = createEmptyRoom(code, player, payload);
         scheduleIdleLobbyClose(rooms[code]);
         socket.join(code);
@@ -3781,9 +3901,9 @@ io.on("connection", (socket) => {
         emitRoom(rooms[code]);
     });
 
-    socket.on("joinRoom", ({ roomCode, nickname: rawNickname } = {}) => {
-        const code = String(roomCode || "").trim().toUpperCase();
-        const nickname = cleanNickname(rawNickname);
+    socket.on("joinRoom", async (rawPayload = {}) => {
+        const code = String(rawPayload.roomCode || "").trim().toUpperCase();
+        const nickname = cleanNickname(rawPayload.nickname);
         const room = rooms[code];
         if (!nickname) return emitError(socket, "Введите никнейм.");
         if (!room) return emitError(socket, "Комната не найдена.");
@@ -3793,7 +3913,16 @@ io.on("connection", (socket) => {
         if (room.players.some((player) => !player.voluntaryLeft && player.nickname.toLocaleLowerCase("ru") === nickname.toLocaleLowerCase("ru"))) {
             return emitError(socket, "Такой никнейм уже занят.");
         }
-        const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(room), left: false, isBot: false };
+        let accountFields;
+        try {
+            accountFields = await accountPlayerFields(rawPayload);
+        } catch (error) {
+            return emitError(socket, error.message);
+        }
+        if (accountFields.accountId && room.players.some((player) => !player.voluntaryLeft && player.accountId === accountFields.accountId)) {
+            return emitError(socket, "Этот Google-аккаунт уже участвует в комнате.");
+        }
+        const player = { id: socket.id, token: newPlayerToken(), nickname, avatarUrl: chooseAvatar(room), ...accountFields, left: false, isBot: false };
         room.players.push(player);
         cancelIdleLobbyClose(room);
         socket.join(code);
@@ -3816,6 +3945,16 @@ io.on("connection", (socket) => {
         }
         socket.join(code);
         socket.emit("roomEntered", { code, playerToken: player.token, playerId: socket.id });
+        emitRoom(room);
+    });
+
+    socket.on("account:updateFrame", async ({ accessToken } = {}) => {
+        const room = roomFor(socket);
+        const player = room?.players.find((candidate) => candidate.id === socket.id);
+        if (!room || !player) return;
+        const profile = await profileForAccessToken(accessToken).catch(() => null);
+        if (!profile || !player.accountId || player.accountId !== profile.userId) return emitError(socket, "Не удалось обновить рамку аккаунта.");
+        player.frameId = profile.selectedFrame || DEFAULT_FRAME_ID;
         emitRoom(room);
     });
 
@@ -4100,6 +4239,7 @@ io.on("connection", (socket) => {
 
 Promise.all([
     initializeGameConfig(),
+    playerProfileStore.initialize(),
     gameHistoryStore.initialize().then(() => {
         const storedGames = gameHistoryStore.list();
         nextGameId = storedGames.length ? gameHistoryStore.maxNumericId() + 1 : 0;

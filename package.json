@@ -5,7 +5,7 @@
   "main": "Server.js",
   "scripts": {
     "start": "node Server.js",
-    "test": "node --test test/game-rules.test.js test/game-history-store.test.js"
+    "test": "node --test test/game-rules.test.js test/game-history-store.test.js test/player-profile-store.test.js"
   },
   "keywords": [],
   "author": "",

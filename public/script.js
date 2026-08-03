@@ -73,6 +73,13 @@ let disasterExpanded = false;
 let testModeAvailable = false;
 let testServerState = null;
 let testPanelOpen = false;
+const ACCOUNT_SESSION_KEY = "bunker-account-session";
+let accountSession = (() => {
+    try { return JSON.parse(localStorage.getItem(ACCOUNT_SESSION_KEY) || "null"); } catch { return null; }
+})();
+let accountProfile = null;
+let accountFrames = [];
+let accountAuthEnabled = false;
 const canUsePlayerTable = () => window.matchMedia("(min-width: 721px)").matches;
 let playersView = canUsePlayerTable() && localStorage.getItem("bunker-players-view") === "table" ? "table" : "cards";
 const THEME_STORAGE_KEY = "bunker-color-theme";
@@ -112,12 +119,16 @@ function show(screen) {
     document.body.classList.toggle("in-lobby", screen === "#lobby");
     document.body.classList.toggle("in-game", screen === "#game");
     const themeControl = $("#themeControl");
+    const accountControl = $("#accountControl");
     if (screen === "#game") {
         $(".game-actions").prepend(themeControl);
+        $(".game-actions").prepend(accountControl);
     } else if (themeControl.parentElement !== document.body) {
         document.body.insertBefore(themeControl, $(".app-shell"));
+        document.body.insertBefore(accountControl, themeControl);
     }
     closeThemeMenu();
+    closeAccountPanel();
 }
 
 function showNextToast() {
@@ -197,6 +208,148 @@ function playSound(type) {
 
 function escaped(value) {
     return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]);
+}
+
+function safeFrameId(frameId) {
+    const id = String(frameId || "standard");
+    return /^[a-z0-9_-]+$/.test(id) ? id : "standard";
+}
+
+function saveAccountSession(session) {
+    accountSession = session;
+    if (session) localStorage.setItem(ACCOUNT_SESSION_KEY, JSON.stringify(session));
+    else localStorage.removeItem(ACCOUNT_SESSION_KEY);
+}
+
+function captureOAuthSession() {
+    if (!location.hash.includes("access_token=")) return false;
+    const parameters = new URLSearchParams(location.hash.slice(1));
+    const accessToken = parameters.get("access_token");
+    const refreshToken = parameters.get("refresh_token");
+    if (!accessToken) return false;
+    saveAccountSession({
+        accessToken,
+        refreshToken,
+        expiresAt: Date.now() + Math.max(60, Number(parameters.get("expires_in")) || 3600) * 1000
+    });
+    history.replaceState(null, "", `${location.pathname}${location.search}`);
+    return true;
+}
+
+async function accountAccessToken(forceRefresh = false) {
+    if (!accountSession?.accessToken) return "";
+    if (!forceRefresh && Number(accountSession.expiresAt) > Date.now() + 60_000) return accountSession.accessToken;
+    if (!accountSession.refreshToken) {
+        saveAccountSession(null);
+        return "";
+    }
+    const response = await fetch("/api/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: accountSession.refreshToken })
+    });
+    if (!response.ok) {
+        saveAccountSession(null);
+        return "";
+    }
+    const refreshed = await response.json();
+    saveAccountSession({
+        accessToken: refreshed.access_token,
+        refreshToken: refreshed.refresh_token || accountSession.refreshToken,
+        expiresAt: Date.now() + Math.max(60, Number(refreshed.expires_in) || 3600) * 1000
+    });
+    return accountSession.accessToken;
+}
+
+async function accountRequest(url, options = {}, retry = true) {
+    const accessToken = await accountAccessToken();
+    if (!accessToken) throw new Error("Войдите через Google.");
+    const headers = { ...(options.headers || {}), Authorization: `Bearer ${accessToken}` };
+    if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+    let response = await fetch(url, { ...options, headers });
+    if (response.status === 401 && retry) {
+        const refreshedToken = await accountAccessToken(true);
+        if (refreshedToken) response = await fetch(url, { ...options, headers: { ...headers, Authorization: `Bearer ${refreshedToken}` } });
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.message || "Не удалось загрузить профиль.");
+    return payload;
+}
+
+function accountAvatarMarkup(className = "") {
+    const picture = accountProfile?.pictureUrl;
+    const initial = String(accountProfile?.displayName || accountProfile?.email || "?").charAt(0).toUpperCase();
+    return picture
+        ? `<img class="${className}" src="${escaped(picture)}" alt="">`
+        : `<span class="${className}">${escaped(initial)}</span>`;
+}
+
+function renderAccountProfile() {
+    const loggedIn = Boolean(accountProfile);
+    $("#accountGuest").classList.toggle("hidden", loggedIn);
+    $("#accountProfile").classList.toggle("hidden", !loggedIn);
+    $("#accountToggleText").textContent = loggedIn ? "Профиль" : "Войти";
+    $("#accountToggleAvatar").innerHTML = loggedIn ? accountAvatarMarkup("account-toggle-picture") : "◎";
+    if (!loggedIn) return;
+    $("#accountPicture").innerHTML = accountAvatarMarkup("account-picture-image");
+    $("#accountName").textContent = accountProfile.displayName || "Игрок";
+    $("#accountEmail").textContent = accountProfile.email || "Google-аккаунт";
+    const caseOpened = Boolean(accountProfile.freeCaseOpened);
+    $("#openFreeCase").classList.toggle("hidden", caseOpened);
+    $("#caseTitle").textContent = caseOpened ? "Пробный кейс открыт" : "Одна бесплатная рамка";
+    $("#caseHint").textContent = caseOpened ? "Награда уже добавлена в коллекцию" : "Доступен один раз для аккаунта";
+    const owned = accountFrames.filter((frame) => accountProfile.ownedFrames.includes(frame.id));
+    $("#ownedFrameCount").textContent = `${owned.length}/${accountFrames.length}`;
+    $("#ownedFrames").innerHTML = owned.map((frame) => {
+        const active = accountProfile.selectedFrame === frame.id;
+        return `<button class="frame-option ${active ? "is-active" : ""}" type="button" data-account-frame="${escaped(frame.id)}" title="${escaped(frame.name)}"><span class="frame-preview avatar player-frame frame-${safeFrameId(frame.id)}">${accountAvatarMarkup("frame-preview-image")}</span><strong>${escaped(frame.name)}</strong><small>${active ? "Надета" : frame.rarity === "base" ? "Базовая" : "Получена"}</small></button>`;
+    }).join("");
+}
+
+async function loadAccountProfile() {
+    const payload = await accountRequest("/api/account/profile");
+    accountProfile = payload.profile;
+    accountFrames = payload.frames || accountFrames;
+    if (!nickname() && accountProfile.displayName) $("#nickname").value = accountProfile.displayName.slice(0, 18);
+    renderAccountProfile();
+}
+
+function closeAccountPanel() {
+    $("#accountPanel").classList.add("hidden");
+    $("#accountToggle").setAttribute("aria-expanded", "false");
+}
+
+function toggleAccountPanel() {
+    const panel = $("#accountPanel");
+    const willOpen = panel.classList.contains("hidden");
+    panel.classList.toggle("hidden", !willOpen);
+    $("#accountToggle").setAttribute("aria-expanded", String(willOpen));
+    if (willOpen) closeThemeMenu();
+}
+
+async function initializeAccount() {
+    const returnedFromGoogle = captureOAuthSession();
+    const config = await fetch("/api/auth/config", { cache: "no-store" }).then((response) => response.json()).catch(() => ({ enabled: false, frames: [] }));
+    accountAuthEnabled = Boolean(config.enabled);
+    accountFrames = Array.isArray(config.frames) ? config.frames : [];
+    $("#googleLogin").classList.toggle("hidden", !accountAuthEnabled);
+    $("#accountUnavailable").classList.toggle("hidden", accountAuthEnabled);
+    if (accountSession?.accessToken && accountAuthEnabled) {
+        try {
+            await loadAccountProfile();
+            if (returnedFromGoogle) {
+                toggleAccountPanel();
+                toast("Вход через Google выполнен. Вам доступен бесплатный кейс!", { important: true });
+            }
+        } catch (error) {
+            saveAccountSession(null);
+            accountProfile = null;
+            renderAccountProfile();
+            if (returnedFromGoogle) toast(error.message, { critical: true });
+        }
+    } else {
+        renderAccountProfile();
+    }
 }
 
 function isHost() {
@@ -323,14 +476,16 @@ function fallbackInitial(value = nickname()) {
 }
 
 function avatarMarkup(player) {
-    if (player.avatarUrl) return `<img class="avatar avatar-image" src="${escaped(player.avatarUrl)}" alt="">`;
-    return `<span class="avatar">${escaped(fallbackInitial(player.nickname))}</span>`;
+    const frameClass = `player-frame frame-${safeFrameId(player.frameId)}`;
+    if (player.avatarUrl) return `<img class="avatar avatar-image ${frameClass}" src="${escaped(player.avatarUrl)}" alt="">`;
+    return `<span class="avatar ${frameClass}">${escaped(fallbackInitial(player.nickname))}</span>`;
 }
 
-function playerPayload() {
+async function playerPayload() {
     return {
         nickname: nickname(),
-        visualTheme: localStorage.getItem(THEME_STORAGE_KEY) || "amber"
+        visualTheme: localStorage.getItem(THEME_STORAGE_KEY) || "amber",
+        authToken: await accountAccessToken().catch(() => "")
     };
 }
 
@@ -693,9 +848,9 @@ function tryResumeSession(force = false) {
     socket.emit("resumeRoom", { roomCode: savedSession.code, playerToken: savedSession.token });
 }
 
-$("#createRoom").addEventListener("click", () => socket.emit("createRoom", playerPayload()));
+$("#createRoom").addEventListener("click", async () => socket.emit("createRoom", await playerPayload()));
 $("#createTestRoom").addEventListener("click", () => socket.emit("test:createRoom", { nickname: nickname(), adminToken: localStorage.getItem("bunker-admin-token") || "" }));
-$("#joinRoom").addEventListener("click", () => socket.emit("joinRoom", { roomCode: $("#roomCode").value, ...playerPayload() }));
+$("#joinRoom").addEventListener("click", async () => socket.emit("joinRoom", { roomCode: $("#roomCode").value, ...(await playerPayload()) }));
 $("#nickname").addEventListener("keydown", (event) => { if (event.key === "Enter") $("#createRoom").click(); });
 $("#roomCode").addEventListener("input", (event) => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); });
 $("#startGame").addEventListener("click", () => socket.emit("startGame"));
@@ -770,6 +925,58 @@ $("#soundToggle").addEventListener("click", () => {
     if (soundsEnabled) playSound("accepted");
 });
 $("#themeToggle").addEventListener("click", toggleThemeMenu);
+$("#accountToggle").addEventListener("click", toggleAccountPanel);
+$("#accountLogout").addEventListener("click", () => {
+    saveAccountSession(null);
+    accountProfile = null;
+    $("#caseResult").classList.add("hidden");
+    renderAccountProfile();
+    toast("Вы вышли из профиля. Играть по нику всё ещё можно.");
+});
+$("#openFreeCase").addEventListener("click", async () => {
+    const button = $("#openFreeCase");
+    const caseCard = $("#freeCase");
+    button.disabled = true;
+    caseCard.classList.add("is-opening");
+    $("#caseResult").classList.add("hidden");
+    try {
+        const [payload] = await Promise.all([
+            accountRequest("/api/account/free-case", { method: "POST" }),
+            new Promise((resolve) => setTimeout(resolve, 1150))
+        ]);
+        accountProfile = payload.profile;
+        renderAccountProfile();
+        const frame = payload.frame;
+        $("#caseResult").innerHTML = `<span class="case-result-preview avatar player-frame frame-${safeFrameId(frame.id)}">${accountAvatarMarkup("frame-preview-image")}</span><div><small>ВЫПАЛА РАМКА</small><strong>${escaped(frame.name)}</strong><span>${frame.rarity === "legendary" ? "Легендарная" : frame.rarity === "epic" ? "Эпическая" : frame.rarity === "rare" ? "Редкая" : frame.rarity === "uncommon" ? "Необычная" : "Обычная"}</span></div>`;
+        $("#caseResult").classList.remove("hidden");
+        socket.emit("account:updateFrame", { accessToken: await accountAccessToken() });
+        toast(`Получена рамка «${frame.name}» — она уже надета!`, { important: true });
+        playSound("finish");
+    } catch (error) {
+        toast(error.message, { critical: true });
+    } finally {
+        button.disabled = false;
+        caseCard.classList.remove("is-opening");
+    }
+});
+$("#ownedFrames").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-account-frame]");
+    if (!button || button.classList.contains("is-active")) return;
+    button.disabled = true;
+    try {
+        const payload = await accountRequest("/api/account/frame", {
+            method: "PUT",
+            body: JSON.stringify({ frameId: button.dataset.accountFrame })
+        });
+        accountProfile = payload.profile;
+        renderAccountProfile();
+        socket.emit("account:updateFrame", { accessToken: await accountAccessToken() });
+        toast("Рамка изменена.");
+    } catch (error) {
+        button.disabled = false;
+        toast(error.message, { critical: true });
+    }
+});
 document.querySelectorAll("[data-theme-choice]").forEach((button) => {
     button.addEventListener("click", () => {
         applyColorTheme(button.dataset.themeChoice);
@@ -778,6 +985,7 @@ document.querySelectorAll("[data-theme-choice]").forEach((button) => {
 });
 document.addEventListener("click", (event) => {
     if (!event.target.closest(".theme-control")) closeThemeMenu();
+    if (!event.target.closest(".account-control")) closeAccountPanel();
 });
 $("#leaveLobby").addEventListener("click", () => socket.emit("leaveRoom"));
 $("#leaveGame").addEventListener("click", () => socket.emit("leaveRoom"));
@@ -1013,6 +1221,7 @@ clearInterval(countdownTimer);
 countdownTimer = setInterval(updateActionTimer, 250);
 updateSoundToggle();
 applyColorTheme(localStorage.getItem(THEME_STORAGE_KEY) || "amber");
+initializeAccount().catch(() => renderAccountProfile());
 fetch("/api/admin/test-access", {
     cache: "no-store",
     headers: { Authorization: `Bearer ${localStorage.getItem("bunker-admin-token") || ""}` }
