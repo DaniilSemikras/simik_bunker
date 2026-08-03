@@ -266,10 +266,11 @@ async function accountRequest(url, options = {}, retry = true) {
     if (!accessToken) throw new Error("Войдите через Google.");
     const headers = { ...(options.headers || {}), Authorization: `Bearer ${accessToken}` };
     if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-    let response = await fetch(url, { ...options, headers });
+    const fetchOptions = { cache: "no-store", ...options, headers };
+    let response = await fetch(url, fetchOptions);
     if (response.status === 401 && retry) {
         const refreshedToken = await accountAccessToken(true);
-        if (refreshedToken) response = await fetch(url, { ...options, headers: { ...headers, Authorization: `Bearer ${refreshedToken}` } });
+        if (refreshedToken) response = await fetch(url, { ...fetchOptions, headers: { ...headers, Authorization: `Bearer ${refreshedToken}` } });
     }
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.message || "Не удалось загрузить профиль.");
@@ -349,12 +350,17 @@ function closeAccountPanel() {
     $("#accountToggle").setAttribute("aria-expanded", "false");
 }
 
-function toggleAccountPanel() {
+async function toggleAccountPanel() {
     const panel = $("#accountPanel");
     const willOpen = panel.classList.contains("hidden");
     panel.classList.toggle("hidden", !willOpen);
     $("#accountToggle").setAttribute("aria-expanded", String(willOpen));
-    if (willOpen) closeThemeMenu();
+    if (willOpen) {
+        closeThemeMenu();
+        if (accountSession?.accessToken && accountAuthEnabled) {
+            await loadAccountProfile().catch((error) => toast(error.message, { critical: true }));
+        }
+    }
 }
 
 async function initializeAccount() {
@@ -1227,6 +1233,10 @@ socket.on("voteTied", ({ nextRound, runoff, slots, candidates = [] } = {}) => { 
 socket.on("voteSkipped", () => { toast("Решение команды: никого не исключаем. Начинается следующий раунд."); playSound("tie"); });
 socket.on("revealLimitReached", () => { toast("Лимит раскрытий достигнут: оставшиеся карты останутся тайной."); playSound("vote"); });
 socket.on("account:reward", async ({ caseEarned, completedGames } = {}) => {
+    if (accountProfile && Number.isFinite(Number(completedGames))) {
+        accountProfile = { ...accountProfile, completedGames: Number(completedGames) };
+        renderAccountProfile();
+    }
     if (accountProfile) await loadAccountProfile().catch(() => {});
     if (caseEarned) toast(`Вы завершили ${completedGames} игр и получили новый кейс!`, { important: true, duration: 6000 });
 });

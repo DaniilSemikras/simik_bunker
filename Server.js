@@ -1780,7 +1780,10 @@ app.post("/api/auth/refresh", async (request, response) => {
 
 app.get("/api/account/profile", requireAccount, async (request, response) => {
     try {
-        const profile = await playerProfileStore.ensure(request.accountUser);
+        response.set("Cache-Control", "no-store");
+        await playerProfileStore.ensure(request.accountUser);
+        await reconcileCompletedGameProgress([request.accountUser.id]);
+        const profile = playerProfileStore.get(request.accountUser.id);
         response.json({ profile: publicPlayerProfile(profile), frames: PLAYER_FRAMES });
     } catch (error) {
         response.status(503).json({ message: error.message || "Не удалось загрузить постоянный профиль." });
