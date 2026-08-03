@@ -1704,6 +1704,14 @@ app.get("/api/admin/rooms/:gameId", requireAdmin, (request, response) => {
     response.json({ room: adminRoomSummary(room), state: publicState(room) });
 });
 
+app.delete("/api/admin/rooms/:gameId", requireAdmin, (request, response) => {
+    const gameId = String(request.params.gameId || "");
+    const room = Object.values(rooms).find((candidate) => candidate.gameId === gameId);
+    if (!room) return response.status(404).json({ message: "Игра уже закрыта или не найдена." });
+    closeRoom(room, true);
+    response.json({ deleted: true, gameId });
+});
+
 app.get("/api/admin/history", requireAdmin, (request, response) => {
     response.json({ games: gameHistoryStore.list({ roomCode: request.query.room, player: request.query.player }) });
 });

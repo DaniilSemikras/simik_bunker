@@ -75,7 +75,7 @@ function renderAdminGameDetails(room, state) {
         ? state.bunkerTraits.map((trait) => `${trait.name}: ${trait.value}`).join(" · ")
         : "ещё не выбраны";
     $("#adminGameDetails").innerHTML = `
-        <div class="admin-game-details-top"><div><p class="eyebrow">ПРОСМОТР ИГРЫ</p><h3>Игра №${escapeHtml(room.gameId)}</h3><p>Код комнаты: <strong>${escapeHtml(room.code)}</strong> · создана в ${formatGameTime(room.createdAt)}</p></div><span class="admin-game-phase">${escapeHtml(gamePhaseLabel(room.phase))}</span></div>
+        <div class="admin-game-details-top"><div><p class="eyebrow">ПРОСМОТР ИГРЫ</p><h3>Игра №${escapeHtml(room.gameId)}</h3><p>Код комнаты: <strong>${escapeHtml(room.code)}</strong> · создана в ${formatGameTime(room.createdAt)}</p></div><div class="admin-game-detail-actions"><span class="admin-game-phase">${escapeHtml(gamePhaseLabel(room.phase))}</span><button class="delete-active-game" type="button" data-delete-active-game="${escapeHtml(room.gameId)}">Удалить игру</button></div></div>
         <div class="admin-game-detail-grid">
             <div class="admin-game-detail-stat"><span>Игроки</span><strong>${room.playerCount}/${room.capacity || "—"}</strong></div>
             <div class="admin-game-detail-stat"><span>Раунд</span><strong>${room.phase === "lobby" ? "ожидание" : room.round}</strong></div>
@@ -690,6 +690,22 @@ $("#refreshAdminGames").addEventListener("click", async () => {
 $("#adminGames").addEventListener("click", (event) => {
     const button = event.target.closest("[data-watch-game]");
     if (button) watchAdminGame(button.dataset.watchGame);
+});
+$("#adminGameDetails").addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-delete-active-game]");
+    if (!button) return;
+    const gameId = String(button.dataset.deleteActiveGame || "");
+    if (!window.confirm(`Удалить активную игру №${gameId}? Комната немедленно закроется для всех оставшихся игроков.`)) return;
+    button.disabled = true;
+    try {
+        await request(`/api/admin/rooms/${encodeURIComponent(gameId)}`, { method: "DELETE" });
+        selectedAdminGameId = "";
+        renderAdminGameDetails(null, null);
+        showMessage("#saveMessage", `Игра №${gameId} удалена из активных.`, "success");
+    } catch (error) {
+        button.disabled = false;
+        showMessage("#saveMessage", error.message, "error");
+    }
 });
 $("#refreshAdminHistory").addEventListener("click", () => loadAdminHistory().catch((error) => showMessage("#saveMessage", error.message, "error")));
 $("#clearAdminHistory").addEventListener("click", async () => {
