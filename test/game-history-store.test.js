@@ -7,6 +7,11 @@ const path = require("node:path");
 const test = require("node:test");
 const { GameHistoryStore } = require("../lib/game-history-store");
 
+test("история поддерживает новый формат Supabase secret key", () => {
+    const store = new GameHistoryStore({ supabaseUrl: "https://example.supabase.co", supabaseKey: "sb_secret_demo" });
+    assert.deepEqual(store.headers(), { apikey: "sb_secret_demo" });
+});
+
 test("история игр сохраняется на диск, ищется и удаляется", async (context) => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bunker-history-test-"));
     const filePath = path.join(directory, "history.json");

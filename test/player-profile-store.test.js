@@ -7,6 +7,14 @@ const os = require("os");
 const path = require("path");
 const { PlayerProfileStore } = require("../lib/player-profile-store");
 
+test("новый Supabase secret key передаётся без некорректного Bearer", () => {
+    const store = new PlayerProfileStore({ supabaseUrl: "https://example.supabase.co", supabaseKey: "sb_secret_demo" });
+    assert.deepEqual(store.headers(), { apikey: "sb_secret_demo" });
+
+    const legacyStore = new PlayerProfileStore({ supabaseUrl: "https://example.supabase.co", supabaseKey: "aaa.bbb.ccc" });
+    assert.equal(legacyStore.headers().authorization, "Bearer aaa.bbb.ccc");
+});
+
 test("каждый аккаунт получает только один бесплатный кейс", async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bunker-profile-test-"));
     const store = new PlayerProfileStore({ filePath: path.join(directory, "profiles.json") });

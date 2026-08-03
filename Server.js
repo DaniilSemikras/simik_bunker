@@ -1518,11 +1518,11 @@ function usesSupabaseConfig() {
 }
 
 function supabaseHeaders(extra = {}) {
-    return {
-        apikey: SUPABASE_SECRET_KEY,
-        authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
-        ...extra
-    };
+    const headers = { apikey: SUPABASE_SECRET_KEY, ...extra };
+    if (String(SUPABASE_SECRET_KEY || "").split(".").length === 3) {
+        headers.authorization = `Bearer ${SUPABASE_SECRET_KEY}`;
+    }
+    return headers;
 }
 
 async function readSupabaseConfig() {
