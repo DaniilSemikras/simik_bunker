@@ -507,7 +507,7 @@ function fallbackInitial(value = nickname()) {
 
 function avatarMarkup(player) {
     const frameClass = `player-frame frame-${safeFrameId(player.frameId)}`;
-    if (player.avatarUrl) return `<img class="avatar avatar-image ${frameClass}" src="${escaped(player.avatarUrl)}" alt="">`;
+    if (player.avatarUrl) return `<span class="avatar ${frameClass}"><img class="avatar-image avatar-image-inner" src="${escaped(player.avatarUrl)}" alt=""></span>`;
     return `<span class="avatar ${frameClass}">${escaped(fallbackInitial(player.nickname))}</span>`;
 }
 
