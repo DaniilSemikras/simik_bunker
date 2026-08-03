@@ -1731,7 +1731,10 @@ function publicPlayerProfile(profile) {
 
 async function profileForAccessToken(accessToken) {
     const user = await supabaseAccount(accessToken);
-    return user ? playerProfileStore.ensure(user) : null;
+    if (!user) return null;
+    await playerProfileStore.ensure(user);
+    await reconcileCompletedGameProgress([user.id]);
+    return playerProfileStore.get(user.id);
 }
 
 async function accountPlayerFields(payload = {}) {
@@ -3002,6 +3005,7 @@ function createGameHistoryRecord(room) {
         rounds: room.round + 1,
         votingCount: room.votingCount || 0,
         usedSpecialCards: clone(room.usedSpecialCards || []),
+        isTestRoom: Boolean(room.isTestRoom),
         finishReason: room.finishReason || "capacity_reached",
         survivalChance: calculateBunkerSurvivalChance(room),
         utilityBreakdown: clone(utilityBreakdown),
@@ -3013,11 +3017,12 @@ function recordFinishedGame(room) {
     if (room.historyRecorded) return;
     room.historyRecorded = true;
     const accountPlayers = room.isTestRoom ? [] : room.players.filter((player) => player.accountId && !player.isBot && !player.voluntaryLeft);
+    const completionId = `${room.gameId}:${room.startedAt || room.createdAt || room.code}`;
     gameHistoryStore.append(createGameHistoryRecord(room))
-        .then(async () => {
-            broadcastAdminHistory();
-            const completionId = `${room.gameId}:${room.startedAt || room.createdAt || room.code}`;
-            const rewards = await playerProfileStore.recordCompletedGames(accountPlayers.map((player) => player.accountId), completionId);
+        .then(() => broadcastAdminHistory())
+        .catch((error) => console.warn("Не удалось сохранить историю игры.", error.message));
+    playerProfileStore.recordCompletedGames(accountPlayers.map((player) => player.accountId), completionId)
+        .then((rewards) => {
             if (!rewards.length) return;
             broadcastAdminProfiles();
             for (const reward of rewards) {
@@ -3025,7 +3030,26 @@ function recordFinishedGame(room) {
                 if (player && !player.left) io.to(player.id).emit("account:reward", reward);
             }
         })
-        .catch((error) => console.warn("Не удалось сохранить историю игры.", error.message));
+        .catch((error) => console.warn("Не удалось сохранить прогресс аккаунтов.", error.message));
+}
+
+function historyCountsForProgress(record) {
+    if (!record || record.isTestRoom === true || String(record.finishReason || "").startsWith("test_")) return false;
+    return !(record.actionLog || []).some((entry) => String(entry?.message || entry || "").includes("[TEST]"));
+}
+
+async function reconcileCompletedGameProgress(onlyUserIds = []) {
+    const allowedIds = new Set((onlyUserIds || []).map(String).filter(Boolean));
+    const records = gameHistoryStore.list().filter(historyCountsForProgress).reverse();
+    for (const record of records) {
+        const accountIds = [...new Set((record.participants || [])
+            .filter((participant) => participant?.accountId && !participant.isBot)
+            .map((participant) => String(participant.accountId))
+            .filter((accountId) => !allowedIds.size || allowedIds.has(accountId)))];
+        if (!accountIds.length) continue;
+        const completionId = `${record.gameId}:${record.startedAt || record.roomCreatedAt || record.roomCode}`;
+        await playerProfileStore.recordCompletedGames(accountIds, completionId);
+    }
 }
 
 function emitRoom(room) {
@@ -4291,7 +4315,9 @@ Promise.all([
         const storedGames = gameHistoryStore.list();
         nextGameId = storedGames.length ? gameHistoryStore.maxNumericId() + 1 : 0;
     })
-]).catch((error) => {
+]).then(() => reconcileCompletedGameProgress()).then(() => {
+    broadcastAdminProfiles();
+}).catch((error) => {
     console.warn("Не удалось полностью инициализировать внешнее хранилище. Сервер продолжит работу с локальными данными.", error.message);
 }).finally(() => {
     server.listen(process.env.PORT || 3000, () => {
