@@ -1670,6 +1670,10 @@ function broadcastAdminHistory() {
     io.to(ADMIN_ROOM).emit("admin:history-updated", { games: gameHistoryStore.list() });
 }
 
+function broadcastAdminProfiles() {
+    io.to(ADMIN_ROOM).emit("admin:profiles-updated", { users: playerProfileStore.list(), frames: PLAYER_FRAMES });
+}
+
 function getAdminToken(request) {
     const authorization = request.get("authorization") || "";
     return authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
@@ -1717,7 +1721,10 @@ function publicPlayerProfile(profile) {
         pictureUrl: profile.pictureUrl,
         ownedFrames: profile.ownedFrames,
         selectedFrame: profile.selectedFrame,
-        freeCaseOpened: profile.freeCaseOpened
+        freeCaseOpened: profile.freeCaseOpened,
+        caseBalance: Number(profile.caseBalance) || 0,
+        casesOpened: Number(profile.casesOpened) || 0,
+        completedGames: Number(profile.completedGames) || 0
     };
 }
 
@@ -1731,7 +1738,11 @@ async function accountPlayerFields(payload = {}) {
     if (!accessToken) return { accountId: null, frameId: DEFAULT_FRAME_ID };
     const profile = await profileForAccessToken(accessToken);
     if (!profile) throw new Error("Сессия Google истекла. Войдите снова или продолжите без аккаунта.");
-    return { accountId: profile.userId, frameId: profile.selectedFrame || DEFAULT_FRAME_ID };
+    return {
+        accountId: profile.userId,
+        frameId: profile.selectedFrame || DEFAULT_FRAME_ID,
+        ...(profile.pictureUrl ? { avatarUrl: profile.pictureUrl } : {})
+    };
 }
 
 app.get("/api/auth/config", (_request, response) => {
@@ -1771,7 +1782,7 @@ app.get("/api/account/profile", requireAccount, async (request, response) => {
 app.post("/api/account/free-case", requireAccount, async (request, response) => {
     await playerProfileStore.ensure(request.accountUser);
     const result = await playerProfileStore.openFreeCase(request.accountUser.id);
-    if (!result.opened) return response.status(409).json({ message: "Пробный кейс уже открыт.", profile: publicPlayerProfile(result.profile) });
+    if (!result.opened) return response.status(409).json({ message: "Нет доступных кейсов. Новый кейс выдаётся за каждые 5 завершённых игр.", profile: publicPlayerProfile(result.profile) });
     response.json({ opened: true, frame: result.frame, profile: publicPlayerProfile(result.profile) });
 });
 
@@ -1803,6 +1814,20 @@ app.post("/api/admin/login", (request, response) => {
 
 app.get("/api/admin/config", requireAdmin, (_request, response) => response.json(gameConfig));
 app.get("/api/admin/test-access", requireAdmin, (_request, response) => response.json({ testMode: ENABLE_TEST_MODE }));
+
+app.get("/api/admin/users", requireAdmin, (_request, response) => {
+    response.json({ users: playerProfileStore.list(), frames: PLAYER_FRAMES });
+});
+
+app.patch("/api/admin/users/:userId", requireAdmin, async (request, response) => {
+    try {
+        const profile = await playerProfileStore.adminUpdate(request.params.userId, request.body || {});
+        broadcastAdminProfiles();
+        response.json({ profile: publicPlayerProfile(profile) });
+    } catch (error) {
+        response.status(400).json({ message: error.message || "Не удалось изменить профиль игрока." });
+    }
+});
 
 app.get("/api/admin/rooms", requireAdmin, (_request, response) => {
     response.json({ rooms: adminRoomSummaries() });
@@ -2929,6 +2954,7 @@ function createGameHistoryRecord(room) {
     const utilityBreakdown = calculateUtilityBreakdown(room);
     const finishedAt = Number(room.finishedAt) || Date.now();
     const participants = room.players.map((player) => ({
+        accountId: player.accountId || null,
         nickname: player.nickname,
         avatarUrl: player.avatarUrl || null,
         frameId: player.frameId || DEFAULT_FRAME_ID,
@@ -2977,8 +3003,19 @@ function createGameHistoryRecord(room) {
 function recordFinishedGame(room) {
     if (room.historyRecorded) return;
     room.historyRecorded = true;
+    const accountPlayers = room.isTestRoom ? [] : room.players.filter((player) => player.accountId && !player.isBot && !player.voluntaryLeft);
     gameHistoryStore.append(createGameHistoryRecord(room))
-        .then(broadcastAdminHistory)
+        .then(async () => {
+            broadcastAdminHistory();
+            const completionId = `${room.gameId}:${room.startedAt || room.createdAt || room.code}`;
+            const rewards = await playerProfileStore.recordCompletedGames(accountPlayers.map((player) => player.accountId), completionId);
+            if (!rewards.length) return;
+            broadcastAdminProfiles();
+            for (const reward of rewards) {
+                const player = accountPlayers.find((candidate) => candidate.accountId === reward.userId);
+                if (player && !player.left) io.to(player.id).emit("account:reward", reward);
+            }
+        })
         .catch((error) => console.warn("Не удалось сохранить историю игры.", error.message));
 }
 
@@ -3496,7 +3533,7 @@ io.on("connection", (socket) => {
         const token = String(payload?.token || "");
         if (!hasActiveAdminSession(token)) return socket.emit("admin:unauthorized");
         socket.join(ADMIN_ROOM);
-        socket.emit("admin:ready", { revision: gameConfig.revision, rooms: adminRoomSummaries(), history: gameHistoryStore.list() });
+        socket.emit("admin:ready", { revision: gameConfig.revision, rooms: adminRoomSummaries(), history: gameHistoryStore.list(), users: playerProfileStore.list(), frames: PLAYER_FRAMES });
     });
 
     socket.on("test:createRoom", ({ nickname: rawNickname, adminToken } = {}) => {
@@ -3955,6 +3992,7 @@ io.on("connection", (socket) => {
         const profile = await profileForAccessToken(accessToken).catch(() => null);
         if (!profile || !player.accountId || player.accountId !== profile.userId) return emitError(socket, "Не удалось обновить рамку аккаунта.");
         player.frameId = profile.selectedFrame || DEFAULT_FRAME_ID;
+        if (profile.pictureUrl) player.avatarUrl = profile.pictureUrl;
         emitRoom(room);
     });
 

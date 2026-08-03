@@ -16,6 +16,8 @@ let adminRooms = [];
 let selectedAdminGameId = "";
 let adminHistory = [];
 let selectedHistoryGameId = "";
+let adminUsers = [];
+let playerFrames = [];
 
 function deepClone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -61,6 +63,36 @@ function formatGameTime(value) {
 function adminPlayerAvatar(player) {
     const firstLetter = String(player?.nickname || "?").trim().charAt(0).toUpperCase() || "?";
     return `<span class="admin-game-player-avatar">${player?.avatarUrl ? `<img src="${escapeHtml(player.avatarUrl)}" alt="">` : escapeHtml(firstLetter)}</span>`;
+}
+
+function formatProfileDate(value) {
+    const date = new Date(value || 0);
+    return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" });
+}
+
+function renderAdminUsers() {
+    $("#adminUsersCount").textContent = String(adminUsers.length);
+    $("#adminUsers").innerHTML = adminUsers.length ? adminUsers.map((user) => {
+        const owned = new Set(user.ownedFrames || []);
+        const initial = String(user.displayName || user.email || "?").charAt(0).toUpperCase();
+        return `<article class="admin-user-card" data-admin-user="${escapeHtml(user.userId)}">
+            <header><span class="admin-user-avatar">${user.pictureUrl ? `<img src="${escapeHtml(user.pictureUrl)}" alt="">` : escapeHtml(initial)}</span><div><h3>${escapeHtml(user.displayName || "Игрок")}</h3><p>${escapeHtml(user.email || "Без почты")}</p></div><span class="admin-user-selected">Рамка: ${escapeHtml(playerFrames.find((frame) => frame.id === user.selectedFrame)?.name || "Стандарт")}</span></header>
+            <div class="admin-user-stats"><span><b>${Number(user.completedGames) || 0}</b> игр завершено</span><span><b>${Number(user.caseBalance) || 0}</b> кейсов</span><span><b>${owned.size}</b> рамок</span><span>с ${formatProfileDate(user.createdAt)}</span></div>
+            <div class="admin-user-tools"><div><strong>Кейсы</strong><button type="button" data-user-case="-1">−1</button><button type="button" data-user-case="1">+1</button></div><div class="admin-user-frame-tools"><select data-user-frame>${playerFrames.map((frame) => `<option value="${escapeHtml(frame.id)}">${escapeHtml(frame.name)}</option>`).join("")}</select><button type="button" data-user-frame-action="grant">Выдать</button><button type="button" data-user-frame-action="remove">Забрать</button></div></div>
+            <div class="admin-user-frames">${playerFrames.filter((frame) => owned.has(frame.id)).map((frame) => `<span class="${frame.id === user.selectedFrame ? "is-selected" : ""}">${escapeHtml(frame.name)}</span>`).join("")}</div>
+        </article>`;
+    }).join("") : '<p class="admin-games-empty">Пока никто не зарегистрировался через Google.</p>';
+}
+
+function setAdminUsers(users, frames = playerFrames) {
+    adminUsers = Array.isArray(users) ? users : [];
+    playerFrames = Array.isArray(frames) ? frames : playerFrames;
+    renderAdminUsers();
+}
+
+async function loadAdminUsers() {
+    const response = await request("/api/admin/users");
+    setAdminUsers(response.users, response.frames);
 }
 
 function renderAdminGameDetails(room, state) {
@@ -252,9 +284,10 @@ function connectAdminSocket() {
     adminSocket?.disconnect();
     adminSocket = window.io();
     adminSocket.on("connect", () => adminSocket.emit("admin:subscribe", { token: token() }));
-    adminSocket.on("admin:ready", ({ rooms, history } = {}) => {
+    adminSocket.on("admin:ready", ({ rooms, history, users, frames } = {}) => {
         setAdminRooms(rooms);
         if (Array.isArray(history)) setAdminHistory(history);
+        if (Array.isArray(users)) setAdminUsers(users, frames);
     });
     adminSocket.on("admin:config-updated", ({ config: nextConfig } = {}) => applyRemoteConfig(nextConfig));
     adminSocket.on("admin:rooms-updated", ({ rooms } = {}) => {
@@ -271,6 +304,9 @@ function connectAdminSocket() {
     });
     adminSocket.on("admin:history-updated", ({ games } = {}) => {
         if (Array.isArray(games)) setAdminHistory(games);
+    });
+    adminSocket.on("admin:profiles-updated", ({ users, frames } = {}) => {
+        if (Array.isArray(users)) setAdminUsers(users, frames);
     });
     adminSocket.on("admin:unauthorized", () => showMessage("#saveMessage", "Сессия администратора истекла. Войдите заново.", "error"));
 }
@@ -567,12 +603,13 @@ function collectConfig(includePresets = true) {
 }
 
 async function loadEditor() {
-    const [nextConfig, avatarResponse, roomsResponse, historyResponse] = await Promise.all([request("/api/admin/config"), request("/api/admin/avatars"), request("/api/admin/rooms"), request("/api/admin/history")]);
+    const [nextConfig, avatarResponse, roomsResponse, historyResponse, usersResponse] = await Promise.all([request("/api/admin/config"), request("/api/admin/avatars"), request("/api/admin/rooms"), request("/api/admin/history"), request("/api/admin/users")]);
     config = nextConfig;
     avatars = avatarResponse.avatars;
     hiddenAvatars = avatarResponse.hiddenAvatars || [];
     setAdminRooms(roomsResponse.rooms);
     setAdminHistory(historyResponse.games);
+    setAdminUsers(usersResponse.users, usersResponse.frames);
     renderCategories();
     renderBunkerTraits();
     renderSpecialCards();
@@ -704,6 +741,30 @@ $("#adminGameDetails").addEventListener("click", async (event) => {
         showMessage("#saveMessage", `Игра №${gameId} удалена из активных.`, "success");
     } catch (error) {
         button.disabled = false;
+        showMessage("#saveMessage", error.message, "error");
+    }
+});
+$("#refreshAdminUsers").addEventListener("click", () => loadAdminUsers().catch((error) => showMessage("#saveMessage", error.message, "error")));
+$("#adminUsers").addEventListener("click", async (event) => {
+    const card = event.target.closest("[data-admin-user]");
+    if (!card) return;
+    const caseButton = event.target.closest("[data-user-case]");
+    const frameButton = event.target.closest("[data-user-frame-action]");
+    if (!caseButton && !frameButton) return;
+    const body = caseButton
+        ? { caseDelta: Number(caseButton.dataset.userCase) }
+        : { frameId: card.querySelector("[data-user-frame]").value, owned: frameButton.dataset.userFrameAction === "grant" };
+    event.target.disabled = true;
+    try {
+        await request(`/api/admin/users/${encodeURIComponent(card.dataset.adminUser)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body)
+        });
+        await loadAdminUsers();
+        showMessage("#saveMessage", "Профиль пользователя обновлён.", "success");
+    } catch (error) {
+        event.target.disabled = false;
         showMessage("#saveMessage", error.message, "error");
     }
 });

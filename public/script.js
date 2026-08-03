@@ -284,6 +284,35 @@ function accountAvatarMarkup(className = "") {
         : `<span class="${className}">${escaped(initial)}</span>`;
 }
 
+function caseRarityLabel(rarity) {
+    return ({ legendary: "Легендарная", epic: "Эпическая", rare: "Редкая", uncommon: "Необычная", common: "Обычная" })[rarity] || "Базовая";
+}
+
+function caseReelItem(frame) {
+    return `<div class="case-reel-item rarity-${escaped(frame.rarity)}"><span class="avatar player-frame frame-${safeFrameId(frame.id)}">${accountAvatarMarkup("frame-preview-image")}</span><strong>${escaped(frame.name)}</strong><small>${caseRarityLabel(frame.rarity)}</small></div>`;
+}
+
+async function runCaseReel(winningFrame) {
+    const opening = $("#caseOpening");
+    const reel = $("#caseReel");
+    const choices = accountFrames.filter((frame) => Number(frame.weight) > 0);
+    const winningIndex = 27;
+    const items = Array.from({ length: 31 }, (_, index) => index === winningIndex
+        ? winningFrame
+        : choices[Math.floor(Math.random() * choices.length)] || winningFrame);
+    reel.innerHTML = items.map(caseReelItem).join("");
+    reel.style.transition = "none";
+    reel.style.transform = "translate3d(0,0,0)";
+    opening.classList.remove("hidden");
+    reel.getBoundingClientRect();
+    reel.style.transition = "transform 4.2s cubic-bezier(.08,.72,.08,1)";
+    const targetOffset = winningIndex * 78 - opening.clientWidth / 2 + 35;
+    reel.style.transform = `translate3d(-${targetOffset}px,0,0)`;
+    await new Promise((resolve) => setTimeout(resolve, 4350));
+    reel.children[winningIndex]?.classList.add("is-winner");
+    await new Promise((resolve) => setTimeout(resolve, 400));
+}
+
 function renderAccountProfile() {
     const loggedIn = Boolean(accountProfile);
     $("#accountGuest").classList.toggle("hidden", loggedIn);
@@ -294,10 +323,11 @@ function renderAccountProfile() {
     $("#accountPicture").innerHTML = accountAvatarMarkup("account-picture-image");
     $("#accountName").textContent = accountProfile.displayName || "Игрок";
     $("#accountEmail").textContent = accountProfile.email || "Google-аккаунт";
-    const caseOpened = Boolean(accountProfile.freeCaseOpened);
-    $("#openFreeCase").classList.toggle("hidden", caseOpened);
-    $("#caseTitle").textContent = caseOpened ? "Пробный кейс открыт" : "Одна бесплатная рамка";
-    $("#caseHint").textContent = caseOpened ? "Награда уже добавлена в коллекцию" : "Доступен один раз для аккаунта";
+    const caseBalance = Number(accountProfile.caseBalance) || 0;
+    const completedGames = Number(accountProfile.completedGames) || 0;
+    $("#openFreeCase").classList.toggle("hidden", caseBalance < 1);
+    $("#caseTitle").textContent = caseBalance ? `Доступно кейсов: ${caseBalance}` : "Следующий кейс за 5 игр";
+    $("#caseHint").textContent = caseBalance ? "Откройте кейс и получите случайную рамку" : `Прогресс: ${completedGames % 5}/5 завершённых игр`;
     const owned = accountFrames.filter((frame) => accountProfile.ownedFrames.includes(frame.id));
     $("#ownedFrameCount").textContent = `${owned.length}/${accountFrames.length}`;
     $("#ownedFrames").innerHTML = owned.map((frame) => {
@@ -930,6 +960,7 @@ $("#accountLogout").addEventListener("click", () => {
     saveAccountSession(null);
     accountProfile = null;
     $("#caseResult").classList.add("hidden");
+    $("#caseOpening").classList.add("hidden");
     renderAccountProfile();
     toast("Вы вышли из профиля. Играть по нику всё ещё можно.");
 });
@@ -940,14 +971,13 @@ $("#openFreeCase").addEventListener("click", async () => {
     caseCard.classList.add("is-opening");
     $("#caseResult").classList.add("hidden");
     try {
-        const [payload] = await Promise.all([
-            accountRequest("/api/account/free-case", { method: "POST" }),
-            new Promise((resolve) => setTimeout(resolve, 1150))
-        ]);
+        const payload = await accountRequest("/api/account/free-case", { method: "POST" });
         accountProfile = payload.profile;
         renderAccountProfile();
         const frame = payload.frame;
-        $("#caseResult").innerHTML = `<span class="case-result-preview avatar player-frame frame-${safeFrameId(frame.id)}">${accountAvatarMarkup("frame-preview-image")}</span><div><small>ВЫПАЛА РАМКА</small><strong>${escaped(frame.name)}</strong><span>${frame.rarity === "legendary" ? "Легендарная" : frame.rarity === "epic" ? "Эпическая" : frame.rarity === "rare" ? "Редкая" : frame.rarity === "uncommon" ? "Необычная" : "Обычная"}</span></div>`;
+        await runCaseReel(frame);
+        $("#caseOpening").classList.add("hidden");
+        $("#caseResult").innerHTML = `<span class="case-result-preview avatar player-frame frame-${safeFrameId(frame.id)}">${accountAvatarMarkup("frame-preview-image")}</span><div><small>ВЫПАЛА РАМКА</small><strong>${escaped(frame.name)}</strong><span>${caseRarityLabel(frame.rarity)}</span></div>`;
         $("#caseResult").classList.remove("hidden");
         socket.emit("account:updateFrame", { accessToken: await accountAccessToken() });
         toast(`Получена рамка «${frame.name}» — она уже надета!`, { important: true });
@@ -957,6 +987,7 @@ $("#openFreeCase").addEventListener("click", async () => {
     } finally {
         button.disabled = false;
         caseCard.classList.remove("is-opening");
+        $("#caseOpening").classList.add("hidden");
     }
 });
 $("#ownedFrames").addEventListener("click", async (event) => {
@@ -1195,6 +1226,10 @@ socket.on("turnSkipped", ({ nickname: name }) => { toast(`${name} не успе�
 socket.on("voteTied", ({ nextRound, runoff, slots, candidates = [] } = {}) => { toast(runoff ? `Ничья за ${slots > 1 ? slots + " места" : "место"}. Переголосование: ${candidates.join(", ")}.` : nextRound ? "Голоса разделились. Открываем следующую карту." : "Ничья: никто не исключен.", { important: Boolean(runoff) }); playSound("tie"); });
 socket.on("voteSkipped", () => { toast("Решение команды: никого не исключаем. Начинается следующий раунд."); playSound("tie"); });
 socket.on("revealLimitReached", () => { toast("Лимит раскрытий достигнут: оставшиеся карты останутся тайной."); playSound("vote"); });
+socket.on("account:reward", async ({ caseEarned, completedGames } = {}) => {
+    if (accountProfile) await loadAccountProfile().catch(() => {});
+    if (caseEarned) toast(`Вы завершили ${completedGames} игр и получили новый кейс!`, { important: true, duration: 6000 });
+});
 socket.on("gameFinished", ({ survivors }) => { toast(`Выжили: ${survivors.join(", ")}.`); playSound("finish"); });
 socket.on("rematchUpdated", ({ nickname: name, ready }) => { toast(ready ? `${name} готов сыграть снова.` : `${name} не участвует в следующей игре.`, { duration: 2200 }); });
 socket.on("rematchClosed", ({ reason }) => { toast(reason || "Минута на решение закончилась.", { important: true }); });

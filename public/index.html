@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#101716">
     <title>Бункер — игра для друзей</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="style.css?v=20260801-utility-supplies">
+    <link rel="stylesheet" href="style.css?v=20260803-case-reel">
 </head>
 <body>
     <div class="bunker-backdrop" aria-hidden="true"></div>
@@ -26,6 +26,10 @@
                     <div class="case-emblem" aria-hidden="true">✦</div>
                     <div><span>ПРОБНЫЙ КЕЙС</span><strong id="caseTitle">Одна бесплатная рамка</strong><small id="caseHint">Доступен один раз для аккаунта</small></div>
                     <button id="openFreeCase" type="button">Открыть</button>
+                </div>
+                <div id="caseOpening" class="case-opening hidden" aria-live="polite">
+                    <div class="case-reel-pointer" aria-hidden="true"></div>
+                    <div class="case-reel-viewport"><div id="caseReel" class="case-reel"></div></div>
                 </div>
                 <div id="caseResult" class="case-result hidden" aria-live="polite"></div>
                 <div class="frame-library-head"><div><span>МОИ РАМКИ</span><small>Нажмите, чтобы надеть</small></div><b id="ownedFrameCount"></b></div>
@@ -131,6 +135,6 @@
 
     <div id="toast" class="toast" role="status" aria-live="polite"><span id="toastMessage"></span><button id="toastClose" type="button" aria-label="Закрыть уведомление">×</button></div>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="script.js?v=20260803-google-frames"></script>
+    <script src="script.js?v=20260803-case-reel"></script>
 </body>
 </html>

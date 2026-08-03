@@ -7,7 +7,7 @@
     <meta name="robots" content="noindex">
     <title>Бункер — настройки игры</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="admin.css?v=20260801-theme-chevron">
+    <link rel="stylesheet" href="admin.css?v=20260803-users">
 </head>
 <body>
     <main class="admin-shell">
@@ -46,6 +46,7 @@
                 <button class="admin-tab" type="button" role="tab" aria-selected="false" data-editor-tab="special">Специальные карты</button>
                 <button class="admin-tab" type="button" role="tab" aria-selected="false" data-editor-tab="presets">Пресеты</button>
                 <button class="admin-tab" type="button" role="tab" aria-selected="false" data-editor-tab="games">Активные игры <span id="adminGamesCount" class="admin-tab-count">0</span></button>
+                <button class="admin-tab" type="button" role="tab" aria-selected="false" data-editor-tab="users">Пользователи <span id="adminUsersCount" class="admin-tab-count">0</span></button>
                 <button class="admin-tab" type="button" role="tab" aria-selected="false" data-editor-tab="history">История <span id="adminHistoryCount" class="admin-tab-count">0</span></button>
             </div>
             <section class="editor-tab-panel" data-editor-panel="players">
@@ -92,6 +93,11 @@
                 <section id="adminGameDetails" class="admin-game-details hidden" aria-live="polite"></section>
             </section>
 
+            <section class="editor-tab-panel hidden" data-editor-panel="users">
+                <div class="section-head"><div><p class="eyebrow">АККАУНТЫ</p><h2>Пользователи</h2><p class="section-hint">Здесь видны зарегистрированные через Google игроки, их прогресс, кейсы и коллекция рамок.</p></div><button id="refreshAdminUsers" class="secondary" type="button">Обновить</button></div>
+                <div id="adminUsers" class="admin-users"></div>
+            </section>
+
             <section class="editor-tab-panel hidden" data-editor-panel="history">
                 <div class="section-head"><div><p class="eyebrow">АРХИВ</p><h2>Завершённые игры</h2><p class="section-hint">История сохраняет состав, исключения, победителей, катастрофу, специальные карты и итоговую полезность.</p></div><div class="history-actions"><button id="refreshAdminHistory" class="secondary" type="button">Обновить</button><button id="clearAdminHistory" class="history-clear" type="button">Очистить историю</button></div></div>
                 <div class="history-filters"><label>Код комнаты<input id="historyRoomSearch" maxlength="12" placeholder="Например, AB12"></label><label>Ник игрока<input id="historyPlayerSearch" maxlength="30" placeholder="Часть ника"></label></div>
@@ -103,6 +109,6 @@
         </section>
     </main>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="admin.js?v=20260803-delete-active-game"></script>
+    <script src="admin.js?v=20260803-users"></script>
 </body>
 </html>
