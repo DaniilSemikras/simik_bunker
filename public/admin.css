@@ -181,6 +181,9 @@ input:focus,textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px co
 .history-clear { border:1px solid color-mix(in srgb,var(--danger) 58%,transparent); border-radius:10px; padding:9px 12px; color:var(--danger); background:color-mix(in srgb,var(--danger) 9%,var(--deep)); cursor:pointer; font-weight:850; }
 .history-clear:hover { background:color-mix(in srgb,var(--danger) 17%,var(--deep)); }
 .admin-users { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:12px; }
+.admin-storage-status { display:inline-flex; width:max-content; margin-top:8px; border:1px solid var(--line); border-radius:100px; padding:6px 9px; color:var(--muted); background:var(--soft-bg); font-size:10px; font-weight:800; }
+.admin-storage-status.is-connected { border-color:color-mix(in srgb,var(--success) 45%,transparent); color:var(--success); }
+.admin-storage-status.is-error { border-color:color-mix(in srgb,var(--danger) 55%,transparent); color:var(--danger); }
 .admin-user-card { display:grid; gap:13px; padding:16px; border:1px solid var(--line); border-radius:15px; background:var(--panel); }
 .admin-user-card header { display:flex; align-items:center; gap:11px; }
 .admin-user-card header h3,.admin-user-card header p { margin:0; }

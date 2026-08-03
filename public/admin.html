@@ -7,7 +7,7 @@
     <meta name="robots" content="noindex">
     <title>Бункер — настройки игры</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-    <link rel="stylesheet" href="admin.css?v=20260803-users">
+    <link rel="stylesheet" href="admin.css?v=20260803-profile-storage">
 </head>
 <body>
     <main class="admin-shell">
@@ -94,7 +94,7 @@
             </section>
 
             <section class="editor-tab-panel hidden" data-editor-panel="users">
-                <div class="section-head"><div><p class="eyebrow">АККАУНТЫ</p><h2>Пользователи</h2><p class="section-hint">Здесь видны зарегистрированные через Google игроки, их прогресс, кейсы и коллекция рамок.</p></div><button id="refreshAdminUsers" class="secondary" type="button">Обновить</button></div>
+                <div class="section-head"><div><p class="eyebrow">АККАУНТЫ</p><h2>Пользователи</h2><p class="section-hint">Здесь видны зарегистрированные через Google игроки, их прогресс, кейсы и коллекция рамок.</p><span id="adminUsersStorage" class="admin-storage-status"></span></div><button id="refreshAdminUsers" class="secondary" type="button">Обновить</button></div>
                 <div id="adminUsers" class="admin-users"></div>
             </section>
 
@@ -109,6 +109,6 @@
         </section>
     </main>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="admin.js?v=20260803-users"></script>
+    <script src="admin.js?v=20260803-profile-storage"></script>
 </body>
 </html>

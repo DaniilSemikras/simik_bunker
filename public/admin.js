@@ -18,6 +18,7 @@ let adminHistory = [];
 let selectedHistoryGameId = "";
 let adminUsers = [];
 let playerFrames = [];
+let profileStorage = null;
 
 function deepClone(value) {
     return JSON.parse(JSON.stringify(value));
@@ -72,6 +73,11 @@ function formatProfileDate(value) {
 
 function renderAdminUsers() {
     $("#adminUsersCount").textContent = String(adminUsers.length);
+    const storage = $("#adminUsersStorage");
+    const persistent = profileStorage?.backend === "supabase" && profileStorage?.connected;
+    storage.textContent = persistent ? "● Постоянное хранение: Supabase подключён" : "● Внимание: постоянное хранение недоступно";
+    storage.classList.toggle("is-connected", persistent);
+    storage.classList.toggle("is-error", !persistent);
     $("#adminUsers").innerHTML = adminUsers.length ? adminUsers.map((user) => {
         const owned = new Set(user.ownedFrames || []);
         const initial = String(user.displayName || user.email || "?").charAt(0).toUpperCase();
@@ -84,15 +90,16 @@ function renderAdminUsers() {
     }).join("") : '<p class="admin-games-empty">Пока никто не зарегистрировался через Google.</p>';
 }
 
-function setAdminUsers(users, frames = playerFrames) {
+function setAdminUsers(users, frames = playerFrames, storage = profileStorage) {
     adminUsers = Array.isArray(users) ? users : [];
     playerFrames = Array.isArray(frames) ? frames : playerFrames;
+    profileStorage = storage || profileStorage;
     renderAdminUsers();
 }
 
 async function loadAdminUsers() {
     const response = await request("/api/admin/users");
-    setAdminUsers(response.users, response.frames);
+    setAdminUsers(response.users, response.frames, response.storage);
 }
 
 function renderAdminGameDetails(room, state) {
@@ -609,7 +616,7 @@ async function loadEditor() {
     hiddenAvatars = avatarResponse.hiddenAvatars || [];
     setAdminRooms(roomsResponse.rooms);
     setAdminHistory(historyResponse.games);
-    setAdminUsers(usersResponse.users, usersResponse.frames);
+    setAdminUsers(usersResponse.users, usersResponse.frames, usersResponse.storage);
     renderCategories();
     renderBunkerTraits();
     renderSpecialCards();

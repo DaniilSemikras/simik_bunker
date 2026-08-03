@@ -226,7 +226,7 @@ const AVATAR_DIRECTORY = path.join(__dirname, "public", "uploads", "avatars");
 const MAX_AVATAR_BYTES = 350 * 1024;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "simik";
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").trim().replace(/\/+$/, "");
-const SUPABASE_SECRET_KEY = String(process.env.SUPABASE_SECRET_KEY || "").trim();
+const SUPABASE_SECRET_KEY = String(process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
 const ENABLE_TEST_MODE = String(process.env.ENABLE_TEST_MODE || "").toLocaleLowerCase("en") === "true";
 const gameHistoryStore = new GameHistoryStore({
     filePath: GAME_HISTORY_PATH,
@@ -236,7 +236,8 @@ const gameHistoryStore = new GameHistoryStore({
 const playerProfileStore = new PlayerProfileStore({
     filePath: PLAYER_PROFILES_PATH,
     supabaseUrl: SUPABASE_URL,
-    supabaseKey: SUPABASE_SECRET_KEY
+    supabaseKey: SUPABASE_SECRET_KEY,
+    requireRemote: Boolean(process.env.RENDER)
 });
 const adminSessions = new Map();
 const ADMIN_ROOM = "admin-editors";
@@ -1775,15 +1776,23 @@ app.post("/api/auth/refresh", async (request, response) => {
 });
 
 app.get("/api/account/profile", requireAccount, async (request, response) => {
-    const profile = await playerProfileStore.ensure(request.accountUser);
-    response.json({ profile: publicPlayerProfile(profile), frames: PLAYER_FRAMES });
+    try {
+        const profile = await playerProfileStore.ensure(request.accountUser);
+        response.json({ profile: publicPlayerProfile(profile), frames: PLAYER_FRAMES });
+    } catch (error) {
+        response.status(503).json({ message: error.message || "Не удалось загрузить постоянный профиль." });
+    }
 });
 
 app.post("/api/account/free-case", requireAccount, async (request, response) => {
-    await playerProfileStore.ensure(request.accountUser);
-    const result = await playerProfileStore.openFreeCase(request.accountUser.id);
-    if (!result.opened) return response.status(409).json({ message: "Нет доступных кейсов. Новый кейс выдаётся за каждые 5 завершённых игр.", profile: publicPlayerProfile(result.profile) });
-    response.json({ opened: true, frame: result.frame, profile: publicPlayerProfile(result.profile) });
+    try {
+        await playerProfileStore.ensure(request.accountUser);
+        const result = await playerProfileStore.openFreeCase(request.accountUser.id);
+        if (!result.opened) return response.status(409).json({ message: "Нет доступных кейсов. Новый кейс выдаётся за каждые 5 завершённых игр.", profile: publicPlayerProfile(result.profile) });
+        response.json({ opened: true, frame: result.frame, profile: publicPlayerProfile(result.profile) });
+    } catch (error) {
+        response.status(503).json({ message: error.message || "Не удалось сохранить награду кейса." });
+    }
 });
 
 app.put("/api/account/frame", requireAccount, async (request, response) => {
@@ -1816,7 +1825,7 @@ app.get("/api/admin/config", requireAdmin, (_request, response) => response.json
 app.get("/api/admin/test-access", requireAdmin, (_request, response) => response.json({ testMode: ENABLE_TEST_MODE }));
 
 app.get("/api/admin/users", requireAdmin, (_request, response) => {
-    response.json({ users: playerProfileStore.list(), frames: PLAYER_FRAMES });
+    response.json({ users: playerProfileStore.list(), frames: PLAYER_FRAMES, storage: playerProfileStore.status() });
 });
 
 app.patch("/api/admin/users/:userId", requireAdmin, async (request, response) => {

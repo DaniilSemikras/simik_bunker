@@ -72,3 +72,14 @@ test("администратор может выдать кейс и управ�
     assert.equal(updated.ownedFrames.includes("plasma"), false);
     assert.equal(updated.selectedFrame, "standard");
 });
+
+test("боевой сервер не принимает локальное сохранение вместо постоянной базы", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bunker-profile-required-remote-test-"));
+    const store = new PlayerProfileStore({ filePath: path.join(directory, "profiles.json"), requireRemote: true });
+    await store.initialize();
+    await assert.rejects(
+        () => store.ensure({ id: "remote-user", email: "remote@example.com" }),
+        /Постоянное хранилище профилей не подключено/
+    );
+    assert.equal(store.status().persistent, false);
+});
