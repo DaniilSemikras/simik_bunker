@@ -972,10 +972,10 @@ $("#openFreeCase").addEventListener("click", async () => {
     $("#caseResult").classList.add("hidden");
     try {
         const payload = await accountRequest("/api/account/free-case", { method: "POST" });
-        accountProfile = payload.profile;
-        renderAccountProfile();
         const frame = payload.frame;
         await runCaseReel(frame);
+        accountProfile = payload.profile;
+        renderAccountProfile();
         $("#caseOpening").classList.add("hidden");
         $("#caseResult").innerHTML = `<span class="case-result-preview avatar player-frame frame-${safeFrameId(frame.id)}">${accountAvatarMarkup("frame-preview-image")}</span><div><small>ВЫПАЛА РАМКА</small><strong>${escaped(frame.name)}</strong><span>${caseRarityLabel(frame.rarity)}</span></div>`;
         $("#caseResult").classList.remove("hidden");
