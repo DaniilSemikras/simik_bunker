@@ -2961,6 +2961,7 @@ function adminRoomSummary(room) {
 
 function adminRoomSummaries() {
     return Object.values(rooms)
+        .filter((room) => room.phase !== "finished")
         .map(adminRoomSummary)
         .sort((first, second) => Number(second.gameId) - Number(first.gameId));
 }
